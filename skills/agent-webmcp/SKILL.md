@@ -30,7 +30,17 @@ Run the read → act → verify loop. Every step ends with its done-state; do no
 
 ## Discover a site (when the task names a goal, not a URL)
 
-[webmcp.com](https://webmcp.com) is the live directory of 500+ tool-exposing sites and is itself tool-driven. Open it, `list` (expect `about`, `surprise_me`, `share_on_x`, …), and use `about` plus the directory entries (name, categories, tool names — e.g. `render.com` → `render.docs.search`, `netgear.com` → `search-products, add-to-cart`) to pick a site. Then run the Procedure on it. If no site and no page tool fits the goal, call the site's fallback recorder when it offers one (`record_unsupported_request`-style: strict "only when nothing else fits" instructions — obey them), otherwise say plainly that no tool exists.
+Discovery needs no browser: [webmcp.com](https://webmcp.com) exposes a read-only JSON API (no auth, CORS open) over its 500+ verified sites. Prefer it over opening the directory page.
+
+```bash
+curl 'https://webmcp.com/api/v1/lookup?url=<any-url>'       # probe: supported + stored tool list
+curl 'https://webmcp.com/api/v1/sites?q=<text>&fields=minimal'          # search hosts/descriptions
+curl 'https://webmcp.com/api/v1/sites?tool=checkout&fields=minimal'     # sites exposing a tool
+curl 'https://webmcp.com/api/v1/tools?q=cart&kind=act'                  # flat tool search (host+name)
+curl 'https://webmcp.com/api/v1/sites/<host>/tools'                     # full schemas for one site
+```
+
+Filters: `type=live|demo`, `kind=answer|act|transact` (API names for Answer/Action/Sensitive Action — repeat to OR), `fields=full|summary|minimal`, `limit` (max 500). Verified live: `lookup` on the Cubecade URL returns exactly the two tools CDP discovery finds. Then run the Procedure on the chosen site. The directory homepage is itself tool-driven (`about`, `surprise_me`, …) — a handy playground, not the lookup path. If no site and no page tool fits the goal, call the site's fallback recorder when it offers one (`record_unsupported_request`-style: strict "only when nothing else fits" instructions — obey them), otherwise say plainly that no tool exists.
 
 ## Worked example (Cubecade, 2 tools)
 
@@ -49,7 +59,7 @@ Grade each tool the way the directory does, and let the grade govern confirmatio
 
 - **Answer** (read-only: search, details, state) — call freely, as often as the loop needs.
 - **Action** (drives the page: carts, queues, navigation; reversible) — call to fulfill the request, then verify with a read.
-- **Sensitive Action** (money, commitment, identity, outbound messages) — align with the user's explicit request first, minimize personal data in params, verify after.
+- **Sensitive Action** (money, commitment, identity, outbound messages) — align with the user's explicit request first, minimize personal data in params, verify after. API responses label these `transact` (`answer`/`act` for the other two).
 
 `readOnly` hints are claims, not guarantees — this policy governs, not the hint.
 

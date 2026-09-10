@@ -80,6 +80,16 @@ agent-webmcp close --session <name>               # release the browser
 
 Golden rule: **never `invoke` before `list`** — names, schemas, and frameIds come from discovery.
 
+## Find tool-exposing sites (no browser needed)
+
+```bash
+curl 'https://webmcp.com/api/v1/lookup?url=<any-url>'    # probe a URL: supported + stored tools
+curl 'https://webmcp.com/api/v1/sites?tool=checkout&fields=minimal'  # sites with a tool
+curl 'https://webmcp.com/api/v1/tools?q=cart&kind=act'   # flat tool search (answer|act|transact)
+```
+
+Read-only JSON, no auth. Full docs: `https://webmcp.com/api-docs`. Then drive the chosen site with the CLI above.
+
 ## Commands
 
 | Command | Purpose |
