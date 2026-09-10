@@ -40,25 +40,32 @@
     setter.call(n.ta, question);
     n.ta.dispatchEvent(new Event('input', { bubbles: true }));
     n.btn.click();
-    // 1. confirm the submit landed (question echoed in panel)
+    // Observed exacts (recorded live): click -> aria Submit->Stop ~0.3s,
+    // first tokens ~2s, Stop->Submit flip coincides with final text.
+    // Panel len jumps around mid-stream (re-renders), so text-stability
+    // alone is unreliable: the aria gate is the completion signal.
+    const isStreaming = () => /stop/i.test(n.btn.getAttribute('aria-label') || '');
+    // 1. confirm the submit landed (aria flips or question echoes, 10s budget)
     let seen = false;
-    for (let i = 0; i < 10; i++) {
-      await new Promise((r) => setTimeout(r, 1000));
-      if ((n.aside.innerText || '').includes(question)) { seen = true; break; }
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      const text = n.aside.innerText || '';
+      if (isStreaming() || text.includes(question)) { seen = true; break; }
     }
-    if (!seen) throw new Error('chat submit did not register (question never echoed)');
-    // 2. settle-detect on text after the LAST echo (history persists across turns)
+    if (!seen) throw new Error('chat submit did not register (no stream start)');
+    // 2. done = aria back to Submit AND text identical twice (250ms cadence:
+    // ~0.5s detection lag; never settle while streaming).
     const deadline = Date.now() + (timeoutMs || 90000);
     const TRANSIENT = /^(Running|Thinking|Working|Searching|Reading)\b/i;
     let last = '', stable = 0;
     for (;;) {
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 250));
       const text = n.aside.innerText || '';
       const qi = text.lastIndexOf(question);
       let cand = (qi >= 0 ? text.slice(qi + question.length) : '').replace(/^\s+/, '');
       cand = cand.split(question)[0].replace(/Powered by.*$/s, '').replace(/\d+\s*\/\s*1000\s*$/, '').trim();
       cand = cand.split('\n').filter((l) => !TRANSIENT.test(l.trim())).join('\n').trim();
-      if (!cand) { stable = 0; last = ''; }
+      if (!cand || isStreaming()) { stable = 0; if (cand) last = cand; }
       else if (cand === last) {
         stable++;
         if (stable >= 2) break;
