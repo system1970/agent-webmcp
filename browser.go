@@ -17,6 +17,7 @@ type OpenResult struct {
 	Headless bool           `json:"headless"`
 	WebMCP   map[string]any `json:"webmcp"`
 	Tools    []WebMCPTool   `json:"tools,omitempty"`
+	Custom   []string       `json:"customTools,omitempty"`
 }
 
 // ensureChrome returns a live CDP port for the session, launching Chrome if needed.
@@ -139,7 +140,20 @@ func openURL(ctx context.Context, session, url, chromeBin string, headed bool, t
 	defer cancel()
 	tools, _, _ := listWebMCP(lctx, t.WebSocketDebuggerURL)
 	webmcp := map[string]any{"experimental": true, "available": len(tools) > 0, "toolCount": len(tools)}
-	return &OpenResult{Session: session, URL: finalURL, Port: port, Headless: !headed, WebMCP: webmcp, Tools: tools}, nil
+	// Stored custom tools for this host (best-effort, never fails open).
+	var custom []string
+	if finalURL != "" {
+		custom = loadPacks(ctx, t.WebSocketDebuggerURL, hostOfURL(finalURL))
+		// Re-list so freshly loaded tools appear with accurate availability.
+		if len(custom) > 0 {
+			if tools2, _, _ := listWebMCP(lctx, t.WebSocketDebuggerURL); len(tools2) > len(tools) {
+				tools = tools2
+				webmcp["available"] = true
+				webmcp["toolCount"] = len(tools)
+			}
+		}
+	}
+	return &OpenResult{Session: session, URL: finalURL, Port: port, Headless: !headed, WebMCP: webmcp, Tools: tools, Custom: custom}, nil
 }
 
 func closeSession(session string) error {

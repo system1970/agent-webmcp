@@ -22,6 +22,19 @@ Companion to the `agent-webmcp` skill core. Load when configuring sessions, pass
 
 One session is one isolated Chrome under `~/.agent-webmcp/sessions/<name>/` (`cdp-port`, `chrome.pid`, `profile/`). The browser outlives each CLI call, so steps share tabs, logins, and page state. Concurrent agents take different names; `status` shows port, page count, and active URL for the current one.
 
+## Custom tools
+
+When native tools don't cover the job, store your own. A pack is a JS file (async IIFE) that registers tools via the page's own `document.modelContext`:
+
+```bash
+agent-webmcp tools add ./my-pack.js --for example.com   # store (+ live-loads if the tab matches)
+agent-webmcp tools list                                  # stored packs + host rules
+agent-webmcp tools load --session demo                   # manual load into the current tab
+agent-webmcp tools remove my-pack
+```
+
+Packs auto-load on `open` when the host matches (exact host or `*`), appear in `list` next to native tools, and invoke through the normal path. Label overlay registrations `[agent overlay]` in the description so agents can tell injected tools from the site's own. Registrations live until navigation — `open` re-injects. Ships with two reference packs in `overlays/`: directory search for webmcp.com, Ask-AI chat for eve.dev.
+
 ## MCP client config
 
 ```json

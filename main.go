@@ -47,7 +47,9 @@ usage:
   agent-webmcp open [url] [--session NAME] [--headed] [--chrome PATH] [--json]
   agent-webmcp list [--session NAME] [--json]
   agent-webmcp invoke <tool> [--session NAME] [--params JSON|@file] [--frame ID] [--timeout-ms N] [--json]
-  agent-webmcp eval <js> [--session NAME] [--json]
+  agent-webmcp eval <js|@file> [--session NAME] [--json]
+  agent-webmcp tools <add <file> [--for HOST] [--name NAME] | list | load | remove <name>>
+  agent-webmcp close [--session NAME | --all]
   agent-webmcp close [--session NAME | --all]
   agent-webmcp sessions [--json]
   agent-webmcp status [--session NAME] [--json]
@@ -182,6 +184,9 @@ func run(args []string) int {
 			return 0
 		}
 		fmt.Printf("session=%s port=%d url=%s\n", r.Session, r.Port, r.URL)
+		for _, c := range r.Custom {
+			fmt.Printf("custom: %s\n", c)
+		}
 		if n := r.WebMCP["toolCount"]; n == 0 {
 			fmt.Println("webmcp: no tools (run: agent-webmcp list)")
 		} else {
@@ -461,11 +466,6 @@ func run(args []string) int {
 		}
 		ectx, cancel := context.WithTimeout(ctx, time.Duration(g.timeoutMs)*time.Millisecond)
 		defer cancel()
-		c, err := dialCDP(ectx, t.WebSocketDebuggerURL)
-		if err != nil {
-			return failErr("cdp_dial_failed", err)
-		}
-		defer c.Close()
 		expr := strings.Join(rest, " ")
 		if len(rest) == 1 && strings.HasPrefix(rest[0], "@") {
 			b, err := os.ReadFile(strings.TrimPrefix(rest[0], "@"))
@@ -474,45 +474,119 @@ func run(args []string) int {
 			}
 			expr = strings.TrimSpace(strings.TrimPrefix(string(b), "\ufeff"))
 		}
-		raw, err := c.Call(ectx, "Runtime.evaluate", map[string]any{
-			"expression":    expr,
-			"returnByValue": true,
-			"awaitPromise":  true,
-		})
+		out, err := evalScript(ectx, t.WebSocketDebuggerURL, expr, time.Duration(g.timeoutMs)*time.Millisecond)
 		if err != nil {
 			return failErr("eval_failed", err)
 		}
-		var ev struct {
-			Result struct {
-				Type  string          `json:"type"`
-				Value json.RawMessage `json:"value"`
-			} `json:"result"`
-			ExceptionDetails any `json:"exceptionDetails,omitempty"`
-		}
-		if err := json.Unmarshal(raw, &ev); err != nil {
-			return failErr("eval_parse_failed", err)
-		}
-		if ev.ExceptionDetails != nil {
-			b, _ := json.Marshal(ev.ExceptionDetails)
-			return fail("js_exception", string(b))
-		}
 		if g.json {
-			var v any
-			if json.Unmarshal(ev.Result.Value, &v) == nil {
-				ok(map[string]any{"type": ev.Result.Type, "value": v})
+			ok(map[string]any{"value": out})
+			return 0
+		}
+		fmt.Println(out)
+		return 0
+	case "tools", "tool":
+		if len(rest) == 0 {
+			return fail("usage", "usage: agent-webmcp tools <add <file> [--for HOST] [--name NAME] | list | load | remove <name>>")
+		}
+		switch rest[0] {
+		case "list":
+			packs, err := toolsList()
+			if err != nil {
+				return failErr("tools_list_failed", err)
+			}
+			if g.json {
+				if packs == nil {
+					packs = []packMeta{}
+				}
+				ok(map[string]any{"packs": packs})
+				return 0
+			}
+			if len(packs) == 0 {
+				fmt.Println("no stored custom tools (agent-webmcp tools add <file> --for <host>)")
+				return 0
+			}
+			for _, p := range packs {
+				fmt.Printf("  %s  hosts=%s\n", p.Name, strings.Join(p.Hosts, ","))
+			}
+			return 0
+		case "add":
+			if len(rest) < 2 || strings.HasPrefix(rest[1], "-") {
+				return fail("usage", "usage: agent-webmcp tools add <file> [--for HOST] [--name NAME]")
+			}
+			file := rest[1]
+			var hosts []string
+			name := ""
+			for i := 2; i < len(rest); i++ {
+				switch {
+				case rest[i] == "--for" && i+1 < len(rest):
+					i++
+					hosts = append(hosts, strings.Split(rest[i], ",")...)
+				case strings.HasPrefix(rest[i], "--for="):
+					hosts = append(hosts, strings.Split(strings.TrimPrefix(rest[i], "--for="), ",")...)
+				case rest[i] == "--name" && i+1 < len(rest):
+					i++
+					name = rest[i]
+				case strings.HasPrefix(rest[i], "--name="):
+					name = strings.TrimPrefix(rest[i], "--name=")
+				}
+			}
+			saved, err := toolsAdd(file, name, hosts)
+			if err != nil {
+				return failErr("tools_add_failed", err)
+			}
+			loaded := ""
+			if port, err := readPort(g.session); err == nil {
+				if t, err := pickPageTarget(port); err == nil && t.URL != "" {
+					for _, line := range loadPacks(ctx, t.WebSocketDebuggerURL, hostOfURL(t.URL)) {
+						if strings.HasPrefix(line, saved+":") {
+							loaded = strings.TrimSpace(strings.TrimPrefix(line, saved+":"))
+						}
+					}
+				}
+			}
+			if g.json {
+				ok(map[string]any{"pack": saved, "hosts": hosts, "loaded": loaded})
+			} else if loaded != "" {
+				fmt.Printf("stored %s and loaded into current tab: %s\n", saved, loaded)
 			} else {
-				ok(map[string]any{"type": ev.Result.Type, "value": string(ev.Result.Value)})
+				fmt.Printf("stored %s (loads automatically when you open a matching site)\n", saved)
+			}
+			return 0
+		case "remove", "rm", "delete":
+			if len(rest) < 2 {
+				return fail("usage", "usage: agent-webmcp tools remove <name>")
+			}
+			if err := toolsRemove(rest[1]); err != nil {
+				return failErr("tools_remove_failed", err)
+			}
+			if g.json {
+				ok(map[string]any{"removed": packName(rest[1])})
+			} else {
+				fmt.Println("removed " + packName(rest[1]) + " (live tabs keep it until reload)")
+			}
+			return 0
+		case "load":
+			port, err := readPort(g.session)
+			if err != nil {
+				return failErr("no_session", err)
+			}
+			t, err := pickPageTarget(port)
+			if err != nil {
+				return failErr("no_page", err)
+			}
+			done := loadPacks(ctx, t.WebSocketDebuggerURL, hostOfURL(t.URL))
+			if g.json {
+				ok(map[string]any{"host": hostOfURL(t.URL), "loaded": done})
+			} else if len(done) == 0 {
+				fmt.Println("no stored tools match " + hostOfURL(t.URL))
+			} else {
+				for _, d := range done {
+					fmt.Println("  " + d)
+				}
 			}
 			return 0
 		}
-		var v any
-		if json.Unmarshal(ev.Result.Value, &v) == nil {
-			b, _ := json.MarshalIndent(v, "", "  ")
-			fmt.Println(string(b))
-		} else {
-			fmt.Println(string(ev.Result.Value))
-		}
-		return 0
+		return fail("usage", "usage: agent-webmcp tools <add|list|load|remove>")
 	}
 	return fail("unknown_command", "unknown command: "+cmd+" (run: agent-webmcp help)")
 }

@@ -97,7 +97,8 @@ Read-only JSON, no auth. Full docs: `https://webmcp.com/api-docs`. Then drive th
 | `open [url] [--session NAME] [--headed] [--chrome PATH] [--json]` | Launch/connect session, optionally navigate. Reports `webmcp.toolCount`. |
 | `list [--session NAME] [--json]` | Page tools with `inputSchema` + `frameId`. Empty = page exposes nothing. |
 | `invoke <tool> [--params JSON\|@file] [--frame ID] [--timeout-ms N] [--json]` | Call a tool (params = JSON object). Auto-resolves `frameId` unless ambiguous. |
-| `eval <js> [--session NAME] [--json]` | `Runtime.evaluate` in the active tab. Inspection only — prefer page tools for actuation. |
+| `eval <js|@file> [--session NAME] [--json]` | `Runtime.evaluate` in the active tab. Inspection only — prefer page tools for actuation. |
+| `tools <add <file> [--for HOST] [--name NAME] | list | load | remove <name>>` | Custom tools: store page-JS tool packs per host; auto-loaded on `open`, manually via `load`. |
 | `status / sessions / close [--all]` | Session lifecycle. `close` keeps the profile dir for fast relaunch. |
 | `mcp [--session NAME]` | MCP stdio bridge (`open`, `list_webmcp_tools`, `execute_webmcp_tool`, `close`). |
 | `skills [get <name>]` | Print the bundled agent skill — always matches the installed binary. |
@@ -109,6 +110,19 @@ Shell quoting eats JSON? Use a file: `--params @/tmp/p.json` (BOM-tolerant).
 ## Sessions
 
 One session = one isolated Chrome under `~/.agent-webmcp/sessions/<name>/` (`cdp-port`, `chrome.pid`, `profile/`). The browser outlives each CLI call, so consecutive agent steps share tabs, logins, and page state. Use one `--session` per task/agent; `close` when done.
+
+## Custom tools
+
+Native tools not enough? Store your own. A pack is a JS file (async IIFE) that registers tools via the page's own `document.modelContext` — see [`overlays/webmcp-com.js`](overlays/webmcp-com.js) (directory search/lookup/list for webmcp.com) and [`overlays/eve-dev.js`](overlays/eve-dev.js) (an Ask-AI chat tool for eve.dev, which ships search/read but no Q&A tool).
+
+```bash
+agent-webmcp tools add ./my-pack.js --for example.com   # store (+ live-loads if the tab matches)
+agent-webmcp tools list                                  # stored packs + host rules
+agent-webmcp tools load --session demo                   # manual load into the current tab
+agent-webmcp tools remove my-pack
+```
+
+Packs auto-load on `open` when the host matches (exact host or `*`), appear in `list` next to native tools, and invoke through the normal path. Label overlay registrations `[agent overlay]` in the description so agents can tell injected tools from the site's own. Registrations live until navigation — `open` re-injects, `tools load` refreshes the live tab (re-registering an already-loaded name reports `Duplicate tool name`, which just means it's active).
 
 ## MCP bridge
 
