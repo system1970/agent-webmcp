@@ -1,0 +1,23 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>WebMCP test</title></head>
+<body><h1>agent-webmcp test page</h1><div id="status">booting…</div>
+<script>
+(async () => {
+  const el = document.getElementById('status');
+  const mc = (document.modelContext) || (navigator.modelContext);
+  if (!mc) { el.textContent = 'NO WEBMCP API'; document.title = 'NO WEBMCP'; return; }
+  try {
+    await mc.registerTool({
+      name: 'add',
+      description: 'Add two numbers and return the sum.',
+      inputSchema: { type: 'object', properties: { a: { type: 'number' }, b: { type: 'number' } }, required: ['a', 'b'] },
+      execute: async (args) => ({ content: [{ type: 'text', text: String((args.a||0) + (args.b||0)) }] })
+    });
+    el.textContent = 'WEBMCP READY (add)';
+    document.title = 'WEBMCP READY';
+  } catch (e) {
+    el.textContent = 'REGISTER FAILED: ' + e;
+    document.title = 'REGISTER FAILED';
+  }
+})();
+</script></body></html>
