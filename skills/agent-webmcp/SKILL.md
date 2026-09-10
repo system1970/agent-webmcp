@@ -28,6 +28,10 @@ Run the read → act → verify loop. Every step ends with its done-state; do no
 5. **Close** the session: `agent-webmcp close --session <name>`.
    Done when the CLI confirms. One session per task; concurrent agents never share.
 
+## Custom tools (when native tools don't cover the job)
+
+Native `list` empty or incomplete? Store page-JS tool packs per host: `tools add <file> --for <host>` (auto-loads on `open`, or `tools load` now; `tools list/remove` to manage). Packs register via the page's own `document.modelContext`, appear in `list` next to native tools, and invoke normally — label them `[agent overlay]`. Ships with reference packs in `overlays/`. Full shape: `skills get webmcp-cli`.
+
 ## Discover a site (when the task names a goal, not a URL)
 
 Discovery needs no browser: [webmcp.com](https://webmcp.com) exposes a read-only JSON API (no auth, CORS open) over its 500+ verified sites. Prefer it over opening the directory page.
