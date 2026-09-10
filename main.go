@@ -449,7 +449,7 @@ func run(args []string) int {
 		return 0
 	case "eval":
 		if len(rest) == 0 {
-			return fail("usage", "usage: agent-webmcp eval <js> [--session NAME]")
+			return fail("usage", "usage: agent-webmcp eval <js|@file> [--session NAME]")
 		}
 		port, err := readPort(g.session)
 		if err != nil {
@@ -466,9 +466,18 @@ func run(args []string) int {
 			return failErr("cdp_dial_failed", err)
 		}
 		defer c.Close()
+		expr := strings.Join(rest, " ")
+		if len(rest) == 1 && strings.HasPrefix(rest[0], "@") {
+			b, err := os.ReadFile(strings.TrimPrefix(rest[0], "@"))
+			if err != nil {
+				return failErr("eval_read_failed", err)
+			}
+			expr = strings.TrimSpace(strings.TrimPrefix(string(b), "\ufeff"))
+		}
 		raw, err := c.Call(ectx, "Runtime.evaluate", map[string]any{
-			"expression":    strings.Join(rest, " "),
+			"expression":    expr,
 			"returnByValue": true,
+			"awaitPromise":  true,
 		})
 		if err != nil {
 			return failErr("eval_failed", err)
