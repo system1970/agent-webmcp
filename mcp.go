@@ -149,6 +149,7 @@ func mcpCallTool(defSession, name string, args map[string]any) (any, error) {
 		if err != nil {
 			return nil, err
 		}
+		tools = markOverlays(tools, readOverlayTools(session))
 		b, _ := json.Marshal(tools)
 		return text(string(b)), nil
 	case "execute_webmcp_tool":

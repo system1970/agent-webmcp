@@ -119,7 +119,7 @@ Shell quoting eats JSON? Use a file: `--params @/tmp/p.json` (BOM-tolerant).
 
 ## Sessions
 
-One session = one isolated Chrome under `~/.agent-webmcp/sessions/<name>/` (`cdp-port`, `chrome.pid`, `profile/`). The browser outlives each CLI call, so consecutive agent steps share tabs, logins, and page state. Use one `--session` per task/agent; `close` when done.
+One session = one isolated Chrome under `~/.agent-webmcp/sessions/<name>/` (`cdp-port`, `chrome.pid`, `profile/`). The browser outlives each CLI call, so consecutive agent steps share tabs, logins, and page state. Use one `--session` per task/agent; `close` when done. Headless by default; `open --headed` shows a real visible window owned by the session — watching and manual interaction need no other tool.
 
 ## Custom tools
 
@@ -132,7 +132,7 @@ agent-webmcp tools load --session demo                   # manual load into the 
 agent-webmcp tools remove my-pack
 ```
 
-Packs auto-load on `open` when the host matches (exact host or `*`), appear in `list` next to native tools, and invoke through the normal path. Label overlay registrations `[agent overlay]` in the description so agents can tell injected tools from the site's own. Registrations live until navigation — `open` re-injects, `tools load` refreshes the live tab (re-registering an already-loaded name reports `Duplicate tool name`, which just means it's active).
+Packs auto-load on `open` when the host matches (exact host or `*`), appear in `list` next to native tools, and invoke through the normal path. Label overlay registrations `[agent overlay]` in the description so agents can tell injected tools from the site's own. Provenance is structural too: `list --json` sets `"overlay": true` on CLI-registered tools. Registrations live until navigation — `open` re-injects, `tools load` refreshes the live tab (re-registering an already-loaded name reports `Duplicate tool name`, which just means it's active).
 
 ## MCP bridge
 

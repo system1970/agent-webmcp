@@ -165,6 +165,67 @@ func hostOfURL(u string) string {
 	return stripWWW(u)
 }
 
+// overlayRecordFile tracks which tool names this CLI registered into the
+// session's live page (parsed from pack "ok:<name>" report lines). list uses
+// it to mark provenance structurally, so agents never have to guess
+// native vs custom from description text.
+func overlayRecordPath(session string) string {
+	return filepath.Join(sessionDir(session), "overlay-tools.json")
+}
+
+// recordOverlayTools replaces the session's overlay record with names parsed
+// from loadPacks report lines ("<pack>: ok:<tool>" / multiline).
+func recordOverlayTools(session string, reportLines []string) {
+	var names []string
+	for _, line := range reportLines {
+		if i := strings.Index(line, ":"); i >= 0 {
+			line = line[i+1:]
+		}
+		for _, l := range strings.Split(line, "\n") {
+			l = strings.TrimSpace(l)
+			if n, ok := strings.CutPrefix(l, "ok:"); ok {
+				n = strings.TrimSpace(n)
+				if n != "" {
+					names = append(names, n)
+				}
+			}
+		}
+	}
+	if names == nil {
+		names = []string{}
+	}
+	b, _ := json.Marshal(names)
+	_ = os.WriteFile(overlayRecordPath(session), b, 0o644)
+}
+
+func readOverlayTools(session string) map[string]bool {
+	b, err := os.ReadFile(overlayRecordPath(session))
+	if err != nil {
+		return nil
+	}
+	var names []string
+	if json.Unmarshal(b, &names) != nil {
+		return nil
+	}
+	m := make(map[string]bool, len(names))
+	for _, n := range names {
+		m[n] = true
+	}
+	return m
+}
+
+func markOverlays(tools []WebMCPTool, over map[string]bool) []WebMCPTool {
+	if len(over) == 0 {
+		return tools
+	}
+	for i := range tools {
+		if over[tools[i].Name] {
+			tools[i].Overlay = boolPtr(true)
+		}
+	}
+	return tools
+}
+
 // evalScript runs JS in the page and awaits a by-value result.
 func evalScript(ctx context.Context, wsURL, script string, timeout time.Duration) (string, error) {
 	c, err := dialCDP(ctx, wsURL)

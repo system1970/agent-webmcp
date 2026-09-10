@@ -144,6 +144,7 @@ func openURL(ctx context.Context, session, url, chromeBin string, headed bool, t
 	var custom []string
 	if finalURL != "" {
 		custom = loadPacks(ctx, t.WebSocketDebuggerURL, hostOfURL(finalURL))
+		recordOverlayTools(session, custom)
 		// Re-list so freshly loaded tools appear with accurate availability.
 		if len(custom) > 0 {
 			if tools2, _, _ := listWebMCP(lctx, t.WebSocketDebuggerURL); len(tools2) > len(tools) {
@@ -153,6 +154,7 @@ func openURL(ctx context.Context, session, url, chromeBin string, headed bool, t
 			}
 		}
 	}
+	tools = markOverlays(tools, readOverlayTools(session))
 	return &OpenResult{Session: session, URL: finalURL, Port: port, Headless: !headed, WebMCP: webmcp, Tools: tools, Custom: custom}, nil
 }
 

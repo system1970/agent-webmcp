@@ -16,7 +16,7 @@ Companion to the `agent-webmcp` skill core. Load when configuring sessions, pass
 
 ## Flags and environment
 
-`--session/-s` (default `default`, or `AGENT_WEBMCP_SESSION`) · `--json` (envelope `{ok, data|error, code}`) · `--timeout-ms` (default 30000). Chrome resolution: `--chrome` → `AGENT_WEBMCP_CHROME` → system Chrome → Brave/Chromium. Headless (`headless=new`) by default; switching to `--headed` needs a session restart (`close`, then `open --headed`) and a display.
+`--session/-s` (default `default`, or `AGENT_WEBMCP_SESSION`) · `--json` (envelope `{ok, data|error, code}`) · `--timeout-ms` (default 30000). Chrome resolution: `--chrome` → `AGENT_WEBMCP_CHROME` → system Chrome → Brave/Chromium. Headless (`headless=new`) by default; `--headed` opens a real visible window owned by the session (watching needs no other tool) — switching modes needs a session restart (`close`, then `open --headed`) and a display.
 
 ## Sessions
 
@@ -33,7 +33,7 @@ agent-webmcp tools load --session demo                   # manual load into the 
 agent-webmcp tools remove my-pack
 ```
 
-Packs auto-load on `open` when the host matches (exact host or `*`), appear in `list` next to native tools, and invoke through the normal path. Label overlay registrations `[agent overlay]` in the description so agents can tell injected tools from the site's own. Registrations live until navigation — `open` re-injects. Ships with two reference packs in `overlays/`: directory search for webmcp.com, Ask-AI chat for eve.dev.
+Packs auto-load on `open` when the host matches (exact host or `*`), appear in `list` next to native tools, and invoke through the normal path. Label overlay registrations `[agent overlay]` in the description so agents can tell injected tools from the site's own. Provenance is also structural: `list --json` sets `"overlay": true` on CLI-registered tools (tracked per session), and text output tags them `[overlay: ...]`. Registrations live until navigation — `open` re-injects. Ships with two reference packs in `overlays/`: directory search for webmcp.com, Ask-AI chat for eve.dev.
 
 ## MCP client config
 

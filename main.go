@@ -218,6 +218,7 @@ func run(args []string) int {
 			}
 			return failErr("list_failed", err)
 		}
+		tools = markOverlays(tools, readOverlayTools(g.session))
 		if g.json {
 			ok(map[string]any{"session": g.session, "url": t.URL, "tools": tools})
 			return 0
@@ -232,7 +233,11 @@ func run(args []string) int {
 			if tl.ReadOnly != nil && *tl.ReadOnly {
 				ro = " [read-only]"
 			}
-			fmt.Printf("  - %s%s: %s\n", tl.Name, ro, firstLine(tl.Description))
+			ov := ""
+			if tl.Overlay != nil && *tl.Overlay {
+				ov = " [overlay: agent-webmcp custom, not the site's]"
+			}
+			fmt.Printf("  - %s%s%s: %s\n", tl.Name, ro, ov, firstLine(tl.Description))
 		}
 		return 0
 	case "invoke":
@@ -575,6 +580,7 @@ func run(args []string) int {
 				return failErr("no_page", err)
 			}
 			done := loadPacks(ctx, t.WebSocketDebuggerURL, hostOfURL(t.URL))
+			recordOverlayTools(g.session, done)
 			if g.json {
 				ok(map[string]any{"host": hostOfURL(t.URL), "loaded": done})
 			} else if len(done) == 0 {

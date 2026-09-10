@@ -17,6 +17,10 @@ type WebMCPTool struct {
 	Origin      string         `json:"origin,omitempty"`
 	ReadOnly    *bool          `json:"readOnly,omitempty"`
 	Untrusted   *bool          `json:"untrustedContent,omitempty"`
+	// Overlay marks tools registered by agent-webmcp custom packs rather
+	// than the site itself. Set by the CLI from the session's overlay
+	// record — never trusted from page content.
+	Overlay     *bool          `json:"overlay,omitempty"`
 	Extra       map[string]any `json:"extra,omitempty"`
 }
 
