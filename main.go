@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,8 +11,32 @@ import (
 	"time"
 )
 
-//go:embed skills/agent-webmcp/SKILL.md
-var skillWebMCP string
+//go:embed skills/agent-webmcp/SKILL.md skills/agent-webmcp/references/*.md
+var skillFS embed.FS
+
+var skillTopics = []struct {
+	name string
+	file string
+	desc string
+}{
+	{"webmcp", "skills/agent-webmcp/SKILL.md", "Core procedure: read-act-verify loop, discovery, policy, security"},
+	{"webmcp-protocol", "skills/agent-webmcp/references/protocol.md", "Result shapes, async effects, params/quoting, latency"},
+	{"webmcp-cli", "skills/agent-webmcp/references/cli.md", "Flags, sessions, eval, MCP bridge config"},
+	{"webmcp-troubleshooting", "skills/agent-webmcp/references/troubleshooting.md", "Error codes and failure recovery"},
+}
+
+func skillRead(name string) (string, bool) {
+	for _, t := range skillTopics {
+		if t.name == name || (name == "agent-webmcp" && t.name == "webmcp") {
+			b, err := skillFS.ReadFile(t.file)
+			if err != nil {
+				return "", false
+			}
+			return string(b), true
+		}
+	}
+	return "", false
+}
 
 const version = "0.1.0"
 
@@ -367,37 +391,60 @@ func run(args []string) int {
 	case "mcp":
 		return mcpServe(g.session)
 	case "skills":
-		names := []string{"webmcp"}
 		want := ""
+		full := false
 		for _, a := range rest {
-			if a == "list" {
+			switch {
+			case a == "list" || a == "get":
 				continue
-			}
-			if a == "get" {
-				continue
-			}
-			if !strings.HasPrefix(a, "-") {
+			case a == "--full" || a == "--all":
+				full = true
+			case !strings.HasPrefix(a, "-") && want == "":
 				want = a
 			}
 		}
+		if full && (want == "" || want == "webmcp" || want == "agent-webmcp") {
+			var b strings.Builder
+			for i, t := range skillTopics {
+				if i > 0 {
+					b.WriteString("\n\n---\n\n")
+				}
+				content, found := skillRead(t.name)
+				if !found {
+					return fail("skill_read_failed", "embedded skill missing: "+t.name)
+				}
+				b.WriteString(content)
+			}
+			if g.json {
+				ok(map[string]any{"name": "webmcp", "full": true, "content": b.String()})
+			} else {
+				fmt.Print(b.String())
+			}
+			return 0
+		}
 		if want == "" {
 			if g.json {
+				names := make([]string, 0, len(skillTopics))
+				for _, t := range skillTopics {
+					names = append(names, t.name)
+				}
 				ok(map[string]any{"skills": names})
 			} else {
-				fmt.Println("available skills:")
-				for _, n := range names {
-					fmt.Println("  " + n)
+				fmt.Println("available skills (agent-webmcp skills get <name>):")
+				for _, t := range skillTopics {
+					fmt.Printf("  %-22s %s\n", t.name, t.desc)
 				}
 			}
 			return 0
 		}
-		if want != "webmcp" && want != "agent-webmcp" {
+		content, found := skillRead(want)
+		if !found {
 			return fail("unknown_skill", "unknown skill: "+want+" (try: agent-webmcp skills)")
 		}
 		if g.json {
-			ok(map[string]any{"name": "webmcp", "content": skillWebMCP})
+			ok(map[string]any{"name": want, "content": content})
 		} else {
-			fmt.Print(skillWebMCP)
+			fmt.Print(content)
 		}
 		return 0
 	case "eval":

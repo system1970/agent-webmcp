@@ -119,7 +119,7 @@ For Claude Code / Cursor / Codex, install the skill so agents use the golden pat
 npx skills add https://github.com/system1970/agent-webmcp --skill agent-webmcp
 ```
 
-Or read it straight from the binary (never goes stale): `agent-webmcp skills get webmcp`. Full text lives in [`skills/agent-webmcp/SKILL.md`](skills/agent-webmcp/SKILL.md).
+Or read it straight from the binary (never goes stale): `agent-webmcp skills get webmcp`. Full text lives in [`skills/agent-webmcp/SKILL.md`](skills/agent-webmcp/SKILL.md), with deeper reference split by branch — protocol details (`skills get webmcp-protocol`), CLI/sessions/MCP (`skills get webmcp-cli`), failures (`skills get webmcp-troubleshooting`) — or everything at once with `skills get webmcp --full`.
 
 ## WebMCP semantics (verified against Chrome 152 `/json/protocol`)
 
