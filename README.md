@@ -20,21 +20,28 @@ Sites are starting to expose typed agent tools via WebMCP (`document.modelContex
 
 ## Install
 
-Prereqs: Chrome ≥149 (or Brave/Chromium ≥151-base) and Go 1.24+ (build only).
+Prereqs: Chrome ≥149 (or Brave/Chromium ≥151-base). No Go needed.
 
-```bash
-# from source
-git clone https://github.com/system1970/agent-webmcp && cd agent-webmcp
-go build -trimpath -ldflags="-s -w" -o agent-webmcp .
-
-# windows
-build.cmd
-
-# go install (once published)
-go install github.com/system1970/agent-webmcp@latest
+```powershell
+# Windows (PowerShell) — downloads the binary, adds it to PATH
+irm https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.ps1 | iex
 ```
 
-No `install` step for the browser itself — system Chrome is auto-detected (`--chrome PATH` or `AGENT_WEBMCP_CHROME` overrides).
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.sh | sh
+```
+
+```bash
+# with Go installed
+go install github.com/system1970/agent-webmcp@v0.1.0
+
+# from source
+git clone https://github.com/system1970/agent-webmcp && cd agent-webmcp
+go build -trimpath -ldflags="-s -w" -o agent-webmcp .   # Windows: build.cmd
+```
+
+No `install` step for the browser itself — system Chrome is auto-detected (`--chrome PATH` or `AGENT_WEBMCP_CHROME` overrides). Prebuilt binaries + checksums live on the [releases page](https://github.com/system1970/agent-webmcp/releases).
 
 ## Setup prompt (paste into any agent)
 
@@ -44,9 +51,12 @@ Hand this to a coding agent and it will install the CLI, load the skill, and ver
 Set up agent-webmcp: an ultra-light WebMCP browser CLI (single Go binary,
 headless/headful Chrome, per-task sessions, MCP stdio bridge).
 
-1. Install: clone https://github.com/system1970/agent-webmcp, build with
-   `go build -trimpath -ldflags="-s -w" -o agent-webmcp .` (Windows: build.cmd),
-   put the binary on PATH. Confirm with `agent-webmcp version`.
+1. Install (no Go required): Windows PowerShell runs
+   `irm https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.ps1 | iex`;
+   macOS/Linux runs
+   `curl -fsSL https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.sh | sh`.
+   With Go: `go install github.com/system1970/agent-webmcp@v0.1.0`.
+   Confirm with `agent-webmcp version`.
 2. Check the browser: you need Chrome ≥149 (or Brave/Chromium ≥151-base).
    Run `agent-webmcp open example.com --session setup-check`. If it reports
    `chrome not found`, locate the browser and retry with --chrome <path>.

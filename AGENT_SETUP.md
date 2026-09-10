@@ -2,7 +2,7 @@
 
 > You are setting up **agent-webmcp**: an ultra-light WebMCP browser CLI (single Go binary, headless/headful Chrome, per-task browser sessions, MCP stdio bridge). It is the tool-native complement to DOM-driving tools like agent-browser — use it whenever a page exposes WebMCP tools, hand off to a DOM tool when `list` comes back empty. Follow these steps exactly, verifying each before moving on.
 >
-> **1. Install.** Clone `https://github.com/system1970/agent-webmcp`, build with `go build -trimpath -ldflags="-s -w" -o agent-webmcp .` (Windows: `build.cmd`), and put the binary on PATH. Confirm with `agent-webmcp version` (expect `agent-webmcp 0.1.0`).
+> **1. Install (no Go required).** Windows PowerShell: `irm https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.ps1 | iex`. macOS/Linux: `curl -fsSL https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.sh | sh`. Or with Go: `go install github.com/system1970/agent-webmcp@v0.1.0`. Confirm with `agent-webmcp version` (expect `agent-webmcp 0.1.0`).
 >
 > **2. Check the browser.** You need Chrome ≥149 (or Brave/Chromium ≥151-base). Run `agent-webmcp open example.com --session setup-check`. If it reports `chrome not found`, locate the browser binary and retry with `--chrome <path>` (or export `AGENT_WEBMCP_CHROME=<path>`).
 >
