@@ -10,10 +10,10 @@ import (
 	"time"
 )
 
-// Custom tools: plain JS files stored per host, auto-loaded on open.
-// Layout: ~/.agent-webmcp/tools/<name>.js + <name>.json {hosts:[...]}.
+// Packs: plain JS files stored per host, auto-loaded on open.
+// Layout: ~/.orkestrate/tools/<name>.js + <name>.json {hosts:[...]}.
 // A pack is an async IIFE that registers tools via the page's own
-// document.modelContext and returns a short report string.
+// document.modelContext and returns a short report string ("ok:<tool>" lines).
 
 type packMeta struct {
 	Name  string   `json:"name"`
@@ -23,14 +23,14 @@ type packMeta struct {
 }
 
 func toolsRoot() string {
-	if v := os.Getenv("AGENT_WEBMCP_HOME"); v != "" {
+	if v := os.Getenv("ORKESTRATE_HOME"); v != "" {
 		return filepath.Join(v, "tools")
 	}
 	h, err := os.UserHomeDir()
 	if err != nil || h == "" {
-		return ".agent-webmcp-tools"
+		return ".orkestrate-tools"
 	}
-	return filepath.Join(h, ".agent-webmcp", "tools")
+	return filepath.Join(h, ".orkestrate", "tools")
 }
 
 func packName(name string) string {
@@ -55,7 +55,7 @@ func toolsAdd(path, name string, hosts []string) (string, error) {
 		return "", err
 	}
 	if len(strings.TrimSpace(string(src))) == 0 {
-		return "", errors.New("empty tool file")
+		return "", errors.New("empty pack file")
 	}
 	if name == "" {
 		name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
@@ -165,62 +165,63 @@ func hostOfURL(u string) string {
 	return stripWWW(u)
 }
 
-// overlayRecordFile tracks which tool names this CLI registered into the
-// session's live page (parsed from pack "ok:<name>" report lines). list uses
-// it to mark provenance structurally, so agents never have to guess
-// native vs custom from description text.
-func overlayRecordPath(session string) string {
-	return filepath.Join(sessionDir(session), "overlay-tools.json")
+// packRecordPath tracks which tool names this CLI registered into the
+// session's live page (parsed from pack "ok:<tool>" report lines) and which
+// pack registered them. list uses it to label provenance structurally, so
+// agents never have to guess native vs pack from description text.
+func packRecordPath(session string) string {
+	return filepath.Join(sessionDir(session), "pack-tools.json")
 }
 
-// recordOverlayTools replaces the session's overlay record with names parsed
-// from loadPacks report lines ("<pack>: ok:<tool>" / multiline).
-func recordOverlayTools(session string, reportLines []string) {
-	var names []string
+// recordPackTools replaces the session's pack record with a tool→pack map
+// parsed from loadPacks report lines ("<pack>: ok:<tool>" / multiline).
+func recordPackTools(session string, reportLines []string) {
+	m := map[string]string{}
 	for _, line := range reportLines {
-		if i := strings.Index(line, ":"); i >= 0 {
-			line = line[i+1:]
+		i := strings.Index(line, ":")
+		if i < 0 {
+			continue
 		}
-		for _, l := range strings.Split(line, "\n") {
+		pack := strings.TrimSpace(line[:i])
+		if pack == "" {
+			continue
+		}
+		for _, l := range strings.Split(line[i+1:], "\n") {
 			l = strings.TrimSpace(l)
 			if n, ok := strings.CutPrefix(l, "ok:"); ok {
 				n = strings.TrimSpace(n)
 				if n != "" {
-					names = append(names, n)
+					m[n] = pack
 				}
 			}
 		}
 	}
-	if names == nil {
-		names = []string{}
-	}
-	b, _ := json.Marshal(names)
-	_ = os.WriteFile(overlayRecordPath(session), b, 0o644)
+	b, _ := json.Marshal(m)
+	_ = os.WriteFile(packRecordPath(session), b, 0o644)
 }
 
-func readOverlayTools(session string) map[string]bool {
-	b, err := os.ReadFile(overlayRecordPath(session))
+// readPackTools returns tool→pack for the session; nil when the record is
+// missing or unreadable.
+func readPackTools(session string) map[string]string {
+	b, err := os.ReadFile(packRecordPath(session))
 	if err != nil {
 		return nil
 	}
-	var names []string
-	if json.Unmarshal(b, &names) != nil {
+	var m map[string]string
+	if json.Unmarshal(b, &m) != nil || len(m) == 0 {
 		return nil
-	}
-	m := make(map[string]bool, len(names))
-	for _, n := range names {
-		m[n] = true
 	}
 	return m
 }
 
-func markOverlays(tools []WebMCPTool, over map[string]bool) []WebMCPTool {
-	if len(over) == 0 {
+// markPacks stamps CLI-registered tools with the pack that registered them.
+func markPacks(tools []WebMCPTool, packs map[string]string) []WebMCPTool {
+	if len(packs) == 0 {
 		return tools
 	}
 	for i := range tools {
-		if over[tools[i].Name] {
-			tools[i].Overlay = boolPtr(true)
+		if p, ok := packs[tools[i].Name]; ok && p != "" {
+			tools[i].Pack = p
 		}
 	}
 	return tools

@@ -17,10 +17,10 @@ type WebMCPTool struct {
 	Origin      string         `json:"origin,omitempty"`
 	ReadOnly    *bool          `json:"readOnly,omitempty"`
 	Untrusted   *bool          `json:"untrustedContent,omitempty"`
-	// Overlay marks tools registered by agent-webmcp custom packs rather
-	// than the site itself. Set by the CLI from the session's overlay
-	// record — never trusted from page content.
-	Overlay     *bool          `json:"overlay,omitempty"`
+	// Pack names the CLI pack that registered this tool, when it is not the
+	// site's own. Set by the CLI from the session's pack record — never
+	// trusted from page content.
+	Pack        string         `json:"pack,omitempty"`
 	Extra       map[string]any `json:"extra,omitempty"`
 }
 
@@ -291,7 +291,7 @@ func resolveFrame(ctx context.Context, c *CDP, name string) (string, error) {
 					return matches[0], nil
 				}
 				if len(matches) > 1 {
-					return "", errors.New("tool '" + name + "' registered in multiple frames; pass --frame <frame-id> (see: agent-webmcp list)")
+					return "", errors.New("tool '" + name + "' registered in multiple frames; pass --frame <frame-id> (see: orkestrate list)")
 				}
 			}
 		case <-time.After(rem):
@@ -303,7 +303,7 @@ func resolveFrame(ctx context.Context, c *CDP, name string) (string, error) {
 	if len(matches) == 1 {
 		return matches[0], nil
 	}
-	return "", errors.New("tool '" + name + "' not found (run: agent-webmcp list)")
+	return "", errors.New("tool '" + name + "' not found (run: orkestrate list)")
 }
 
 func waitToolResponded(ctx context.Context, c *CDP, invocationID string, timeout time.Duration) (json.RawMessage, error) {

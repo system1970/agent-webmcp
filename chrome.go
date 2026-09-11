@@ -25,7 +25,7 @@ func findChrome(explicit string) string {
 	if explicit != "" {
 		return explicit
 	}
-	if v := os.Getenv("AGENT_WEBMCP_CHROME"); v != "" {
+	if v := os.Getenv("ORKESTRATE_CHROME"); v != "" {
 		return v
 	}
 	if v := os.Getenv("CHROME_PATH"); v != "" {

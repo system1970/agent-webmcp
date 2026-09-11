@@ -8,17 +8,17 @@ import (
 	"strings"
 )
 
-// Session state lives under ~/.agent-webmcp/sessions/<name>/.
+// Session state lives under ~/.orkestrate/sessions/<name>/.
 // Files: cdp-port, chrome.pid, profile/ (chrome user-data-dir).
 func sessionRoot() string {
-	if v := os.Getenv("AGENT_WEBMCP_HOME"); v != "" {
+	if v := os.Getenv("ORKESTRATE_HOME"); v != "" {
 		return v
 	}
 	h, err := os.UserHomeDir()
 	if err != nil || h == "" {
-		return ".agent-webmcp"
+		return ".orkestrate"
 	}
-	return filepath.Join(h, ".agent-webmcp", "sessions")
+	return filepath.Join(h, ".orkestrate", "sessions")
 }
 
 func sessionDir(name string) string {
@@ -49,7 +49,7 @@ func readPort(name string) (int, error) {
 	p := filepath.Join(sessionDir(name), "cdp-port")
 	b, err := os.ReadFile(p)
 	if err != nil {
-		return 0, errors.New("no active session '" + name + "' (run: agent-webmcp open)")
+		return 0, errors.New("no active session '" + name + "' (run: orkestrate open)")
 	}
 	n, err := strconv.Atoi(strings.TrimSpace(string(b)))
 	if err != nil || n <= 0 {
