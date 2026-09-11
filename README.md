@@ -168,10 +168,25 @@ Or read it straight from the binary (never goes stale): `agent-webmcp skills get
 |---|---|---|
 | `version` / spawn floor | ~15ms | Go runtime + process start |
 | `status` | ~27ms | spawn + one HTTP round-trip |
-| `invoke` | ~39ms | of which browser-side work is ~4ms |
-| `list` | ~343ms | dominated by 300ms `toolsAdded` settle |
+| `invoke` | ~25–40ms | of which browser-side work is ~4ms |
+| `list` | ~190ms | 100ms `toolsAdded` quiet window (Stagehand-style) + cap 1s |
+| `invoke --detach` | ~115ms | returns `invocationId`; waiter holds the connection |
+| `result` (after 3s tool) | ~3.1s | polling read of the waiter's terminal record |
+| `cancel` (on running tool) | ~185ms | `WebMCP.cancelInvocation` → `Canceled` |
 
-In-process harness: HTTP `/json/list` 3.2ms, WS dial 0.9ms, RPC round-trip 0.5ms, `enable` 1.1ms, full invoke path 3.4ms. Conclusion: ~90% of CLI latency is process spawn + handshake. A future daemon mode would take `invoke` to ~5–8ms; until then, frame caching + shorter settle are the cheap wins (see Roadmap).
+In-process harness: HTTP `/json/list` 3.2ms, WS dial 0.9ms, RPC round-trip 0.5ms, `enable` 1.1ms, full invoke path 3.4ms. Conclusion: ~90% of CLI latency is process spawn + handshake. A future daemon mode would take `invoke` to ~5–8ms.
+
+## Long-running tools (`--detach` / `result` / `cancel`)
+
+A tool may take seconds (or minutes). Blocking `invoke` ties your shell to it; instead:
+
+```bash
+agent-webmcp invoke export_report --session demo --detach     # → invocationId, returns immediately
+agent-webmcp result <invocationId> --session demo             # polls until terminal (default 30s)
+agent-webmcp cancel <invocationId> --session demo             # → status: Canceled
+```
+
+`--detach` spawns a waiter that holds the CDP connection (results are delivered on the connection that invoked — a fresh connection would never see them) and records the terminal state under the session's `pending/` dir. `result` prints `{status, output}` and consumes the record. Stale pending artifacts (>1h) are cleaned on `open`.
 
 ## Where this fits (and where it doesn't)
 

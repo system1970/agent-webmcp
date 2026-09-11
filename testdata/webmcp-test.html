@@ -13,7 +13,16 @@
       inputSchema: { type: 'object', properties: { a: { type: 'number' }, b: { type: 'number' } }, required: ['a', 'b'] },
       execute: async (args) => ({ content: [{ type: 'text', text: String((args.a||0) + (args.b||0)) }] })
     });
-    el.textContent = 'WEBMCP READY (add)';
+    await mc.registerTool({
+      name: 'slow_add',
+      description: 'Add two numbers, but take 3 seconds to do it (for testing async invocations, detach, and cancel).',
+      inputSchema: { type: 'object', properties: { a: { type: 'number' }, b: { type: 'number' } }, required: ['a', 'b'] },
+      execute: async (args) => {
+        await new Promise((r) => setTimeout(r, 3000));
+        return { content: [{ type: 'text', text: String((args.a||0) + (args.b||0)) }] };
+      }
+    });
+    el.textContent = 'WEBMCP READY (add, slow_add)';
     document.title = 'WEBMCP READY';
   } catch (e) {
     el.textContent = 'REGISTER FAILED: ' + e;

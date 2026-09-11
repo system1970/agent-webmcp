@@ -107,9 +107,10 @@ func listWebMCP(ctx context.Context, wsURL string) ([]WebMCPTool, string, error)
 	}
 
 	// Fallback (Chrome 149-152 has no listTools): drain toolsAdded events.
-	// Fast path: return 300ms after the last arrival instead of the full window.
-	dead := time.Now().Add(1500 * time.Millisecond)
-	quiet := 300 * time.Millisecond
+	// Fast path: return 100ms after the last arrival (Browserbase Stagehand
+	// uses the same quiet-window technique), hard cap 1s for tool-less pages.
+	dead := time.Now().Add(1000 * time.Millisecond)
+	quiet := 100 * time.Millisecond
 	seen := map[string]WebMCPTool{}
 	lastHit := time.Now()
 	for {
@@ -202,10 +203,8 @@ func isNotFound(err error) bool {
 		strings.Contains(m, "method not found")
 }
 
-// invokeWebMCP calls a page tool (Chrome 152 protocol).
-// invokeTool requires {frameId, toolName, input:object} and returns
-// {invocationId}; the result arrives async via WebMCP.toolResponded.
-// If frameID is empty it is resolved from the page's tool list.
+// invokeWebMCP calls a page tool (Chrome 152 protocol) and waits for the
+// async WebMCP.toolResponded result. For detach flows see pending.go.
 func invokeWebMCP(ctx context.Context, wsURL, name, inputJSON, frameID string, timeout time.Duration) (json.RawMessage, error) {
 	c, err := dialCDP(ctx, wsURL)
 	if err != nil {
@@ -214,60 +213,11 @@ func invokeWebMCP(ctx context.Context, wsURL, name, inputJSON, frameID string, t
 	defer c.Close()
 	enableWebMCP(ctx, c)
 
-	if inputJSON == "" {
-		inputJSON = "{}"
-	}
-	inputJSON = strings.TrimSpace(strings.TrimPrefix(inputJSON, "\ufeff"))
-	var inputObj map[string]any
-	if err := json.Unmarshal([]byte(inputJSON), &inputObj); err != nil {
-		return nil, errors.New("params must be a JSON object: " + err.Error())
-	}
-	if inputObj == nil {
-		inputObj = map[string]any{}
-	}
-
-	// Resolve frameId when omitted.
-	if frameID == "" {
-		frameID, err = resolveFrame(ctx, c, name)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	raw, err := c.Call(callCtx, "WebMCP.invokeTool", map[string]any{
-		"frameId":  frameID,
-		"toolName": name,
-		"input":    inputObj,
-	})
+	invocationID, err := startInvoke(ctx, c, name, inputJSON, frameID)
 	if err != nil {
-		// Older/alternate builds used callTool; retry once with that name.
-		if isNotFound(err) {
-			raw2, err2 := c.Call(callCtx, "WebMCP.callTool", map[string]any{
-				"frameId":  frameID,
-				"toolName": name,
-				"input":    inputObj,
-			})
-			if err2 != nil {
-				return nil, err2
-			}
-			raw = raw2
-		} else {
-			return nil, err
-		}
+		return nil, err
 	}
-	var inv struct {
-		InvocationID string `json:"invocationId"`
-	}
-	if err := json.Unmarshal(raw, &inv); err != nil || inv.InvocationID == "" {
-		// Some builds return the result synchronously.
-		if len(raw) > 0 {
-			return raw, nil
-		}
-		return nil, errors.New("invoke returned no invocationId")
-	}
-	return waitToolResponded(ctx, c, inv.InvocationID, timeout)
+	return waitToolResponded(ctx, c, invocationID, timeout)
 }
 
 // resolveFrame finds the frameId for a tool name via toolsAdded events.
@@ -291,7 +241,7 @@ func resolveFrame(ctx context.Context, c *CDP, name string) (string, error) {
 					return matches[0], nil
 				}
 				if len(matches) > 1 {
-					return "", errors.New("tool '" + name + "' registered in multiple frames; pass --frame <frame-id> (see: orkestrate list)")
+					return "", errors.New("tool '" + name + "' registered in multiple frames; pass --frame <frame-id> (see: agent-webmcp list)")
 				}
 			}
 		case <-time.After(rem):
@@ -303,7 +253,7 @@ func resolveFrame(ctx context.Context, c *CDP, name string) (string, error) {
 	if len(matches) == 1 {
 		return matches[0], nil
 	}
-	return "", errors.New("tool '" + name + "' not found (run: orkestrate list)")
+	return "", errors.New("tool '" + name + "' not found (run: agent-webmcp list)")
 }
 
 func waitToolResponded(ctx context.Context, c *CDP, invocationID string, timeout time.Duration) (json.RawMessage, error) {
@@ -323,6 +273,9 @@ func waitToolResponded(ctx context.Context, c *CDP, invocationID string, timeout
 				Status       string          `json:"status"`
 				Output       json.RawMessage `json:"output"`
 				ErrorText    string          `json:"errorText"`
+				Exception    *struct {
+					Description string `json:"description"`
+				} `json:"exception"`
 			}
 			if err := json.Unmarshal(ev.Params, &p); err != nil {
 				continue
@@ -342,12 +295,71 @@ func waitToolResponded(ctx context.Context, c *CDP, invocationID string, timeout
 				if p.ErrorText != "" {
 					return nil, errors.New(p.ErrorText)
 				}
+				if p.Exception != nil && p.Exception.Description != "" {
+					return nil, errors.New(strings.SplitN(p.Exception.Description, "\n", 2)[0])
+				}
 				return nil, errors.New("tool invocation failed: " + p.Status)
 			}
+		case <-c.done:
+			return nil, errors.New("browser connection closed while waiting for tool response")
 		case <-time.After(rem):
 			return nil, errors.New("timed out waiting for tool response")
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
 	}
+}
+
+// startInvoke sends WebMCP.invokeTool on an already-dialed, already-enabled
+// connection and returns the invocationId without waiting for the result.
+// The result arrives later as a WebMCP.toolResponded event on this same
+// connection — which is why detach mode keeps a waiter process holding it.
+func startInvoke(ctx context.Context, c *CDP, name, inputJSON, frameID string) (string, error) {
+	if inputJSON == "" {
+		inputJSON = "{}"
+	}
+	inputJSON = strings.TrimSpace(strings.TrimPrefix(inputJSON, "\ufeff"))
+	var inputObj map[string]any
+	if err := json.Unmarshal([]byte(inputJSON), &inputObj); err != nil {
+		return "", errors.New("params must be a JSON object: " + err.Error())
+	}
+	if inputObj == nil {
+		inputObj = map[string]any{}
+	}
+	if frameID == "" {
+		var err error
+		frameID, err = resolveFrame(ctx, c, name)
+		if err != nil {
+			return "", err
+		}
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	raw, err := c.Call(callCtx, "WebMCP.invokeTool", map[string]any{
+		"frameId":  frameID,
+		"toolName": name,
+		"input":    inputObj,
+	})
+	if err != nil {
+		if isNotFound(err) {
+			raw2, err2 := c.Call(callCtx, "WebMCP.callTool", map[string]any{
+				"frameId":  frameID,
+				"toolName": name,
+				"input":    inputObj,
+			})
+			if err2 != nil {
+				return "", err2
+			}
+			raw = raw2
+		} else {
+			return "", err
+		}
+	}
+	var inv struct {
+		InvocationID string `json:"invocationId"`
+	}
+	if err := json.Unmarshal(raw, &inv); err != nil || inv.InvocationID == "" {
+		return "", errors.New("invoke returned no invocationId")
+	}
+	return inv.InvocationID, nil
 }

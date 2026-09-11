@@ -49,7 +49,6 @@ func directoryGet(ctx context.Context, path string, q url.Values, timeout time.D
 		return nil, err
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
-		retry := 0
 		var rl struct {
 			RetryAfter int `json:"retryAfter"`
 		}

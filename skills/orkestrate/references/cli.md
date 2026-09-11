@@ -8,7 +8,8 @@ Companion to the `agent-webmcp` skill core. Load when configuring sessions, pass
 |---|---|
 | `open [url] [--session NAME] [--headed] [--chrome PATH] [--json]` | Starting work: launches or reuses the session's Chrome, optionally navigates. Reports `webmcp.toolCount` so step 1 and step 2 partially overlap. |
 | `list [--session NAME] [--json]` | You need names, schemas, frameIds. The only source of invocable tools. |
-| `invoke <tool> [--params JSON\|@file] [--frame ID] [--timeout-ms N] [--json]` | Acting. Params is always a JSON object; default timeout 30s. |
+| `invoke <tool> [--params JSON\|@file] [--frame ID] [--detach] [--timeout-ms N] [--json]` | Acting. Params is always a JSON object; default timeout 30s. `--detach` returns `invocationId` immediately; poll with `result`, abort with `cancel`. |
+| `result <id> [--timeout-ms N]` / `cancel <id>` | Terminal state of a detached invocation: `{status, output}` (`Completed`/`Canceled`/`Error`/`Timeout`). |
 | `eval <js> [--session NAME] [--json]` | Inspecting page state the tools don't expose (`Runtime.evaluate`). Debugging hatch — actuation still belongs to page tools. |
 | `status / sessions / close [--all]` | Lifecycle. `close` keeps the profile dir for fast relaunch. |
 | `mcp [--session NAME]` | Exposing the 4-tool bridge to an MCP harness. |

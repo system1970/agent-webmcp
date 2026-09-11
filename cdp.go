@@ -147,6 +147,7 @@ type CDP struct {
 	pending sync.Map // int64 -> chan rpcResponse
 	events  chan rpcResponse
 	closed  atomic.Bool
+	done    chan struct{} // closed when the connection dies (fail-fast for waiters)
 }
 
 func dialCDP(ctx context.Context, wsURL string) (*CDP, error) {
@@ -160,7 +161,7 @@ func dialCDP(ctx context.Context, wsURL string) (*CDP, error) {
 		return nil, err
 	}
 	c.SetReadLimit(64 << 20) // 64MB: tool schemas/results can be large
-	cl := &CDP{conn: c, events: make(chan rpcResponse, 256)}
+	cl := &CDP{conn: c, events: make(chan rpcResponse, 256), done: make(chan struct{})}
 	cl.next.Store(1)
 	go cl.readLoop()
 	return cl, nil
@@ -170,6 +171,7 @@ func (c *CDP) readLoop() {
 	for {
 		_, data, err := c.conn.Read(context.Background())
 		if err != nil {
+			close(c.done)
 			return
 		}
 		var m rpcResponse

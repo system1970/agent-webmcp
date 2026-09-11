@@ -141,10 +141,11 @@ func openURL(ctx context.Context, session, url, chromeBin string, headed bool, t
 	tools, _, _ := listWebMCP(lctx, t.WebSocketDebuggerURL)
 	webmcp := map[string]any{"experimental": true, "available": len(tools) > 0, "toolCount": len(tools)}
 	// Stored custom tools for this host (best-effort, never fails open).
+	cleanupStalePending(session)
 	var custom []string
 	if finalURL != "" {
 		custom = loadPacks(ctx, t.WebSocketDebuggerURL, hostOfURL(finalURL))
-		recordOverlayTools(session, custom)
+		recordPackTools(session, custom)
 		// Re-list so freshly loaded tools appear with accurate availability.
 		if len(custom) > 0 {
 			if tools2, _, _ := listWebMCP(lctx, t.WebSocketDebuggerURL); len(tools2) > len(tools) {
@@ -154,7 +155,7 @@ func openURL(ctx context.Context, session, url, chromeBin string, headed bool, t
 			}
 		}
 	}
-	tools = markOverlays(tools, readOverlayTools(session))
+	tools = markPacks(tools, readPackTools(session))
 	return &OpenResult{Session: session, URL: finalURL, Port: port, Headless: !headed, WebMCP: webmcp, Tools: tools, Custom: custom}, nil
 }
 

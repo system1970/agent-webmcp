@@ -22,7 +22,7 @@ Run the read → act → verify loop. Every step ends with its done-state; do no
    Done when you hold every tool's `name`, `inputSchema`, and `frameId` — or confirmed the list is empty. Invoke only tools taken from this output.
 3. **Invoke** one tool with a JSON-object params:
    `agent-webmcp invoke <tool> --session <name> --params '{...}'`
-   Done when the call reports `Completed` and you captured the output. Where the tool echoes what it understood (an `accepted` array, normalized tokens), compare it to what you sent before reasoning further.
+   Done when the call reports `Completed` and you captured the output. Where the tool echoes what it understood (an `accepted` array, normalized tokens), compare it to what you sent before reasoning further. For tools that take more than a few seconds, add `--detach` (returns `invocationId` immediately), then poll `result <id> --session <name>` — abort with `cancel <id>` if the step is no longer worth waiting for.
 4. **Verify** with a fresh read (the page's `get_*`/state tool, or `queuedMoves`/counter/flag in the next readout).
    Done when the new readout shows the intended effect. Tool calls return fast while page effects (animations, queues) lag — the readout, not the return, is ground truth.
 5. **Close** the session: `agent-webmcp close --session <name>`.

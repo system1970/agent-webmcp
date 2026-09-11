@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-//go:embed skills/agent-webmcp/SKILL.md skills/agent-webmcp/references/*.md
+//go:embed skills/orkestrate/SKILL.md skills/orkestrate/references/*.md
 var skillFS embed.FS
 
 var skillTopics = []struct {
@@ -19,10 +19,10 @@ var skillTopics = []struct {
 	file string
 	desc string
 }{
-	{"webmcp", "skills/agent-webmcp/SKILL.md", "Core procedure: read-act-verify loop, discovery, policy, security"},
-	{"webmcp-protocol", "skills/agent-webmcp/references/protocol.md", "Result shapes, async effects, params/quoting, latency"},
-	{"webmcp-cli", "skills/agent-webmcp/references/cli.md", "Flags, sessions, eval, MCP bridge config"},
-	{"webmcp-troubleshooting", "skills/agent-webmcp/references/troubleshooting.md", "Error codes and failure recovery"},
+	{"webmcp", "skills/orkestrate/SKILL.md", "Core procedure: read-act-verify loop, discovery, policy, security"},
+	{"webmcp-protocol", "skills/orkestrate/references/protocol.md", "Result shapes, async effects, params/quoting, latency"},
+	{"webmcp-cli", "skills/orkestrate/references/cli.md", "Flags, sessions, eval, MCP bridge config"},
+	{"webmcp-troubleshooting", "skills/orkestrate/references/troubleshooting.md", "Error codes and failure recovery"},
 }
 
 func skillRead(name string) (string, bool) {
@@ -46,7 +46,9 @@ func usage() {
 usage:
   agent-webmcp open [url] [--session NAME] [--headed] [--chrome PATH] [--json]
   agent-webmcp list [--session NAME] [--json]
-  agent-webmcp invoke <tool> [--session NAME] [--params JSON|@file] [--frame ID] [--timeout-ms N] [--json]
+  agent-webmcp invoke <tool> [--session NAME] [--params JSON|@file] [--frame ID] [--detach] [--timeout-ms N] [--json]
+  agent-webmcp result <invocationId> [--session NAME] [--timeout-ms N] [--json]
+  agent-webmcp cancel <invocationId> [--session NAME]
   agent-webmcp eval <js|@file> [--session NAME] [--json]
   agent-webmcp tools <add <file> [--for HOST] [--name NAME] | list | load | remove <name>>
   agent-webmcp close [--session NAME | --all]
@@ -72,6 +74,10 @@ type globals struct {
 	all       bool
 	params    string
 	frame     string
+	detach    bool
+	// internal (waiter child process only)
+	paramsFile string
+	startErr   string
 }
 
 func parseGlobals(args []string) (globals, []string) {
@@ -114,6 +120,22 @@ func parseGlobals(args []string) (globals, []string) {
 			}
 		case strings.HasPrefix(a, "--params="):
 			g.params = strings.TrimPrefix(a, "--params=")
+		case a == "--detach":
+			g.detach = true
+		case a == "--params-file":
+			if i+1 < len(args) {
+				i++
+				g.paramsFile = args[i]
+			}
+		case strings.HasPrefix(a, "--params-file="):
+			g.paramsFile = strings.TrimPrefix(a, "--params-file=")
+		case a == "--start-err":
+			if i+1 < len(args) {
+				i++
+				g.startErr = args[i]
+			}
+		case strings.HasPrefix(a, "--start-err="):
+			g.startErr = strings.TrimPrefix(a, "--start-err=")
 		case a == "--frame":
 			if i+1 < len(args) {
 				i++
@@ -218,7 +240,7 @@ func run(args []string) int {
 			}
 			return failErr("list_failed", err)
 		}
-		tools = markOverlays(tools, readOverlayTools(g.session))
+		tools = markPacks(tools, readPackTools(g.session))
 		if g.json {
 			ok(map[string]any{"session": g.session, "url": t.URL, "tools": tools})
 			return 0
@@ -234,15 +256,15 @@ func run(args []string) int {
 				ro = " [read-only]"
 			}
 			ov := ""
-			if tl.Overlay != nil && *tl.Overlay {
-				ov = " [overlay: agent-webmcp custom, not the site's]"
+			if tl.Pack != "" {
+				ov = " [pack: " + tl.Pack + " — agent-webmcp custom, not the site's]"
 			}
 			fmt.Printf("  - %s%s%s: %s\n", tl.Name, ro, ov, firstLine(tl.Description))
 		}
 		return 0
 	case "invoke":
 		if len(rest) == 0 || strings.HasPrefix(rest[0], "-") {
-			return fail("usage", "usage: agent-webmcp invoke <tool> [--params JSON|@file] [--frame ID]")
+			return fail("usage", "usage: agent-webmcp invoke <tool> [--params JSON|@file] [--frame ID] [--detach]")
 		}
 		tool := rest[0]
 		params := g.params
@@ -270,6 +292,20 @@ func run(args []string) int {
 		if err != nil {
 			return failErr("no_page", err)
 		}
+		// Detached: waiter child holds the connection; we return the id.
+		if g.detach {
+			cleanupStalePending(g.session)
+			id, err := spawnWaiter(g.session, tool, params, g.frame, time.Duration(g.timeoutMs)*time.Millisecond)
+			if err != nil {
+				return failErr("detach_failed", err)
+			}
+			if g.json {
+				ok(map[string]any{"invocationId": id, "tool": tool, "session": g.session, "detach": true})
+			} else {
+				fmt.Printf("invocationId=%s (poll: agent-webmcp result %s --session %s)\n", id, id, g.session)
+			}
+			return 0
+		}
 		ictx, cancel := context.WithTimeout(ctx, time.Duration(g.timeoutMs)*time.Millisecond)
 		defer cancel()
 		raw, err := invokeWebMCP(ictx, t.WebSocketDebuggerURL, tool, params, g.frame, time.Duration(g.timeoutMs)*time.Millisecond)
@@ -295,6 +331,68 @@ func run(args []string) int {
 			fmt.Println(string(b))
 		} else {
 			fmt.Println(string(raw))
+		}
+		return 0
+	case "result":
+		if len(rest) == 0 || strings.HasPrefix(rest[0], "-") {
+			return fail("usage", "usage: agent-webmcp result <invocationId> [--timeout-ms N]")
+		}
+		pr, err := readPendingResult(g.session, rest[0], time.Duration(g.timeoutMs)*time.Millisecond)
+		if err != nil {
+			return failErr("result_failed", err)
+		}
+		// Consumed: remove artifacts.
+		marker, result, cancelFile := pendingPaths(g.session, rest[0])
+		_ = os.Remove(marker)
+		_ = os.Remove(result)
+		_ = os.Remove(cancelFile)
+		if g.json {
+			ok(map[string]any{"invocationId": pr.InvocationID, "status": pr.Status, "output": json.RawMessage(pr.Output), "errorText": pr.ErrorText})
+			return 0
+		}
+		fmt.Printf("status=%s\n", pr.Status)
+		if pr.ErrorText != "" {
+			fmt.Println("error: " + pr.ErrorText)
+		}
+		if len(pr.Output) > 0 {
+			var v any
+			if json.Unmarshal(pr.Output, &v) == nil {
+				b, _ := json.MarshalIndent(v, "", "  ")
+				fmt.Println(string(b))
+			} else {
+				fmt.Println(string(pr.Output))
+			}
+		}
+		if pr.Status != "Completed" {
+			return 1
+		}
+		return 0
+	case "cancel":
+		if len(rest) == 0 || strings.HasPrefix(rest[0], "-") {
+			return fail("usage", "usage: agent-webmcp cancel <invocationId>")
+		}
+		pr, err := requestCancel(g.session, rest[0], 10*time.Second)
+		if err != nil {
+			return failErr("cancel_failed", err)
+		}
+		marker, result, cancelFile := pendingPaths(g.session, rest[0])
+		_ = os.Remove(marker)
+		_ = os.Remove(result)
+		_ = os.Remove(cancelFile)
+		if g.json {
+			ok(map[string]any{"invocationId": pr.InvocationID, "status": pr.Status})
+		} else {
+			fmt.Printf("status=%s\n", pr.Status)
+		}
+		return 0
+	case "__waiter":
+		// internal: detached invoke waiter (spawned by invoke --detach)
+		tool := ""
+		if len(rest) > 0 {
+			tool = rest[0]
+		}
+		if err := runWaiter(g.session, tool, g.paramsFile, g.frame, time.Duration(g.timeoutMs)*time.Millisecond); err != nil {
+			return failErr("waiter_failed", err)
 		}
 		return 0
 	case "close", "quit", "exit":
@@ -580,7 +678,7 @@ func run(args []string) int {
 				return failErr("no_page", err)
 			}
 			done := loadPacks(ctx, t.WebSocketDebuggerURL, hostOfURL(t.URL))
-			recordOverlayTools(g.session, done)
+			recordPackTools(g.session, done)
 			if g.json {
 				ok(map[string]any{"host": hostOfURL(t.URL), "loaded": done})
 			} else if len(done) == 0 {
