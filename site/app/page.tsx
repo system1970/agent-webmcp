@@ -1,6 +1,9 @@
 const REPO = "https://github.com/system1970/agent-webmcp";
+const SETUP = `${REPO}/blob/main/AGENT_SETUP.md`;
 const RELEASE = `${REPO}/releases/tag/v0.1.0`;
 const DIRECTORY = "https://webmcp.com";
+const ORKESTRATE = "https://orkestrate.space";
+const ORKESTRATE_PRODUCT = "https://orkestrate.space/agent-webmcp";
 
 const BUTTON =
   "inline-flex min-h-9 w-fit max-w-full items-center justify-center gap-2 rounded-md border px-4 py-[7px] text-sm font-medium leading-5 whitespace-nowrap no-underline transition-colors";
@@ -16,15 +19,35 @@ export default function Home() {
       </a>
       <div className="mx-auto grid min-h-svh w-[min(calc(100%_-_48px),1200px)] grid-rows-[auto_1fr_auto] py-[clamp(40px,6vw,72px)] max-[800px]:w-full max-[800px]:py-10 max-[800px]:ps-[calc(1rem_+_env(safe-area-inset-left,0px))] max-[800px]:pe-[calc(1rem_+_env(safe-area-inset-right,0px))]">
         <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 pb-[clamp(32px,5vw,56px)]">
-          <span className="font-mono text-[0.8125rem] font-medium leading-5 tracking-[-0.01em] text-ink">
-            agent-webmcp
-          </span>
-          <nav aria-label="Primary" className="flex items-center gap-6">
+          <nav aria-label="Primary" className="flex items-baseline gap-2 font-mono text-[0.8125rem] font-medium leading-5 tracking-[-0.01em]">
+            <a href={ORKESTRATE} className="text-ink-2 no-underline transition-colors hover:text-ink">
+              Orkestrate
+            </a>
+            <span aria-hidden className="text-ink-2">
+              /
+            </span>
+            <a href="/" aria-current="page" className="text-ink no-underline">
+              agent-webmcp
+            </a>
+          </nav>
+          <nav aria-label="External" className="flex items-center gap-6">
             <a
               href={DIRECTORY}
               className="text-sm font-medium leading-5 text-ink-2 no-underline transition-colors hover:text-ink"
             >
               webmcp.com ↗
+            </a>
+            <a
+              href={SETUP}
+              className="text-sm font-medium leading-5 text-ink-2 no-underline transition-colors hover:text-ink"
+            >
+              Setup ↗
+            </a>
+            <a
+              href={REPO}
+              className="text-sm font-medium leading-5 text-ink-2 no-underline transition-colors hover:text-ink"
+            >
+              GitHub ↗
             </a>
           </nav>
         </header>
@@ -79,6 +102,12 @@ $ agent-webmcp invoke <tool> --params '{...}' \\
 
         <footer className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 pt-[clamp(32px,5vw,56px)] text-meta text-ink-2">
           <span>MIT license</span>
+          <a
+            href={ORKESTRATE_PRODUCT}
+            className="no-underline transition-colors hover:text-ink"
+          >
+            By Orkestrate
+          </a>
           <span>© 2026 system1970</span>
         </footer>
       </div>
