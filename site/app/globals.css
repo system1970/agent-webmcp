@@ -1,0 +1,102 @@
+:root {
+  --bg: #0b0c0e;
+  --ink: #f4f4f2;
+  --dim: #8a8f98;
+  --accent: #67e8f9;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+}
+
+main {
+  max-width: 640px;
+  padding: 48px 24px;
+}
+
+.eyebrow {
+  color: var(--accent);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 12px;
+  margin: 0;
+}
+
+h1 {
+  font-size: 44px;
+  margin: 8px 0 16px;
+  letter-spacing: -0.02em;
+}
+
+.lede {
+  color: var(--dim);
+  margin-bottom: 28px;
+}
+
+pre {
+  background: #131418;
+  border: 1px solid #23252b;
+  border-radius: 8px;
+  padding: 18px 20px;
+  overflow-x: auto;
+  font-size: 13.5px;
+  line-height: 1.7;
+  margin: 0 0 24px;
+}
+
+code {
+  color: var(--ink);
+}
+
+.facts {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 28px;
+  color: var(--dim);
+  font-size: 14px;
+}
+
+.facts li {
+  padding: 6px 0 6px 18px;
+  position: relative;
+}
+
+.facts li::before {
+  content: "→";
+  color: var(--accent);
+  position: absolute;
+  left: 0;
+}
+
+.links {
+  color: var(--dim);
+  margin: 0;
+}
+
+.links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.links a:hover {
+  text-decoration: underline;
+}
+
+.links span {
+  margin: 0 8px;
+}
