@@ -1,102 +1,114 @@
+@import "tailwindcss";
+
+/* Design tokens after vercel.com/design.md (VBG): exact oklch values,
+   implicit light/dark through light-dark(), Geist type roles. */
+
 :root {
-  --bg: #0b0c0e;
-  --ink: #f4f4f2;
-  --dim: #8a8f98;
-  --accent: #67e8f9;
+  color-scheme: light dark;
+
+  --aw-bg: light-dark(oklch(1 0 0), oklch(0 0 0));
+  --aw-raised: light-dark(oklch(0.984 0 0), oklch(0.027 0 0));
+  --aw-ink: light-dark(oklch(0.205 0 0), oklch(0.946 0 0));
+  --aw-ink-2: light-dark(oklch(0.42 0 0), oklch(0.706 0 0));
+  --aw-line: light-dark(oklch(0 0 0 / 0.1), oklch(1 0 0 / 0.13));
+  --aw-line-2: light-dark(oklch(0 0 0 / 0.081), oklch(1 0 0 / 0.09));
+  --aw-line-strong: light-dark(oklch(0 0 0 / 0.44), oklch(1 0 0 / 0.54));
+  --aw-hover: light-dark(oklch(0 0 0 / 0.05), oklch(1 0 0 / 0.07));
+  --aw-focus: light-dark(oklch(0.5761 0.2508 258.23), oklch(0.717 0.1648 250.794));
+
+  --aw-sans: var(--font-geist-sans), "Geist", ui-sans-serif, system-ui,
+    "Segoe UI", Roboto, sans-serif;
+  --aw-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, SFMono-Regular,
+    Menlo, Consolas, monospace;
 }
 
-* {
-  box-sizing: border-box;
+@theme inline {
+  --color-canvas: var(--aw-bg);
+  --color-raised: var(--aw-raised);
+  --color-ink: var(--aw-ink);
+  --color-ink-2: var(--aw-ink-2);
+  --color-line: var(--aw-line);
+  --color-line-2: var(--aw-line-2);
+  --color-line-strong: var(--aw-line-strong);
+  --color-hover: var(--aw-hover);
+  --color-focus: var(--aw-focus);
+
+  --font-sans: var(--aw-sans);
+  --font-mono: var(--aw-mono);
+
+  --font-weight-heading: 450;
+
+  --text-display: 3rem;
+  --text-display--line-height: 56px;
+  --text-display--letter-spacing: -0.06em;
+  --text-display-sm: 2.5rem;
+  --text-display-sm--line-height: 48px;
+  --text-display-sm--letter-spacing: -0.06em;
+  --text-lede: 1.125rem;
+  --text-lede--line-height: 28px;
+  --text-meta: 0.8125rem;
+  --text-meta--line-height: 18px;
 }
 
-html,
-body {
-  margin: 0;
-  padding: 0;
-}
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-block-start: 32px;
+  }
 
-body {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  background: var(--bg);
-  color: var(--ink);
-  font: 16px/1.6 ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
-}
+  body {
+    background-color: var(--aw-bg);
+    color: var(--aw-ink);
+    font-family: var(--aw-sans);
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 24px;
+    font-feature-settings: "rlig" 1, "calt" 0, "ss11" 1;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+  }
 
-main {
-  max-width: 640px;
-  padding: 48px 24px;
-}
+  h1 {
+    margin: 0;
+    font-weight: 450;
+    text-wrap: balance;
+  }
 
-.eyebrow {
-  color: var(--accent);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  font-size: 12px;
-  margin: 0;
-}
+  p {
+    margin: 0;
+  }
 
-h1 {
-  font-size: 44px;
-  margin: 8px 0 16px;
-  letter-spacing: -0.02em;
-}
+  a {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: var(--aw-line-strong);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 4px;
+    transition: text-decoration-color 150ms ease;
+  }
 
-.lede {
-  color: var(--dim);
-  margin-bottom: 28px;
-}
+  a:hover {
+    text-decoration-color: currentColor;
+  }
 
-pre {
-  background: #131418;
-  border: 1px solid #23252b;
-  border-radius: 8px;
-  padding: 18px 20px;
-  overflow-x: auto;
-  font-size: 13.5px;
-  line-height: 1.7;
-  margin: 0 0 24px;
-}
+  :focus-visible {
+    outline: 2px solid var(--aw-focus);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
 
-code {
-  color: var(--ink);
-}
+  code {
+    font-family: var(--aw-mono);
+    font-size: 0.9em;
+    letter-spacing: -0.01em;
+  }
 
-.facts {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 28px;
-  color: var(--dim);
-  font-size: 14px;
-}
-
-.facts li {
-  padding: 6px 0 6px 18px;
-  position: relative;
-}
-
-.facts li::before {
-  content: "→";
-  color: var(--accent);
-  position: absolute;
-  left: 0;
-}
-
-.links {
-  color: var(--dim);
-  margin: 0;
-}
-
-.links a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.links a:hover {
-  text-decoration: underline;
-}
-
-.links span {
-  margin: 0 8px;
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
 }

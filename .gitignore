@@ -3,3 +3,11 @@ params.json
 chrome.log
 
 dist/
+
+# Next.js / Node
+node_modules/
+.next/
+.vercel/
+next-env.d.ts
+*.tsbuildinfo
+.env*.local
