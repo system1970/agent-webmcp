@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-//go:embed skills/orkestrate/SKILL.md skills/orkestrate/references/*.md
+//go:embed skills/orkestrate/SKILL.md skills/orkestrate/references/*.md skills/site-agent/SKILL.md skills/site-agent/references/*.md
 var skillFS embed.FS
 
 var skillTopics = []struct {
@@ -20,6 +20,9 @@ var skillTopics = []struct {
 	desc string
 }{
 	{"webmcp", "skills/orkestrate/SKILL.md", "Core procedure: read-act-verify loop, discovery, policy, security"},
+	{"site-agent", "skills/site-agent/SKILL.md", "Site agents into tools: wire a page Ask-AI/chat panel into typed overlay tools (open/ask/state/fullscreen/clear)"},
+	{"site-agent-probes", "skills/site-agent/references/probes.md", "Eval snippets for mapping a site agent panel and its completion signal"},
+	{"site-agent-pack", "skills/site-agent/references/pack-template.md", "Five-tool overlay pack template"},
 	{"webmcp-protocol", "skills/orkestrate/references/protocol.md", "Result shapes, async effects, params/quoting, latency"},
 	{"webmcp-cli", "skills/orkestrate/references/cli.md", "Flags, sessions, eval, MCP bridge config"},
 	{"webmcp-troubleshooting", "skills/orkestrate/references/troubleshooting.md", "Error codes and failure recovery"},
