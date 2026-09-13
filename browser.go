@@ -57,7 +57,7 @@ func ensureChrome(session, chromeBin string, headed bool, timeout time.Duration)
 	// Best-effort: don't Wait(); let it outlive us. Reap via goroutine only if it exits fast.
 	go func() { _ = cmd.Wait() }()
 	if err := waitCDP(port, timeout); err != nil {
-		return 0, false, err
+		return 0, false, chromeLaunchError(logPath, port, err)
 	}
 	return port, true, nil
 }

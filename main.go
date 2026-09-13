@@ -59,6 +59,7 @@ usage:
 
 env:
   AGENT_WEBMCP_CHROME  chrome binary path
+  AGENT_WEBMCP_CHROME_FLAGS  extra chrome flags, whitespace-separated (e.g. "--no-sandbox")
   AGENT_WEBMCP_HOME    sessions root override
 `)
 }

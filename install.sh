@@ -10,7 +10,11 @@ case "$OS" in darwin) BIN="agent-webmcp-darwin-$ARCH";; linux) BIN="agent-webmcp
 DEST="${HOME}/.agent-webmcp/bin"
 mkdir -p "$DEST"
 echo "Downloading agent-webmcp $VERSION ($BIN)..."
-curl -fsSL "https://github.com/system1970/agent-webmcp/releases/download/${VERSION}/${BIN}" -o "$DEST/agent-webmcp"
+if ! curl -fsSL "https://github.com/system1970/agent-webmcp/releases/download/${VERSION}/${BIN}" -o "$DEST/agent-webmcp"; then
+  echo "No prebuilt $BIN in release $VERSION for this platform." >&2
+  echo "Fallback (needs Go): go install github.com/system1970/agent-webmcp@${VERSION}" >&2
+  exit 1
+fi
 chmod +x "$DEST/agent-webmcp"
 case ":$PATH:" in *":$DEST:"*) ;; *) echo "Add to PATH: export PATH=\"$DEST:\$PATH\"";; esac
 "$DEST/agent-webmcp" version

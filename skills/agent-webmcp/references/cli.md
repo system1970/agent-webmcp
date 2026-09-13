@@ -16,7 +16,7 @@ Companion to the `agent-webmcp` skill core. Load when configuring sessions, pass
 
 ## Flags and environment
 
-`--session/-s` (default `default`, or `AGENT_WEBMCP_SESSION`) · `--json` (envelope `{ok, data|error, code}`) · `--timeout-ms` (default 30000). Chrome resolution: `--chrome` → `AGENT_WEBMCP_CHROME` → system Chrome → Brave/Chromium. Headless (`headless=new`) by default; `--headed` opens a real visible window owned by the session (watching needs no other tool) — switching modes needs a session restart (`close`, then `open --headed`) and a display.
+`--session/-s` (default `default`, or `AGENT_WEBMCP_SESSION`) · `--json` (envelope `{ok, data|error, code}`) · `--timeout-ms` (default 30000). Chrome resolution: `--chrome` → `AGENT_WEBMCP_CHROME` → system Chrome → Brave/Chromium. Extra chrome flags: `AGENT_WEBMCP_CHROME_FLAGS` (whitespace-separated, e.g. `--no-sandbox` for rootless containers). Headless (`headless=new`) by default; `--headed` opens a real visible window owned by the session (watching needs no other tool) — switching modes needs a session restart (`close`, then `open --headed`) and a display. Chrome launch failures report the tail of the session's `chrome.log`.
 
 ## Sessions
 

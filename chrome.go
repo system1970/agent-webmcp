@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -100,10 +102,39 @@ func chromeArgs(port int, profile string, headed bool, extraBlank bool) []string
 	} else {
 		a = append(a, "--start-maximized")
 	}
+	// Opt-in escape hatch for containers/CI (e.g. --no-sandbox where user
+	// namespaces are unavailable). Appended last so user flags win repeats.
+	// Whitespace-separated, no quoting: AGENT_WEBMCP_CHROME_FLAGS="--no-sandbox".
+	a = append(a, chromeExtraFlags()...)
 	if extraBlank {
 		a = append(a, "about:blank")
 	}
 	return a
+}
+
+// chromeExtraFlags returns user-supplied chrome flags from the environment.
+func chromeExtraFlags() []string {
+	return strings.Fields(os.Getenv("AGENT_WEBMCP_CHROME_FLAGS"))
+}
+
+// chromeLaunchError decorates a CDP wait failure with the tail of chrome's
+// own log, so sandbox/GPU crashes show their real cause instead of a bare
+// timeout. The full log lives at logPath.
+func chromeLaunchError(logPath string, port int, cause error) error {
+	tail := "no chrome log captured"
+	if b, err := os.ReadFile(logPath); err == nil && len(b) > 0 {
+		lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+		if len(lines) > 5 {
+			lines = lines[len(lines)-5:]
+		}
+		s := strings.TrimSpace(strings.Join(lines, " | "))
+		if len(s) > 1200 {
+			s = s[:1200] + "…"
+		}
+		tail = "chrome log tail: " + s
+	}
+	return fmt.Errorf("%w (%s; rootless containers often need --no-sandbox via AGENT_WEBMCP_CHROME_FLAGS; full log: %s)",
+		cause, tail, logPath)
 }
 
 func itoa(n int) string {
