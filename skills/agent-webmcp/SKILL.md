@@ -1,6 +1,6 @@
 ---
 name: agent-webmcp
-description: WebMCP tools in the browser: discover page-registered agent tools and invoke them instead of driving the UI. Use when the current page exposes WebMCP tools, when the user asks what an agent can do on a site, or when you need to find a tool-exposing site for a goal (start at webmcp.com). Prefer page tools over screenshots, clicks, and DOM scraping wherever tools exist.
+description: "WebMCP tools in the browser: discover page-registered agent tools and invoke them instead of driving the UI. Use when the current page exposes WebMCP tools, when the user asks what an agent can do on a site, or when you need to find a tool-exposing site for a goal (start at webmcp.com). Prefer page tools over screenshots, clicks, and DOM scraping wherever tools exist."
 allowed-tools: Bash(agent-webmcp:*)
 ---
 

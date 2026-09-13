@@ -13,5 +13,6 @@ Companion to the `agent-webmcp` skill core. Load when any command fails.
 | `params must be a JSON object` | The shell ate the quoting. Write the object to a file, pass `--params @file`. |
 | Headed window missing | Session launched headless — `close`, then `open --headed`. Headless hosts have no display; stay headless there. |
 | `cdp_unreachable` | Chrome died (OOM, killed externally). `close`, `open` again; `chrome.log` in the session dir has the cause. |
+| `timed out waiting for chrome CDP` | Chrome never came up. Read the `chrome.log` tail in the error: a sandbox crash in rootless containers/Docker/CI means relaunch with `AGENT_WEBMCP_CHROME_FLAGS="--no-sandbox"`. `chrome not found` instead means set `--chrome`/`AGENT_WEBMCP_CHROME`. |
 
 General rule: one retry with adjusted input, then report the failure plus the last readout — never loop a failing call hoping the page changes its mind.
