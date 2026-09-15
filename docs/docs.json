@@ -1,0 +1,19 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "agent-webmcp",
+  "theme": "mint",
+  "colors": {
+    "primary": "#16A34A"
+  },
+  "navigation": {
+    "pages": [
+      "index",
+      "installation"
+    ]
+  },
+  "seo": {
+    "metatags": {
+      "canonical": "https://agent-webmcp.vercel.app/docs"
+    }
+  }
+}

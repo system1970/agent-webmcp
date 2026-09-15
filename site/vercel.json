@@ -1,0 +1,24 @@
+{
+  "rewrites": [
+    {
+      "source": "/_mintlify/:path*",
+      "destination": "https://orkestrate.mintlify.site/_mintlify/:path*"
+    },
+    {
+      "source": "/api/request",
+      "destination": "https://orkestrate.mintlify.site/_mintlify/api/request"
+    },
+    {
+      "source": "/docs",
+      "destination": "https://orkestrate.mintlify.site/docs"
+    },
+    {
+      "source": "/docs/:match*",
+      "destination": "https://orkestrate.mintlify.site/docs/:match*"
+    },
+    {
+      "source": "/mintlify-assets/:path+",
+      "destination": "https://orkestrate.mintlify.site/mintlify-assets/:path+"
+    }
+  ]
+}

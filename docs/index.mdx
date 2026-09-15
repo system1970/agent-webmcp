@@ -1,0 +1,30 @@
+---
+title: agent-webmcp
+description: Turn the web into your agent's toolkit — WebMCP browser CLI plus a catalog of site skills.
+---
+
+# agent-webmcp
+
+An ultra-light WebMCP browser CLI (single Go binary, headless/headful Chrome,
+per-task browser sessions, MCP stdio bridge). The tool-native complement to
+DOM-driving tools: use it whenever a page exposes WebMCP tools, hand off to a
+DOM tool when `list` comes back empty.
+
+## Golden path
+
+Every task follows `open` → `list` → `invoke` → verify → `close`.
+Never invoke a tool you have not listed.
+
+```bash
+agent-webmcp open https://webmcp.com --session demo
+agent-webmcp list --session demo
+agent-webmcp invoke surprise_me --params '{}' --session demo
+agent-webmcp close --session demo
+```
+
+## Site skills
+
+One site, one skill: `agent-webmcp search <text>` to discover,
+`agent-webmcp describe <skill>` to inspect,
+`agent-webmcp skills add <skill>` to install. Full command reference lives in
+the repo README; the setup prompt for coding agents is `AGENT_SETUP.md`.
