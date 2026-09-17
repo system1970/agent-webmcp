@@ -28,6 +28,10 @@ import (
 	"time"
 )
 
+// Shared client: persistent keep-alive + HTTP/2 across decisions. A fresh
+// connection per call costs a TLS handshake (~1s); the loop must not pay it.
+var jevHTTP = &http.Client{Timeout: 25 * time.Second}
+
 const jevEndpoint = "https://api.typesafe.ai/v1/systemone"
 
 // Proven prompt rules (ultrafast NEXT_ACTION / TARGET): full meaning lives
@@ -110,7 +114,6 @@ func postSystemOne(state any, questions map[string]any) (map[string]json.RawMess
 	if err != nil {
 		return nil, nil, "", 0, err
 	}
-	client := &http.Client{Timeout: 25 * time.Second}
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
@@ -124,7 +127,7 @@ func postSystemOne(state any, questions map[string]any) (map[string]json.RawMess
 		req.Header.Set("Authorization", "Bearer "+key)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json")
-		resp, err := client.Do(req)
+		resp, err := jevHTTP.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("jev_unreachable: %w", err)
 			continue
