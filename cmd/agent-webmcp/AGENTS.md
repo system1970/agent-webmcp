@@ -11,6 +11,8 @@ Dispatch in `main.go:run` (one `case` per verb). Flags via `parseGlobals` (`--se
 - `main.go` — dispatch + `usage()` (usage text is the docs source of truth)
 - `cdp.go`, `browser.go`, `chrome.go`, `session.go` — CDP client, launch, lifecycle
 - `webmcp.go` — discovery (`listTools` fast path + `toolsAdded` settle) + invoke (`invokeTool`/`toolResponded`, frame cache)
+- `jev.go` — TypeSafe client (BYOK env key, retry) + `constrain`/`margin`/fan-out builders. No actuation.
+- `observe.go` — `observe` (Jev-shaped state + scan-cache save), `act` (@eN index executor), `decide` (one Jev call, prints only)
 - `pagejs.go` — shared page-JS payloads (element labeling, actuation tails, read)
 - `shadow.go` — closed-shadow discovery (`DOM.getDocument` pierce) + `callFunctionOn`
 - `tools.go` — custom packs (`~/.agent-webmcp/tools/<name>.js+.json`), overlay provenance, `evalScript`

@@ -109,6 +109,9 @@ Read-only JSON, no auth. Full docs: `https://webmcp.com/api-docs`. Then drive th
 | `list [--session NAME] [--json]` | Page tools with `inputSchema` + `frameId`. Empty = page exposes nothing. |
 | `invoke <tool> [--params JSON\|@file] [--frame ID] [--timeout-ms N] [--json]` | Call a tool (params = JSON object). Auto-resolves `frameId` unless ambiguous. |
 | `eval <js|@file> [--session NAME] [--json]` | `Runtime.evaluate` in the active tab. Inspection and manual grounding probes — prefer page tools for actuation. |
+| `observe [--session NAME] [--json]` | Jev-shaped state: url/title/text/elements/tools in one call. Needs no key. |
+| `act <@eN> <click|type|select> [--text ..] [--session NAME] [--json]` | Execute an `observe` index. Re-grounds visible-first. Needs no key. |
+| `decide --goal ".." [--session NAME] [--json]` | One Jev call: operation + `@eN` target. Needs `TYPESAFE_API_KEY` (BYOK). Prints only, never acts. |
 | `snapshot` | REMOVED in 0.2.0 (was: AX-tree snapshot; use page tools or `eval`). |
 | `tools <add <file> [--for HOST] [--name NAME] | list | load | remove <name>>` | Custom tools: store page-JS tool packs per host; auto-loaded on `open`, manually via `load`. |
 | `status / sessions / close [--all]` | Session lifecycle. `close` keeps the profile dir for fast relaunch. |

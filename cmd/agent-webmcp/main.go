@@ -21,7 +21,10 @@ usage:
   agent-webmcp open [url] [--session NAME] [--desc "purpose"] [--headed] [--chrome PATH] [--json]
   agent-webmcp list [--session NAME] [--json]
   agent-webmcp invoke <tool> [--session NAME] [--params JSON|@file] [--frame ID] [--timeout-ms N] [--json]
-  agent-webmcp eval <js|@file> [--session NAME] [--json]            # escape hatch: inspection only, prefer page tools / scan-act
+  agent-webmcp observe [--session NAME] [--json]                       # Jev-shaped state: url/title/text/elements/tools
+  agent-webmcp act <@eN> <click|type|select> [--text ..] [--session NAME] [--json]
+  agent-webmcp decide --goal ".." [--session NAME] [--json]            # one Jev call: operation + @eN target (needs TYPESAFE_API_KEY)
+  agent-webmcp eval <js|@file> [--session NAME] [--json]            # escape hatch: inspection only, prefer page tools
   agent-webmcp tools <add <file> [--for HOST] [--name NAME] | list | load | remove <name>>
   agent-webmcp close [--session NAME | --all]
   agent-webmcp sessions [--json]                       # picker: reuse by desc/url before opening new
@@ -306,6 +309,12 @@ func run(args []string) int {
 			fmt.Println(string(raw))
 		}
 		return 0
+	case "observe":
+		return observeCmd(&g, rest)
+	case "act":
+		return actCmd(&g, rest)
+	case "decide":
+		return decideCmd(&g, rest)
 	case "close", "quit", "exit":
 		if g.all {
 			root := sessionRoot()
