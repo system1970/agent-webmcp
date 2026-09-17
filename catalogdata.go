@@ -1,9 +1,4 @@
 package catalogdata
 
-import "embed"
-
-//go:embed skills-catalog
-var CatalogFS embed.FS
-
-//go:embed skills/agent-webmcp/SKILL.md skills/agent-webmcp/references/*.md
-var SkillFS embed.FS
+// The CLI no longer embeds skills or catalogs. Per-site packs live in
+// skills-catalog/ on disk and ship via `tools add`, not go:embed.

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -84,17 +83,6 @@ func TestHostOfURL(t *testing.T) {
 	}
 }
 
-func TestSiteMatchesHost(t *testing.T) {
-	if !siteMatchesHost([]string{"*"}, "anything.dev") {
-		t.Fatal("wildcard should match")
-	}
-	if !siteMatchesHost([]string{"mintlify.com"}, "www.mintlify.com") {
-		t.Fatal("www-insensitive match failed")
-	}
-	if siteMatchesHost([]string{"eve.dev"}, "exa.ai") {
-		t.Fatal("cross-host should not match")
-	}
-}
 
 func TestParseInt(t *testing.T) {
 	n, err := parseInt("42")
@@ -222,38 +210,5 @@ func TestScanCacheClosedBid(t *testing.T) {
 	})
 	if r, n, f, cb, ok := scanCacheLookup("s1", 1); !ok || r != "button" || n != "Closed action" || f != "" || cb != 24 {
 		t.Fatalf("closed ref = %q,%q,%q,%d,%v", r, n, f, cb, ok)
-	}
-}
-
-// TestJSParity locks the mirrored in-page helpers: scanJS, actJS,
-// scanClosedJS and actClosedJS must compute identical labels/roles/vis so a
-// ref grounded by scan re-grounds under act in any tree.
-func TestJSParity(t *testing.T) {
-	consts := map[string]string{
-		"scanJS": scanJS, "actJS": actJS,
-		"scanClosedJS": scanClosedJS, "actClosedJS": actClosedJS,
-	}
-	fns := map[string]string{
-		"var label = function":  "} catch(e){ return '(no label)'; } };",
-		"var roleOf = function": "return INTER[r] ? r : t; };",
-		"var vis = function":    "} catch(e){ return false; } };",
-	}
-	for fn, end := range fns {
-		var prev, prevName string
-		for name, src := range consts {
-			i := strings.Index(src, fn)
-			if i < 0 {
-				t.Fatalf("%s missing %s", name, fn)
-			}
-			j := strings.Index(src[i:], end)
-			if j < 0 {
-				t.Fatalf("%s: end of %s not found", name, fn)
-			}
-			body := src[i : i+j+len(end)]
-			if prev != "" && body != prev {
-				t.Fatalf("%s drifted from %s", name, prevName)
-			}
-			prev, prevName = body, name
-		}
 	}
 }

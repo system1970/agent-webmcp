@@ -106,18 +106,6 @@ func normalizeHost(h string) string {
 
 func stripWWW(h string) string { return strings.TrimPrefix(strings.ToLower(h), "www.") }
 
-// siteMatchesHost mirrors the toolsForHost match: exact host or "*" (www-insensitive).
-func siteMatchesHost(sites []string, host string) bool {
-	host = stripWWW(host)
-	for _, h := range sites {
-		h = stripWWW(normalizeHost(h))
-		if h == "*" || h == host {
-			return true
-		}
-	}
-	return false
-}
-
 func toolsList() ([]packMeta, error) {
 	ents, err := os.ReadDir(toolsRoot())
 	if err != nil {
