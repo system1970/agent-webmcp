@@ -2,7 +2,7 @@
 # Install agent-webmcp (Windows x64, no Go required):
 #   irm https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.ps1 | iex
 $ErrorActionPreference = 'Stop'
-$Version = if ($env:AGENT_WEBMCP_VERSION) { $env:AGENT_WEBMCP_VERSION } else { 'v0.1.0' }
+$Version = if ($env:AGENT_WEBMCP_VERSION) { $env:AGENT_WEBMCP_VERSION } else { 'v0.2.0' }
 $Base = "https://github.com/system1970/agent-webmcp/releases/download/$Version"
 $Dest = Join-Path $env:USERPROFILE '.agent-webmcp\bin'
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null

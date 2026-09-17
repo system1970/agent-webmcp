@@ -1,6 +1,9 @@
 agent-webmcp.exe
 params.json
 chrome.log
+trace.jsonl
+trace.log
+*.log
 
 dist/
 

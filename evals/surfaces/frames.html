@@ -1,0 +1,9 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Surface: frames</title></head>
+<body>
+<h1>Frames probe</h1>
+<button>Top button</button>
+<iframe id="f1" title="form frame" srcdoc="<label>Frame name<input type='text' id='fn'></label><button id='fb'>Iframe action</button><h2>Iframe head</h2>" width="400" height="150"></iframe>
+<iframe id="f2" title="nested holder" srcdoc="<iframe srcdoc='<button>Deep action</button>' width='300' height='80'></iframe>" width="400" height="150"></iframe>
+<iframe id="f3" title="remote" src="https://example.com" width="400" height="150"></iframe>
+</body></html>

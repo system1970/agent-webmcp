@@ -2,7 +2,7 @@
 # Install agent-webmcp (macOS/Linux, no Go required):
 #   curl -fsSL https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.sh | sh
 set -eu
-VERSION="${AGENT_WEBMCP_VERSION:-v0.1.0}"
+VERSION="${AGENT_WEBMCP_VERSION:-v0.2.0}"
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
 case "$ARCH" in x86_64|amd64) ARCH=amd64;; arm64|aarch64) ARCH=arm64;; *) echo "unsupported arch: $ARCH" >&2; exit 1;; esac
@@ -12,7 +12,7 @@ mkdir -p "$DEST"
 echo "Downloading agent-webmcp $VERSION ($BIN)..."
 if ! curl -fsSL "https://github.com/system1970/agent-webmcp/releases/download/${VERSION}/${BIN}" -o "$DEST/agent-webmcp"; then
   echo "No prebuilt $BIN in release $VERSION for this platform." >&2
-  echo "Fallback (needs Go): go install github.com/system1970/agent-webmcp@${VERSION}" >&2
+  echo "Fallback (needs Go): go install github.com/system1970/agent-webmcp/cmd/agent-webmcp@${VERSION}" >&2
   exit 1
 fi
 chmod +x "$DEST/agent-webmcp"

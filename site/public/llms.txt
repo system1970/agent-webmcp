@@ -1,0 +1,73 @@
+# agent-webmcp capabilities
+
+> Discover: agent-webmcp search <text>. Inspect: agent-webmcp describe <domain/skill>. Every entry is official (built + live-verified).
+
+## chat-sdk [site-agent]
+- Sites: chat-sdk.dev
+- Verbs: chat_chat_open, chat_chat_ask, chat_chat_read, chat_chat_clear, chat_chat_close
+- Verified: 2026-09-15 · sha:0515f3d7c97b
+- Access: public
+- Work Chat SDK docs (chat-sdk.dev/docs) — open the Ask AI panel, ask questions, read settled answers with sources. Use when the task needs Chat SDK documentation or assistant answers.
+
+## eve [site-agent]
+- Sites: eve.dev
+- Verbs: eve_chat_open, eve_chat_ask, eve_chat_read, eve_chat_clear, eve_chat_close
+- Verified: 2026-09-15 · sha:662607bca47a
+- Access: public
+- Work Eve docs (eve.dev/docs) — open the Ask AI dock, ask questions, read settled answers with sources. Use when the task needs Eve's documentation or assistant answers.
+
+## exa [site-agent]
+- Sites: exa.ai
+- Verbs: exa_chat_open, exa_chat_ask, exa_chat_read, exa_chat_clear, exa_chat_close
+- Verified: 2026-09-16 · sha:38f87b6c37d3
+- Access: public
+- Work Exa docs (exa.ai/docs) — ask the Ask Assistant via its inline bar, read settled answers with sources. Use when the task needs Exa's documentation or assistant answers.
+
+## flags-sdk [site-agent]
+- Sites: flags-sdk.dev
+- Verbs: flags_chat_open, flags_chat_ask, flags_chat_read, flags_chat_clear, flags_chat_close
+- Verified: 2026-09-15 · sha:a98ac24f6b8b
+- Access: public
+- Work Flags SDK docs (flags-sdk.dev/docs) — open the Ask AI panel, ask questions, read settled answers with sources. Use when the task needs Flags SDK documentation or assistant answers.
+
+## mintlify [site-agent]
+- Sites: mintlify.com
+- Verbs: mintlify_chat_open, mintlify_chat_ask, mintlify_chat_clear, mintlify_chat_close
+- Verified: 2026-09-15 · sha:053edd5f265a
+- Access: public
+- Work Mintlify docs (mintlify.com/docs) — open the Ask Assistant panel, ask questions, read settled answers with sources. Use when the task needs Mintlify's documentation or assistant answers.
+
+## prism [site-agent]
+- Sites: prism.openai.com
+- Verbs: prism_list_projects, prism_open_project, prism_list_files, prism_read_file, prism_read_outline, prism_list_chats, prism_open_chat, prism_read_thread, prism_list_tabs, prism_search_project, prism_export_pdf, prism_read_settings
+- Verified: 2026-09-17 · sha:a791887d9351
+- Access: login
+- Work Prism (prism.openai.com) — list projects, read files and outline, list and read chat threads, search, export PDF. Use when the task needs the user's Prism workspace, LaTeX documents, or research threads. Login required (user-owned session); read verbs freely, chat sends and edits only on explicit per-task approval.
+
+## supermemory [site-agent]
+- Sites: supermemory.ai
+- Verbs: supermemory_chat_open, supermemory_chat_ask, supermemory_chat_read, supermemory_chat_clear, supermemory_chat_close
+- Verified: 2026-09-15 · sha:ea85826d282e
+- Access: public
+- Work Supermemory docs (supermemory.ai/docs) — open the Ask Assistant, ask questions, read settled answers with sources. Use when the task needs Supermemory's documentation or assistant answers.
+
+## vercel [site-agent]
+- Sites: vercel.com
+- Verbs: vercel_chat_open, vercel_chat_ask, vercel_chat_read, vercel_chat_clear, vercel_chat_close
+- Verified: 2026-09-15 · sha:5fa1a007fcf8
+- Access: public
+- Work Vercel docs (vercel.com/docs) — open the Ask AI panel, ask questions, read settled answers with sources. Use when the task needs Vercel documentation or assistant answers.
+
+## vgpu [site-agent]
+- Sites: vgpu.sh
+- Verbs: vgpu_chat_open, vgpu_chat_ask, vgpu_chat_read, vgpu_chat_clear, vgpu_chat_close
+- Verified: 2026-09-15 · sha:c9739f1f8eab
+- Access: public
+- Work vgpu docs (vgpu.sh/docs) — open the Ask AI panel, ask questions, read settled answers with sources. Use when the task needs vgpu's documentation or assistant answers.
+
+## workflow-sdk [site-agent]
+- Sites: workflow-sdk.dev
+- Verbs: workflow_chat_open, workflow_chat_ask, workflow_chat_read, workflow_chat_clear, workflow_chat_close
+- Verified: 2026-09-15 · sha:eb9d89b27ac5
+- Access: public
+- Work Workflow SDK docs (workflow-sdk.dev/docs) — open the Ask AI panel, ask questions, read settled answers with sources. Use when the task needs Workflow SDK documentation or assistant answers.

@@ -34,11 +34,11 @@ curl -fsSL https://raw.githubusercontent.com/system1970/agent-webmcp/main/instal
 
 ```bash
 # with Go installed
-go install github.com/system1970/agent-webmcp@v0.1.0
+go install github.com/system1970/agent-webmcp/cmd/agent-webmcp@v0.2.0
 
 # from source
 git clone https://github.com/system1970/agent-webmcp && cd agent-webmcp
-go build -trimpath -ldflags="-s -w" -o agent-webmcp .   # Windows: build.cmd
+go build -trimpath -ldflags="-s -w" -o agent-webmcp ./cmd/agent-webmcp   # Windows: build.cmd
 ```
 
 No `install` step for the browser itself — system Chrome is auto-detected (`--chrome PATH` or `AGENT_WEBMCP_CHROME` overrides). Prebuilt binaries + checksums live on the [releases page](https://github.com/system1970/agent-webmcp/releases).
@@ -55,14 +55,15 @@ headless/headful Chrome, per-task sessions, MCP stdio bridge).
    `irm https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.ps1 | iex`;
    macOS/Linux runs
    `curl -fsSL https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.sh | sh`.
-   With Go: `go install github.com/system1970/agent-webmcp@v0.1.0`.
+   With Go: `go install github.com/system1970/agent-webmcp/cmd/agent-webmcp@v0.2.0`.
    Confirm with `agent-webmcp version`.
 2. Check the browser: you need Chrome ≥149 (or Brave/Chromium ≥151-base).
    Run `agent-webmcp open example.com --session setup-check`. If it reports
    `chrome not found`, locate the browser and retry with --chrome <path>.
-3. Load the skill: run `agent-webmcp skills get webmcp` and follow it as your
-   operating procedure (open → list → invoke → verify → close). Never invoke
-   a tool you have not listed. Optionally register it with
+3. Load the procedure: the golden path is always
+   `open` → `list` → `invoke` → verify → `close`.
+   Never invoke a tool you have not listed. Full operator text lives at
+   `skills/agent-webmcp/SKILL.md` in the repo. Optionally register it with
    `npx skills add https://github.com/system1970/agent-webmcp --skill agent-webmcp`.
 4. Verify end-to-end: open https://webmcp.com --session setup-check, `list`
    (expect about, surprise_me, ...), then
@@ -107,11 +108,11 @@ Read-only JSON, no auth. Full docs: `https://webmcp.com/api-docs`. Then drive th
 | `open [url] [--session NAME] [--headed] [--chrome PATH] [--json]` | Launch/connect session, optionally navigate. Reports `webmcp.toolCount`. |
 | `list [--session NAME] [--json]` | Page tools with `inputSchema` + `frameId`. Empty = page exposes nothing. |
 | `invoke <tool> [--params JSON\|@file] [--frame ID] [--timeout-ms N] [--json]` | Call a tool (params = JSON object). Auto-resolves `frameId` unless ambiguous. |
-| `eval <js|@file> [--session NAME] [--json]` | `Runtime.evaluate` in the active tab. Inspection only — prefer page tools for actuation. |
+| `eval <js|@file> [--session NAME] [--json]` | `Runtime.evaluate` in the active tab. Inspection and manual grounding probes — prefer page tools for actuation. |
+| `snapshot` | REMOVED in 0.2.0 (was: AX-tree snapshot; use page tools or `eval`). |
 | `tools <add <file> [--for HOST] [--name NAME] | list | load | remove <name>>` | Custom tools: store page-JS tool packs per host; auto-loaded on `open`, manually via `load`. |
 | `status / sessions / close [--all]` | Session lifecycle. `close` keeps the profile dir for fast relaunch. |
 | `mcp [--session NAME]` | MCP stdio bridge (`open`, `list_webmcp_tools`, `execute_webmcp_tool`, `close`). |
-| `skills [get <name>]` | Print the bundled agent skill — always matches the installed binary. |
 
 Globals: `--session/-s` (default `default`, or `AGENT_WEBMCP_SESSION`), `--json` (envelope `{ok, data|error, code}`), `--timeout-ms` (default 30000). Headless↔headed switches need a session restart.
 
@@ -119,11 +120,13 @@ Shell quoting eats JSON? Use a file: `--params @/tmp/p.json` (BOM-tolerant).
 
 ## Sessions
 
-One session = one isolated Chrome under `~/.agent-webmcp/sessions/<name>/` (`cdp-port`, `chrome.pid`, `profile/`). The browser outlives each CLI call, so consecutive agent steps share tabs, logins, and page state. Use one `--session` per task/agent; `close` when done. Headless by default; `open --headed` shows a real visible window owned by the session — watching and manual interaction need no other tool.
+Reuse first. `sessions` lists name, live/dead, desc, url, idle. Attach with `open --session NAME` (no URL). Create only on miss with `open <url> --session <name> --desc "site + purpose"`. Relabel with `sessions note`.
+
+One session = one isolated Chrome under `~/.agent-webmcp/sessions/<name>/` (`cdp-port`, `chrome.pid`, `profile/`, `meta.json`). The browser outlives each CLI call, so consecutive agent steps share tabs, logins, and page state. `close` frees Chrome but keeps profile + label; `close --all` frees all. Headless by default; `open --headed` shows a real visible window owned by the session.
 
 ## Custom tools
 
-Native tools not enough? Store your own. A pack is a JS file (async IIFE) that registers tools via the page's own `document.modelContext` — see [`overlays/webmcp-com.js`](overlays/webmcp-com.js) (directory search/lookup/list for webmcp.com) and [`overlays/eve-dev.js`](overlays/eve-dev.js) (an Ask-AI chat tool for eve.dev, which ships search/read but no Q&A tool).
+Native tools not enough? Store your own. A pack is a JS file (async IIFE) that registers tools via the page's own `document.modelContext` — ground on role+name queries, mark read-only verbs, verify with settle loops.
 
 ```bash
 agent-webmcp tools add ./my-pack.js --for example.com   # store (+ live-loads if the tab matches)
@@ -147,13 +150,13 @@ Four tools only (`open`, `list_webmcp_tools`, `execute_webmcp_tool`, `close`) to
 
 ## Agent skill
 
-For Claude Code / Cursor / Codex, install the skill so agents use the golden path automatically:
+For Claude Code / Cursor / Codex, install the operator skill so agents use the golden path automatically:
 
 ```bash
 npx skills add https://github.com/system1970/agent-webmcp --skill agent-webmcp
 ```
 
-Or read it straight from the binary (never goes stale): `agent-webmcp skills get webmcp`. Full text lives in [`skills/agent-webmcp/SKILL.md`](skills/agent-webmcp/SKILL.md), with deeper reference split by branch — protocol details (`skills get webmcp-protocol`), CLI/sessions/MCP (`skills get webmcp-cli`), failures (`skills get webmcp-troubleshooting`) — or everything at once with `skills get webmcp --full`.
+Or read it straight from the repo — it always tracks the binary: [`skills/agent-webmcp/SKILL.md`](skills/agent-webmcp/SKILL.md).
 
 ## WebMCP semantics (verified against Chrome 152 `/json/protocol`)
 
@@ -168,10 +171,12 @@ Or read it straight from the binary (never goes stale): `agent-webmcp skills get
 |---|---|---|
 | `version` / spawn floor | ~15ms | Go runtime + process start |
 | `status` | ~27ms | spawn + one HTTP round-trip |
-| `invoke` | ~39ms | of which browser-side work is ~4ms |
-| `list` | ~343ms | dominated by 300ms `toolsAdded` settle |
+| `invoke` (cold) | ~95ms | frame resolve via `listTools` fast path + invoke + response |
+| `invoke` (repeat tool, cached) | ~38ms | session frame cache skips resolve entirely |
+| `list` (tool page) | ~250-350ms | dominated by `toolsAdded` settle (200ms quiet) |
+| `list` (empty page) | ~1.0s | full dead window (was 1.5s); re-`list` on late SPAs |
 
-In-process harness: HTTP `/json/list` 3.2ms, WS dial 0.9ms, RPC round-trip 0.5ms, `enable` 1.1ms, full invoke path 3.4ms. Conclusion: ~90% of CLI latency is process spawn + handshake. A future daemon mode would take `invoke` to ~5–8ms; until then, frame caching + shorter settle are the cheap wins (see Roadmap).
+In-process harness: HTTP `/json/list` 3.2ms, WS dial 0.9ms, RPC round-trip 0.5ms, `enable` 1.1ms, full invoke path 3.4ms. Conclusion: ~90% of CLI latency is process spawn + handshake. Cheap wins already taken: per-session frame cache (`framecache.json`, invalidated + re-resolved on stale) and single-`list` `open` (packs load before discovery). A future daemon mode would take cold `invoke` to ~5–8ms.
 
 ## Where this fits (and where it doesn't)
 
@@ -197,13 +202,18 @@ The intended setup is both, side by side: agent-browser (or equivalent) for the 
 ## Layout
 
 ```
-main.go        CLI dispatch (stdlib flag parsing, no framework)
-cdp.go         minimal CDP/WS client (coder/websocket)
-webmcp.go      discovery (toolsAdded) + invoke (invokeTool/toolResponded)
-browser.go     launch, navigate, session lifecycle
-session.go     session dirs, port/pid files
-chrome.go      browser discovery + launch flags
-mcp.go         MCP stdio bridge (4 tools)
-skills/        bundled agent skill (go:embed, served by `skills`)
-testdata/      local WebMCP test page
+cmd/agent-webmcp/  CLI dispatch (stdlib flag parsing, no framework)
+  main.go        dispatch + usage (docs source of truth) + main_test.go
+  cdp.go         minimal CDP/WS client (coder/websocket)
+  webmcp.go      discovery (listTools fast path + toolsAdded settle) + invoke (invokeTool/toolResponded) + frame cache
+  pagejs.go      shared page-JS payloads (element labeling, actuation tails, read)
+  browser.go     launch, navigate, session lifecycle
+  session.go     session dirs, port/pid files, observation cache
+  chrome.go      browser discovery + launch flags
+  tools.go       custom packs + overlay provenance + evalScript (+ reinject)
+  mcp.go         MCP stdio bridge (4 tools)
+  output.go      {ok, data|error, code} envelope
+skills/          operator skill text (repo file, not embedded)
+skills-catalog/  per-site pack inventory (overlay.js per site; ships via `tools add`)
+site/            Next.js docs site (public/skills.json index)
 ```

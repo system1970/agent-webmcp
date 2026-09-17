@@ -1,0 +1,1042 @@
+{
+  "generated": "2026-09-16",
+  "count": 10,
+  "skills": [
+    {
+      "id": "chat-sdk",
+      "path": "chat-sdk",
+      "domain": "chat-sdk.dev",
+      "skill": "chat-sdk",
+      "title": "Chat SDK",
+      "kind": "site-agent",
+      "description": "Work Chat SDK docs (chat-sdk.dev/docs) — open the Ask AI panel, ask questions, read settled answers with sources. Use when the task needs Chat SDK documentation or assistant answers.",
+      "site": [
+        "chat-sdk.dev"
+      ],
+      "tags": [
+        "docs",
+        "assistant",
+        "chat"
+      ],
+      "uses": [],
+      "integration": "",
+      "tier": "official",
+      "category": "docs",
+      "verified": "2026-09-15",
+      "updated": "2026-09-15",
+      "access": "public",
+      "verbs": [
+        "chat_chat_open",
+        "chat_chat_ask",
+        "chat_chat_read",
+        "chat_chat_clear",
+        "chat_chat_close"
+      ],
+      "tools": [
+        {
+          "name": "chat_chat_open",
+          "purpose": "Open the panel.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "chat_chat_ask",
+          "purpose": "Talk to the agent.",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "chat_chat_read",
+          "purpose": "Read-only poll.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "chat_chat_clear",
+          "purpose": "LOCAL wipe of the sheet (close+reopen re-seats the last server turn — not a privacy boundary).",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "chat_chat_close",
+          "purpose": "Close the panel.",
+          "readonly": true,
+          "access": "public"
+        }
+      ],
+      "examples": [
+        "Live 2026-09-15 (headful): \"What is chat-sdk, in one sentence?\" → \"Used 8 sources\" + \"Chat SDK is a TypeScript library for building chat bots that work across multiple platforms (Slack, Microsoft Teams, Google Chat, Discord, Telegram, and more) with a single codebase.\""
+      ],
+      "guide": [
+        {
+          "title": "Open, ask, close",
+          "items": [
+            "`chat_chat_open` — ensure the panel is frontmost. Done when it reports `{visible:true}` (plus `{already}` when it was open).",
+            "`chat_chat_ask {question, timeoutMs}` — one question per call. Prefer a modest `timeoutMs` (25000–30000) and ask again to poll. Done when a call returns `settled:true` with a non-empty answer.",
+            "Verify the answer against its cited sources before carrying claims. Close the panel at task end — closing keeps history, so either restate minimal context per task or wipe with `chat_chat_clear` between unrelated tasks."
+          ]
+        },
+        {
+          "title": "Coverage",
+          "items": [
+            "Supported: panel conversation (open/ask/read/clear/close) headful. Grounded 2026-09-15, chat-sdk.dev/docs.",
+            "Known, not covered: no natives on this tenant; headless unverified (family experience says panels stall — use `--headed` until proven). Page-level extras (\"Copy page\", \"Copy for LLM\", \"Copy code\") are not verbs.",
+            "Unknown: mobile entry, Expand chat behavior."
+          ]
+        },
+        {
+          "title": "Troubleshooting",
+          "items": [
+            "`settled:false` twice → ask narrower, report both readouts.",
+            "`submit control not armed` → type again; Submit enables asynchronously after input lands.",
+            "Foreign turns → shared server memory; restate minimal context or clear first."
+          ]
+        }
+      ],
+      "validation": {
+        "verdict": "cloned 2026-09-15 from eve skill (same family), re-grounded live headful; ask settled Used-8-sources; no natives; backend POST chat-sdk.dev/api/chat; clear is LOCAL wipe (close+reopen re-seats)",
+        "date": null
+      },
+      "sha": "0515f3d7c97b"
+    },
+    {
+      "id": "eve",
+      "path": "eve",
+      "domain": "eve.dev",
+      "skill": "eve",
+      "title": "Eve",
+      "kind": "site-agent",
+      "description": "Work Eve docs (eve.dev/docs) — open the Ask AI dock, ask questions, read settled answers with sources. Use when the task needs Eve's documentation or assistant answers.",
+      "site": [
+        "eve.dev"
+      ],
+      "tags": [
+        "docs",
+        "assistant",
+        "eve"
+      ],
+      "uses": [],
+      "integration": "",
+      "tier": "official",
+      "category": "docs",
+      "verified": "2026-09-15",
+      "updated": "2026-09-15",
+      "access": "public",
+      "verbs": [
+        "eve_chat_open",
+        "eve_chat_ask",
+        "eve_chat_read",
+        "eve_chat_clear",
+        "eve_chat_close"
+      ],
+      "tools": [
+        {
+          "name": "eve_chat_open",
+          "purpose": "Open the dock.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "eve_chat_ask",
+          "purpose": "Talk to the agent.",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "eve_chat_read",
+          "purpose": "Read-only poll.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "eve_chat_clear",
+          "purpose": "Wipe the sheet via \"Clear chat\" (disabled while empty = no-op).",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "eve_chat_close",
+          "purpose": "Close the dock.",
+          "readonly": true,
+          "access": "public"
+        }
+      ],
+      "examples": [
+        "Live 2026-09-15 (headful): \"What are Eve channels, in one sentence?\" → \"Used 6 sources\" + \"Eve channels connect your agent to external clients and services, handling platform-specific communication such as Slack messages or MCP requests.\""
+      ],
+      "guide": [
+        {
+          "title": "Open, ask, close",
+          "items": [
+            "`eve_chat_open` — ensure the dock is frontmost. Done when it reports `{visible:true}` (plus `{already}` when it was open).",
+            "`eve_chat_ask {question, timeoutMs}` — one question per call. Prefer a modest `timeoutMs` (25000–30000) and ask again to poll. Done when a call returns `settled:true` with a non-empty answer. Short answers settle fast — small growth past baseline is normal, check content.",
+            "Verify the answer against its cited sources before carrying claims. Close the dock at task end — closing keeps history, so either restate minimal context per task or wipe with `eve_chat_clear` (local sheet wipe) between unrelated tasks."
+          ]
+        },
+        {
+          "title": "Coverage",
+          "items": [
+            "Supported: dock conversation (open/ask/read/clear/close) headful, both natives. Grounded 2026-09-15, eve.dev/docs.",
+            "Known, not covered: headless unverified on this tenant (family experience says panels stall — use `--headed` until proven).",
+            "Unknown: mobile entry, Expand chat behavior."
+          ]
+        },
+        {
+          "title": "Troubleshooting",
+          "items": [
+            "`settled:false` twice → ask narrower, report both readouts.",
+            "`submit control not armed` → type again; the composer enables Submit asynchronously after input lands.",
+            "Short answer with tiny growth → normal here; check the \"Used N sources\" line, not the char delta.",
+            "Foreign turns → shared server memory; restate minimal context or clear first."
+          ]
+        }
+      ],
+      "validation": {
+        "verdict": "built 2026-09-15 from raw scan/act turns headful; ask settled with Used-6-sources line; both natives verified; backend POST eve.dev/api/chat",
+        "date": null
+      },
+      "sha": "662607bca47a"
+    },
+    {
+      "id": "exa",
+      "path": "exa",
+      "domain": "exa.ai",
+      "skill": "exa",
+      "title": "Exa",
+      "kind": "site-agent",
+      "description": "Work Exa docs (exa.ai/docs) — ask the Ask Assistant via its inline bar, read settled answers with sources. Use when the task needs Exa's documentation or assistant answers.",
+      "site": [
+        "exa.ai"
+      ],
+      "tags": [
+        "docs",
+        "assistant",
+        "exa"
+      ],
+      "uses": [],
+      "integration": "",
+      "tier": "official",
+      "category": "docs",
+      "verified": "2026-09-16",
+      "updated": "2026-09-16",
+      "access": "public",
+      "verbs": [
+        "exa_chat_open",
+        "exa_chat_ask",
+        "exa_chat_read",
+        "exa_chat_clear",
+        "exa_chat_close"
+      ],
+      "tools": [
+        {
+          "name": "exa_chat_open",
+          "purpose": "Status check.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "exa_chat_ask",
+          "purpose": "Talk to the agent.",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "exa_chat_read",
+          "purpose": "Read-only poll.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "exa_chat_clear",
+          "purpose": "Wipe the thread via \"Clear chat history\".",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "exa_chat_close",
+          "purpose": "Close the panel.",
+          "readonly": true,
+          "access": "public"
+        }
+      ],
+      "examples": [
+        "Live 2026-09-16 (headful): \"What is Exa Search?\" → settled with \"Read 1 file\" + \"Exa Search is a web search API built for AI agents ...\" plus source links (Search Quickstart, Deep Search, Get Started)."
+      ],
+      "guide": [
+        {
+          "title": "Open, ask, close",
+          "items": [
+            "`exa_chat_open` — read-only status check (never clicks — there is no trigger). Done when it reports `{barPresent:true}` (ready to ask) with `visible` telling whether the panel is already up.",
+            "`exa_chat_ask {question, timeoutMs}` — one question per call. The first call opens the panel via the inline bar automatically. Prefer a modest `timeoutMs` (25000–30000) and ask again to poll. Done when a call returns `settled:true` with a non-empty answer.",
+            "Verify the answer against its cited sources before carrying claims. Close the panel at task end — closing keeps history, so either restate minimal context per task or wipe with `exa_chat_clear` between unrelated tasks."
+          ]
+        },
+        {
+          "title": "Coverage",
+          "items": [
+            "Supported: panel conversation (open/ask/read/clear/close) headful. Grounded 2026-09-16, exa.ai/docs.",
+            "Known, not covered: `search_docs` health; headless (family trait says it stalls — use `--headed` until proven); attachment control.",
+            "Unknown: mobile entry."
+          ]
+        },
+        {
+          "title": "Troubleshooting",
+          "items": [
+            "Empty answer with `streaming:true` → still generating; ask again.",
+            "`settled:false` twice → ask narrower, report both readouts.",
+            "`send control not armed` → stale bar text; the ask verb's empty-first arming handles it — one retry, then report.",
+            "Foreign turns → shared server memory; restate minimal context or clear first."
+          ]
+        }
+      ],
+      "validation": {
+        "verdict": "built 2026-09-16 from raw scan/act turns headful; triggerless entry via inline bar; ask settled with Read-1-file + sources; backend POST leaves.mintlify.com/api/assistant/exa-52/message; clear server-side",
+        "date": null
+      },
+      "sha": "38f87b6c37d3"
+    },
+    {
+      "id": "flags-sdk",
+      "path": "flags-sdk",
+      "domain": "flags-sdk.dev",
+      "skill": "flags-sdk",
+      "title": "Flags SDK",
+      "kind": "site-agent",
+      "description": "Work Flags SDK docs (flags-sdk.dev/docs) — open the Ask AI panel, ask questions, read settled answers with sources. Use when the task needs Flags SDK documentation or assistant answers.",
+      "site": [
+        "flags-sdk.dev"
+      ],
+      "tags": [
+        "docs",
+        "assistant",
+        "flags"
+      ],
+      "uses": [],
+      "integration": "",
+      "tier": "official",
+      "category": "docs",
+      "verified": "2026-09-15",
+      "updated": "2026-09-15",
+      "access": "public",
+      "verbs": [
+        "flags_chat_open",
+        "flags_chat_ask",
+        "flags_chat_read",
+        "flags_chat_clear",
+        "flags_chat_close"
+      ],
+      "tools": [
+        {
+          "name": "flags_chat_open",
+          "purpose": "Open the panel.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "flags_chat_ask",
+          "purpose": "Talk to the agent.",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "flags_chat_read",
+          "purpose": "Read-only poll.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "flags_chat_clear",
+          "purpose": "Wipe the thread via \"Clear chat\" (disabled while empty = no-op).",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "flags_chat_close",
+          "purpose": "Close the panel.",
+          "readonly": true,
+          "access": "public"
+        }
+      ],
+      "examples": [
+        "Live 2026-09-15 (headful): \"What is flags-sdk, in one sentence?\" → \"Used 8 sources\" + \"The Flags SDK is a free, open-source library for using feature flags in Next.js and SvelteKit applications.\""
+      ],
+      "guide": [
+        {
+          "title": "Open, ask, close",
+          "items": [
+            "`flags_chat_open` — ensure the panel is frontmost. Done when it reports `{visible:true}` (plus `{already}` when it was open).",
+            "`flags_chat_ask {question, timeoutMs}` — one question per call. Prefer a modest `timeoutMs` (25000–30000) and ask again to poll. Done when a call returns `settled:true` with a non-empty answer.",
+            "Verify the answer against its cited sources before carrying claims. Close the panel at task end — closing keeps history, so either restate minimal context per task or wipe with `flags_chat_clear` between unrelated tasks."
+          ]
+        },
+        {
+          "title": "Coverage",
+          "items": [
+            "Supported: panel conversation (open/ask/read/clear/close) headful. Grounded 2026-09-15, flags-sdk.dev/docs.",
+            "Known, not covered: no natives on this tenant; headless unverified (family experience says panels stall — use `--headed` until proven). Page-level extras (\"Copy page\", \"Copy for LLM\", \"Copy prompt actions\", \"Copy code\") are not verbs.",
+            "Unknown: mobile entry, Expand chat behavior."
+          ]
+        },
+        {
+          "title": "Troubleshooting",
+          "items": [
+            "`settled:false` twice → ask narrower, report both readouts.",
+            "`submit control not armed` → type again; Submit enables asynchronously after input lands.",
+            "Foreign turns → shared server memory; restate minimal context or clear first."
+          ]
+        }
+      ],
+      "validation": {
+        "verdict": "cloned 2026-09-15 from chat-sdk skill (same family), re-grounded live headful; ask settled ~5s Used-8-sources; no natives; backend POST flags-sdk.dev/api/chat; clear proven SERVER-SIDE via close+reopen probes",
+        "date": null
+      },
+      "sha": "a98ac24f6b8b"
+    },
+    {
+      "id": "mintlify",
+      "path": "mintlify",
+      "domain": "mintlify.com",
+      "skill": "mintlify",
+      "title": "Mintlify",
+      "kind": "site-agent",
+      "description": "Work Mintlify docs (mintlify.com/docs) — open the Ask Assistant panel, ask questions, read settled answers with sources. Use when the task needs Mintlify's documentation or assistant answers.",
+      "site": [
+        "mintlify.com"
+      ],
+      "tags": [
+        "docs",
+        "assistant",
+        "mintlify"
+      ],
+      "uses": [],
+      "integration": "",
+      "tier": "official",
+      "category": "docs",
+      "verified": "2026-09-15",
+      "updated": "2026-09-15",
+      "access": "public",
+      "verbs": [
+        "mintlify_chat_open",
+        "mintlify_chat_ask",
+        "mintlify_chat_clear",
+        "mintlify_chat_close"
+      ],
+      "tools": [
+        {
+          "name": "mintlify_chat_open",
+          "purpose": "Open the chat.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "mintlify_chat_ask",
+          "purpose": "Talk to the agent.",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "mintlify_chat_clear",
+          "purpose": "Wipe the thread.",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "mintlify_chat_close",
+          "purpose": "Close the chat.",
+          "readonly": true,
+          "access": "public"
+        }
+      ],
+      "examples": [
+        "Live 2026-09-15 (headful): \"What is the contextual menu, in one sentence?\" → settled in ~10s with a grounded one-liner plus source links (Contextual menu, Settings structure - contextual).",
+        "Live 2026-09-15 (headful): \"Where do I configure the contextual menu?\" → settled in ~8s (\"contextual object under docs.json ... per-page frontmatter\")."
+      ],
+      "guide": [
+        {
+          "title": "Open, ask, close",
+          "items": [
+            "`mintlify_chat_open` — ensure the panel is frontmost. Done when it reports `{visible:true}` (plus `{already}` when it was open).",
+            "`mintlify_chat_ask {question, timeoutMs}` — one question per call. Prefer a modest `timeoutMs` (25000–30000) and ask again to poll. Done when a call returns `settled:true` with a non-empty answer.",
+            "Verify the answer against the docs it cites (trailing source links, or `open_skill` for the underlying document) before carrying claims further. Close the panel at task end — closing keeps history, so either restate minimal context per task or wipe the thread with `mintlify_chat_clear` between unrelated tasks."
+          ]
+        },
+        {
+          "title": "Coverage",
+          "items": [
+            "Supported: panel conversation (open/ask/clear/close) headful, skill-document lookup via `open_skill`. Grounded 2026-09-15, mintlify.com/docs.",
+            "Known, not covered: `search_docs` fails from here (500s, retried); headless sessions stall (send echoes, no stream — use `--headed`); `app.mintlify.com` dashboard (open-ended acting surface, needs a locate/act runtime before verbs earn their place).",
+            "Unknown: mobile entry trigger, attachment control."
+          ]
+        },
+        {
+          "title": "Troubleshooting",
+          "items": [
+            "Empty answer with `streaming:true` → still generating; ask again to poll.",
+            "`settled:false` twice → ask narrower, then report the stall with both readouts.",
+            "`send control not found` → a prior turn is streaming (Stop present); wait for settle, then retry.",
+            "Stale turns you did not create → shared server memory; restate minimal context."
+          ]
+        }
+      ],
+      "validation": {
+        "verdict": "rebuilt 2026-09-15 from raw scan/act turns, headful required; clear verified server-side (cleared turns stay gone across close+reopen)",
+        "date": null
+      },
+      "sha": "053edd5f265a"
+    },
+    {
+      "id": "prism",
+      "path": "prism",
+      "domain": "prism.openai.com",
+      "skill": "prism",
+      "title": "Prism",
+      "kind": "site-agent",
+      "description": "Work Prism (prism.openai.com) — list projects, read files and outline, list and read chat threads, search, export PDF. Use when the task needs the user's Prism workspace, LaTeX documents, or research threads. Login required (user-owned session); read verbs freely, chat sends and edits only on explicit per-task approval.",
+      "site": [
+        "prism.openai.com"
+      ],
+      "tags": [
+        "docs",
+        "latex",
+        "research",
+        "chat",
+        "openai"
+      ],
+      "uses": [],
+      "integration": "",
+      "tier": "official",
+      "category": "docs",
+      "verified": "2026-09-17",
+      "updated": "2026-09-17",
+      "access": "login",
+      "verbs": [
+        "prism_list_projects",
+        "prism_open_project",
+        "prism_list_files",
+        "prism_read_file",
+        "prism_read_outline",
+        "prism_list_chats",
+        "prism_open_chat",
+        "prism_read_thread",
+        "prism_list_tabs",
+        "prism_search_project",
+        "prism_export_pdf",
+        "prism_read_settings"
+      ],
+      "tools": [
+        {
+          "name": "prism_list_projects",
+          "purpose": "",
+          "readonly": true,
+          "access": "login"
+        },
+        {
+          "name": "prism_open_project",
+          "purpose": "",
+          "readonly": true,
+          "access": "login"
+        },
+        {
+          "name": "prism_list_files",
+          "purpose": "",
+          "readonly": true,
+          "access": "login"
+        },
+        {
+          "name": "prism_read_file",
+          "purpose": "",
+          "readonly": true,
+          "access": "login"
+        },
+        {
+          "name": "prism_read_outline",
+          "purpose": "",
+          "readonly": true,
+          "access": "login"
+        },
+        {
+          "name": "prism_list_chats",
+          "purpose": "",
+          "readonly": true,
+          "access": "login"
+        },
+        {
+          "name": "prism_open_chat",
+          "purpose": "",
+          "readonly": true,
+          "access": "login"
+        },
+        {
+          "name": "prism_read_thread",
+          "purpose": "",
+          "readonly": true,
+          "access": "login"
+        },
+        {
+          "name": "prism_list_tabs",
+          "purpose": "",
+          "readonly": true,
+          "access": "login"
+        },
+        {
+          "name": "prism_search_project",
+          "purpose": "",
+          "readonly": true,
+          "access": "login"
+        },
+        {
+          "name": "prism_export_pdf",
+          "purpose": "",
+          "readonly": true,
+          "access": "login"
+        },
+        {
+          "name": "prism_read_settings",
+          "purpose": "",
+          "readonly": true,
+          "access": "login"
+        }
+      ],
+      "examples": [
+        "Live 2026-09-17 (headful, read-only): home → project (u=2e379fdc) → Chats → \"Who: Orkestrate — early\" → 19k-char transcript read (user brief + assistant answer, roles intact).",
+        "Live 2026-09-17: avatar menu → Settings → all six sections read (Editor defaults, PDF Dark Mode + Zoom Shortcuts, hidden-file patterns, Export-all-zip, beta opt-in, Zotero Connect)."
+      ],
+      "guide": [
+        {
+          "title": "Open, read, verify",
+          "items": [
+            "`prism_list_projects` — workspace home (`?pg=0`): All / Yours / Shared tabs. Done when you hold `{id, title, age}` rows.",
+            "`prism_open_project {project_id}` — navigates to `?u=<id>&pg=1`. Done when Files tree + outline render.",
+            "`prism_list_files` — expands folders, returns the tree. Done when every visible file/folder is captured (Orkestrate/ holds A2A.tex, AGENTS.draft.md, inference-system-spec.tex — expand, never assume).",
+            "`prism_read_file {path}` — opens `?m=<path>`, returns editor text. Done when content length is stable across two reads.",
+            "`prism_list_chats` — Chats tab → thread titles + ages. Done when the list is captured (rows are DIV[role=button], not buttons).",
+            "`prism_open_chat {chat}` + `prism_read_thread` — pointer-sequence click on the thread row (bare el.click() is ignored — Radix needs focus + pointerdown/pointerup/click), then read the composer- ancestor scope. Done when messages render with roles.",
+            "`prism_search_project {query}` — project search box + scope filters. Submit path unmapped — do not ship until grounded.",
+            "`prism_export_pdf` — Download PDF control. Done when the file lands on disk with size > 0.",
+            "`prism_read_settings` — six sections (Editor, PDF Viewer, File Management, Data Controls, Beta features, Integrations). Read only — never toggle, never save."
+          ]
+        },
+        {
+          "title": "Act grade (unproven — needs live proof + approval)",
+          "items": [
+            "`prism_chat_ask` — composer (\"Ask anything\") + model picker (6 Astra / 5.6 Sol / 5.6 Terra; effort Low–XHigh — read, never change the user's selection) + submit. Appends to the user's history: explicit per-task approval, fresh tab preferred.",
+            "`prism_create_chat`, `prism_create_file`, `prism_edit_file` (old-block match required), `prism_compile` (errors verbatim), `prism_upload_file`, `prism_create_project`, `prism_import_project`.",
+            "Transact (explicit approval, never implied): `prism_invite_member`, `prism_zotero_connect` (external OAuth), `prism_export_all_zip` is Answer-grade (own data out)."
+          ]
+        },
+        {
+          "title": "Coverage",
+          "items": [
+            "Supported: projects/files/outline/chats-list/thread-open/thread- read/search-panel/model-options/settings (all six sections). Grounded 2026-09-17, headful, read-only.",
+            "Known, not covered: search submit (typed, no results rendered); Tools tab contents (tab found, panel unmapped); More-options menu; thread message bodies beyond the selected thread; New-chat-tab behavior; Invite dialog; Import flow.",
+            "Unknown: mobile layout, shared-workspace (non-owner) behavior, headless viability (assume stalls until proven)."
+          ]
+        },
+        {
+          "title": "Troubleshooting",
+          "items": [
+            "Thread rows ignore bare clicks → focus + pointerdown/pointerup/ click sequence (site-forge: Radix rule).",
+            "Avatar/user menus ignore bare clicks → same sequence.",
+            "`el.click()` on Radix triggers silently no-ops (aria-expanded stays false) — always verify state after, never assume.",
+            "Thread list renders rows as DIV[role=button] — scope queries to role, not tag.",
+            "No `/settings` route (404) — settings is a view behind the avatar menu, not a URL."
+          ]
+        }
+      ],
+      "validation": {
+        "verdict": "ordered flow: home list, navigate into project, then project-state reads (runner settles 1.5s between checks)",
+        "date": null
+      },
+      "sha": "a791887d9351"
+    },
+    {
+      "id": "supermemory",
+      "path": "supermemory",
+      "domain": "supermemory.ai",
+      "skill": "supermemory",
+      "title": "Supermemory",
+      "kind": "site-agent",
+      "description": "Work Supermemory docs (supermemory.ai/docs) — open the Ask Assistant, ask questions, read settled answers with sources. Use when the task needs Supermemory's documentation or assistant answers.",
+      "site": [
+        "supermemory.ai"
+      ],
+      "tags": [
+        "docs",
+        "assistant",
+        "supermemory"
+      ],
+      "uses": [],
+      "integration": "",
+      "tier": "official",
+      "category": "docs",
+      "verified": "2026-09-15",
+      "updated": "2026-09-15",
+      "access": "public",
+      "verbs": [
+        "supermemory_chat_open",
+        "supermemory_chat_ask",
+        "supermemory_chat_read",
+        "supermemory_chat_clear",
+        "supermemory_chat_close"
+      ],
+      "tools": [
+        {
+          "name": "supermemory_chat_open",
+          "purpose": "Open the chat.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "supermemory_chat_ask",
+          "purpose": "Talk to the agent.",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "supermemory_chat_read",
+          "purpose": "Read-only poll.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "supermemory_chat_clear",
+          "purpose": "Wipe the thread.",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "supermemory_chat_close",
+          "purpose": "Close the chat.",
+          "readonly": true,
+          "access": "public"
+        }
+      ],
+      "examples": [
+        "Live 2026-09-15 (headful): \"What is supermemory, in one sentence?\" → settled in ~13s (\"Supermemory is context infrastructure for AI agents ... persistent memory\") with \"Read 1 file\" plus source links (What is supermemory, Quickstart, Architecture / How it works)."
+      ],
+      "guide": [
+        {
+          "title": "Open, ask, close",
+          "items": [
+            "`supermemory_chat_open` — ensure the panel is frontmost. Done when it reports `{visible:true}` (plus `{already}` when it was open).",
+            "`supermemory_chat_ask {question, timeoutMs}` — one question per call. Prefer a modest `timeoutMs` (25000–30000) and ask again to poll. Done when a call returns `settled:true` with a non-empty answer. If the call itself errors (frame navigation eats long returns on this tenant), poll with `supermemory_chat_read` — the answer survives in the sheet even when the return dies.",
+            "Verify the answer against its cited sources before carrying claims. Close the panel at task end — closing keeps history, so either restate minimal context per task or wipe the thread with `supermemory_chat_clear` between unrelated tasks."
+          ]
+        },
+        {
+          "title": "Coverage",
+          "items": [
+            "Supported: panel conversation (open/ask/read/clear/close) headful, `open_skill`. Grounded 2026-09-15, supermemory.ai/docs.",
+            "Known, not covered: `search_docs` 500s; headless unverified (family trait says it stalls — use `--headed`).",
+            "Unknown: mobile entry trigger, attachment control."
+          ]
+        },
+        {
+          "title": "Troubleshooting",
+          "items": [
+            "Empty answer with `streaming:true` → still generating; ask again.",
+            "`settled:false` twice → ask narrower, report both readouts.",
+            "`send control not found` → prior turn streaming; wait, retry.",
+            "Foreign turns → shared server memory; restate minimal context."
+          ]
+        }
+      ],
+      "validation": {
+        "verdict": "built 2026-09-15 headful; clear verified server-side; ask returns die to frame navs on this tenant so evals check accepted-send plus read-poll",
+        "date": null
+      },
+      "sha": "ea85826d282e"
+    },
+    {
+      "id": "vercel",
+      "path": "vercel",
+      "domain": "vercel.com",
+      "skill": "vercel",
+      "title": "Vercel",
+      "kind": "site-agent",
+      "description": "Work Vercel docs (vercel.com/docs) — open the Ask AI panel, ask questions, read settled answers with sources. Use when the task needs Vercel documentation or assistant answers.",
+      "site": [
+        "vercel.com"
+      ],
+      "tags": [
+        "docs",
+        "assistant",
+        "vercel"
+      ],
+      "uses": [],
+      "integration": "",
+      "tier": "official",
+      "category": "docs",
+      "verified": "2026-09-15",
+      "updated": "2026-09-15",
+      "access": "public",
+      "verbs": [
+        "vercel_chat_open",
+        "vercel_chat_ask",
+        "vercel_chat_read",
+        "vercel_chat_clear",
+        "vercel_chat_close"
+      ],
+      "tools": [
+        {
+          "name": "vercel_chat_open",
+          "purpose": "Open the panel.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "vercel_chat_ask",
+          "purpose": "Talk to the agent.",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "vercel_chat_read",
+          "purpose": "Read-only poll.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "vercel_chat_clear",
+          "purpose": "Wipe the thread via \"Clear chat\".",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "vercel_chat_close",
+          "purpose": "Close the panel.",
+          "readonly": true,
+          "access": "public"
+        }
+      ],
+      "examples": [
+        "Live 2026-09-15 (headful): \"What is Vercel Fluid, in one sentence?\" → \"Used 8 sources\" + \"Vercel Fluid Compute is a hybrid serverless model that combines serverless flexibility with server-like performance by allowing multiple concurrent requests to share a single function instance, eliminating cold starts and reducing costs.\""
+      ],
+      "guide": [
+        {
+          "title": "Open, ask, close",
+          "items": [
+            "`vercel_chat_open` — ensure the panel is frontmost. Done when it reports `{visible:true}` (plus `{already}` when it was open).",
+            "`vercel_chat_ask {question, timeoutMs}` — one question per call. Prefer a modest `timeoutMs` (25000–30000) and ask again to poll. Done when a call returns `settled:true` with a non-empty answer.",
+            "Verify the answer against its cited sources before carrying claims. Close the panel at task end — closing keeps history, so either restate minimal context per task or wipe with `vercel_chat_clear` between unrelated tasks."
+          ]
+        },
+        {
+          "title": "Coverage",
+          "items": [
+            "Supported: panel conversation (open/ask/read/clear/close) headful. Grounded 2026-09-15, vercel.com/docs.",
+            "Known, not covered: no natives on this tenant; headless unverified (family experience says panels stall — use `--headed` until proven). Page extras (\"Copy prompt\", \"Copy chat as markdown\") are not verbs.",
+            "Unknown: mobile entry."
+          ]
+        },
+        {
+          "title": "Troubleshooting",
+          "items": [
+            "`settled:false` twice → ask narrower, report both readouts.",
+            "`submit control not armed` → type again; Submit enables asynchronously after input lands.",
+            "Foreign turns → shared server memory; restate minimal context or clear first."
+          ]
+        }
+      ],
+      "validation": {
+        "verdict": "cloned 2026-09-15 from flags-sdk skill (same family), re-grounded live headful; ask settled ~9s Used-8-sources; no natives; backend POST vercel.com/api/ai-chat (+title); clear proven SERVER-SIDE",
+        "date": null
+      },
+      "sha": "5fa1a007fcf8"
+    },
+    {
+      "id": "vgpu",
+      "path": "vgpu",
+      "domain": "vgpu.sh",
+      "skill": "vgpu",
+      "title": "vgpu",
+      "kind": "site-agent",
+      "description": "Work vgpu docs (vgpu.sh/docs) — open the Ask AI panel, ask questions, read settled answers with sources. Use when the task needs vgpu's documentation or assistant answers.",
+      "site": [
+        "vgpu.sh"
+      ],
+      "tags": [
+        "docs",
+        "assistant",
+        "vgpu"
+      ],
+      "uses": [],
+      "integration": "",
+      "tier": "official",
+      "category": "docs",
+      "verified": "2026-09-15",
+      "updated": "2026-09-15",
+      "access": "public",
+      "verbs": [
+        "vgpu_chat_open",
+        "vgpu_chat_ask",
+        "vgpu_chat_read",
+        "vgpu_chat_clear",
+        "vgpu_chat_close"
+      ],
+      "tools": [
+        {
+          "name": "vgpu_chat_open",
+          "purpose": "Open the panel.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "vgpu_chat_ask",
+          "purpose": "Talk to the agent.",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "vgpu_chat_read",
+          "purpose": "Read-only poll.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "vgpu_chat_clear",
+          "purpose": "Wipe the thread via \"Clear chat\" (disabled while empty = no-op).",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "vgpu_chat_close",
+          "purpose": "Close the panel.",
+          "readonly": true,
+          "access": "public"
+        }
+      ],
+      "examples": [
+        "Live 2026-09-15 (headful): \"What is vgpu, in one sentence?\" → \"Used 8 sources\" + \"vgpu is an agentic-first WebGPU library designed for Node.js, browsers, and serverless runtimes, providing a structured and composable API for GPU programming.\""
+      ],
+      "guide": [
+        {
+          "title": "Open, ask, close",
+          "items": [
+            "`vgpu_chat_open` — ensure the panel is frontmost. Done when it reports `{visible:true}` (plus `{already}` when it was open).",
+            "`vgpu_chat_ask {question, timeoutMs}` — one question per call. Prefer a modest `timeoutMs` (25000–30000) and ask again to poll. Done when a call returns `settled:true` with a non-empty answer.",
+            "Verify the answer against its cited sources before carrying claims. Close the panel at task end — closing keeps history, so either restate minimal context per task or wipe with `vgpu_chat_clear` between unrelated tasks."
+          ]
+        },
+        {
+          "title": "Coverage",
+          "items": [
+            "Supported: panel conversation (open/ask/read/clear/close) headful. Grounded 2026-09-15, vgpu.sh/docs.",
+            "Known, not covered: no natives on this tenant; headless unverified (family experience says panels stall — use `--headed` until proven). Page-level extras (\"Copy page\", \"Copy for LLM\") are not verbs.",
+            "Unknown: mobile entry."
+          ]
+        },
+        {
+          "title": "Troubleshooting",
+          "items": [
+            "`settled:false` twice → ask narrower, report both readouts.",
+            "`submit control not armed` → type again; Submit enables asynchronously after input lands.",
+            "Foreign turns → shared server memory; restate minimal context or clear first."
+          ]
+        }
+      ],
+      "validation": {
+        "verdict": "cloned 2026-09-15 from eve skill (same family), re-grounded live headful; ask settled ~6s Used-8-sources; no natives; backend POST vgpu.sh/api/chat",
+        "date": null
+      },
+      "sha": "c9739f1f8eab"
+    },
+    {
+      "id": "workflow-sdk",
+      "path": "workflow-sdk",
+      "domain": "workflow-sdk.dev",
+      "skill": "workflow-sdk",
+      "title": "Workflow SDK",
+      "kind": "site-agent",
+      "description": "Work Workflow SDK docs (workflow-sdk.dev/docs) — open the Ask AI panel, ask questions, read settled answers with sources. Use when the task needs Workflow SDK documentation or assistant answers.",
+      "site": [
+        "workflow-sdk.dev"
+      ],
+      "tags": [
+        "docs",
+        "assistant",
+        "workflow"
+      ],
+      "uses": [],
+      "integration": "",
+      "tier": "official",
+      "category": "docs",
+      "verified": "2026-09-15",
+      "updated": "2026-09-15",
+      "access": "public",
+      "verbs": [
+        "workflow_chat_open",
+        "workflow_chat_ask",
+        "workflow_chat_read",
+        "workflow_chat_clear",
+        "workflow_chat_close"
+      ],
+      "tools": [
+        {
+          "name": "workflow_chat_open",
+          "purpose": "Open the panel.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "workflow_chat_ask",
+          "purpose": "Talk to the agent.",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "workflow_chat_read",
+          "purpose": "Read-only poll.",
+          "readonly": true,
+          "access": "public"
+        },
+        {
+          "name": "workflow_chat_clear",
+          "purpose": "Wipe the thread via \"Clear chat\" (disabled while empty = no-op).",
+          "readonly": false,
+          "access": "public"
+        },
+        {
+          "name": "workflow_chat_close",
+          "purpose": "Close the panel.",
+          "readonly": true,
+          "access": "public"
+        }
+      ],
+      "examples": [
+        "Live 2026-09-15 (headful): \"What is workflow-sdk, in one sentence?\" → \"Used 8 sources\" + \"The Workflow SDK is an open-source durable-functions SDK that brings durability, reliability, and observability to asynchronous JavaScript, enabling you to build apps and AI Agents that can suspend, resume, and maintain state with ease.\""
+      ],
+      "guide": [
+        {
+          "title": "Open, ask, close",
+          "items": [
+            "`workflow_chat_open` — ensure the panel is frontmost. Done when it reports `{visible:true}` (plus `{already}` when it was open).",
+            "`workflow_chat_ask {question, timeoutMs}` — one question per call. Prefer a modest `timeoutMs` (25000–30000) and ask again to poll. Done when a call returns `settled:true` with a non-empty answer.",
+            "Verify the answer against its cited sources before carrying claims. Close the panel at task end — closing keeps history, so either restate minimal context per task or wipe with `workflow_chat_clear` between unrelated tasks."
+          ]
+        },
+        {
+          "title": "Coverage",
+          "items": [
+            "Supported: panel conversation (open/ask/read/clear/close) headful. Grounded 2026-09-15, workflow-sdk.dev/docs.",
+            "Known, not covered: no natives on this tenant; headless unverified (family experience says panels stall — use `--headed` until proven). Page-level extras (\"Copy page\", \"Copy for LLM\") are not verbs.",
+            "Unknown: mobile entry."
+          ]
+        },
+        {
+          "title": "Troubleshooting",
+          "items": [
+            "`settled:false` twice → ask narrower, report both readouts.",
+            "`submit control not armed` → type again; Submit enables asynchronously after input lands.",
+            "Foreign turns → shared server memory; restate minimal context or clear first."
+          ]
+        }
+      ],
+      "validation": {
+        "verdict": "cloned 2026-09-15 from vgpu skill (same family), re-grounded live headful; ask settled ~9s Used-8-sources; no natives; backend POST workflow-sdk.dev/api/chat",
+        "date": null
+      },
+      "sha": "eb9d89b27ac5"
+    }
+  ]
+}

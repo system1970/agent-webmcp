@@ -16,7 +16,7 @@ for target in \
   "windows amd64 agent-webmcp-windows-amd64.exe"; do
   set -- $target
   echo "building $3 ($VERSION)..."
-  GOOS="$1" GOARCH="$2" go build -trimpath -ldflags="-s -w" -buildvcs=false -o "$OUT/$3" .
+  GOOS="$1" GOARCH="$2" go build -trimpath -ldflags="-s -w" -buildvcs=false -o "$OUT/$3" ./cmd/agent-webmcp
 done
 (cd "$OUT" && sha256sum agent-webmcp-* > SHA256SUMS.txt)
 echo "assets in $OUT/ ($VERSION):"
