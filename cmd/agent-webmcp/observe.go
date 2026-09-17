@@ -1,426 +1,237 @@
 package main
 
-// Jev-shaped browser verbs. observe returns the decision state directly
-// (url/title/text/elements/tools/fingerprint); act executes an index from
-// the last observation; decide answers operation+target via one Jev call.
-// No actuation happens inside observe or decide — the constraint boundary
-// is structural: decide prints, something else acts.
-
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 )
 
-// observeJS returns a JSON string: page identity, capped text, and the
-// visible interactable table Jev grounds against. Budgets are fixed:
-// 60 elements, 3000 text chars. No filters, no scopes.
+// observe: one atomic snapshot. Node identity (window.__jevFast) survives
+// across ticks in the page; decisions reference node ids, never selectors.
+// Rects are stripped before the model sees them: geometry resolves just
+// before input, so animations never invalidate decisions.
+
 const observeJS = `(() => {
-  var SEL = 'button,a,input,select,textarea,[contenteditable=true],[role=button],[role=link],[role=tab],[role=menuitem],[role=menuitemcheckbox],[role=menuitemradio],[role=checkbox],[role=radio],[role=switch],[role=option],[role=combobox],[role=listbox],[role=searchbox],[role=textbox]';
-  var vis = function(el){ try { var r = el.getBoundingClientRect(); if (!(r.width > 2 && r.height > 2)) return false; var cs = getComputedStyle(el); if (cs.visibility === 'hidden' || cs.display === 'none') return false; if (parseFloat(cs.opacity || '1') === 0) return false; return true; } catch(e){ return false; } };
-  var collapse = function(s){ return (s||'').replace(/\s+/g,' ').trim(); };
-  var firstLine = function(el){ try { var it = el.innerText || ''; var ls = it.split('\n'); for (var i=0;i<ls.length;i++){ var l = collapse(ls[i]); if (l) return l; } } catch(e){} return ''; };
-  var label = function(el){ try {
-    var g = function(k){ return el.getAttribute ? (el.getAttribute(k) || '') : ''; };
-    var al = collapse(g('aria-label')); if (al) return al.slice(0,80);
-    var fl = firstLine(el); if (fl) return fl.slice(0,80);
-    if (el.placeholder) return collapse(el.placeholder).slice(0,80);
-    if (g('title')) return collapse(g('title')).slice(0,80);
-    if (el.type) return '(' + el.type + ')';
-    return '(no label)';
-  } catch(e){ return '(no label)'; } };
-  var roleOf = function(el){ var t = (el.tagName||'').toLowerCase(); if (t==='a') return 'link'; if (t==='button') return 'button'; if (t==='select') return 'select'; if (t==='textarea') return 'textbox'; if (t==='input'){ var ty=((el.type||'text')+'').toLowerCase(); if (ty==='checkbox') return 'checkbox'; if (ty==='radio') return 'radio'; if (ty==='submit'||ty==='button') return 'button'; if (ty==='hidden') return 'hidden'; return 'textbox'; } if (el.isContentEditable) return 'textbox'; var r = el.getAttribute && el.getAttribute('role'); return ((r||t||'el')+'').toLowerCase(); };
-  var out = [];
-  var els = document.querySelectorAll(SEL);
-  for (var i=0;i<els.length && out.length<60;i++){ var el = els[i]; if (!vis(el)) continue; var role = roleOf(el); if (role==='hidden') continue;
-    var v = ''; try { v = (el.value||'').slice(0,120); } catch(e){}
-    out.push({role:role, name:label(el), value:v, en:(!el.disabled)});
+  if (!document.body) return null;
+  const cache = window.__jevFast ||= {ids:new WeakMap(), nodes:new Map(), next:1};
+  const identity = e => {
+    if (!cache.ids.has(e)) cache.ids.set(e, cache.next++);
+    const id = cache.ids.get(e); cache.nodes.set(id, e); return id;
+  };
+  for (const [id,e] of cache.nodes) if (!e.isConnected) cache.nodes.delete(id);
+  const vis = e => {
+    try {
+      if (e.closest('[aria-hidden="true"],[inert]')) return false;
+      return e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+    } catch(err){ return false; }
+  };
+  const norm = s => ((s||'').replace(/\s+/g,' ').trim());
+  const name = (e,seen=new Set()) => {
+    if (!e || seen.has(e)) return '';
+    seen.add(e);
+    try {
+      const ref = (e.getAttribute('aria-labelledby')||'').split(/\s+/)
+        .map(id=>name(document.getElementById(id),seen)).filter(Boolean).join(' ');
+      if (ref) return ref;
+      if (e.getAttribute('aria-label')) return e.getAttribute('aria-label');
+      if (e.labels && e.labels.length) {
+        const t = [...e.labels].map(l=>name(l,seen)).filter(Boolean).join(' ');
+        if (t) return t;
+      }
+      if (['button','submit','reset'].includes(e.type) && e.value) return e.value;
+      if (e.getAttribute('alt')) return e.getAttribute('alt');
+      if (e.tagName!=='INPUT') {
+        const t = [...e.childNodes].map(n=>n.nodeType===3 ? n.textContent :
+          n.nodeType===1 && n.getAttribute('aria-hidden')!=='true' ? name(n,seen) : '').join(' ').trim();
+        if (t) return t;
+      }
+      return e.getAttribute('title') || e.getAttribute('placeholder') || '';
+    } catch(err){ return ''; }
+  };
+  const roles = ['button','link','checkbox','radio','switch','tab','menuitem','menuitemradio',
+    'option','gridcell','combobox','textbox','searchbox','spinbutton'];
+  const selector = 'a[href],button,input,textarea,select,summary,[contenteditable="true"],' +
+    roles.map(r=>'[role="'+r+'"]').join(',');
+  const role = e => {
+    const x = e.getAttribute('role');
+    if (roles.includes(x)) return x;
+    if (e.tagName==='BUTTON' || e.tagName==='SUMMARY') return 'button';
+    if (e.tagName==='A') return 'link';
+    if (e.tagName==='SELECT') return 'combobox';
+    if (e.tagName==='TEXTAREA' || e.isContentEditable) return 'textbox';
+    if (e.tagName==='INPUT') {
+      if (['checkbox','radio'].includes(e.type)) return e.type;
+      if (['button','submit','reset','image'].includes(e.type)) return 'button';
+      if (e.type==='search') return 'searchbox';
+      if (e.type==='number') return 'spinbutton';
+      if (['text','email','url','tel'].includes(e.type)) return 'textbox';
+    }
+    return null;
+  };
+  cache.pageKey = () => [performance.timeOrigin, location.href, scrollX, scrollY,
+    innerWidth, innerHeight,
+    [...document.querySelectorAll('input,textarea,select')]
+      .filter(e=>!['password','file','hidden'].includes(e.type))
+      .map(e=>[identity(e), e.value, e.checked, e.selectedIndex, e.disabled, e.readOnly])];
+  cache.guard = e => {
+    if (!e || !e.isConnected || !vis(e)) return null;
+    const scope = e.closest('form,dialog,[role="dialog"],article,li,tr,[role="row"]') || e.parentElement;
+    return [identity(e), role(e), name(e), e.value ?? null, e.checked ?? null,
+      e.selectedIndex ?? null, e.readOnly ?? null, e.matches(':disabled'),
+      e.getAttribute('aria-disabled'), e.getAttribute('aria-expanded'),
+      e.getAttribute('href'), (scope && scope.innerText || '').slice(0,6000)];
+  };
+  const actions = [];
+  for (const e of document.querySelectorAll(selector)) {
+    if (['password','file','hidden'].includes(e.type)) continue;
+    if (!vis(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
+    const r = e.getBoundingClientRect(), x = r.x+r.width/2, y = r.y+r.height/2, rname = role(e);
+    if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+    if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
+    const base = {node: identity(e), role: rname, label: name(e)||rname,
+      rect: {x:r.x, y:r.y, w:r.width, h:r.height}};
+    if (e.tagName==='SELECT') {
+      for (const o of e.options) {
+        if (o.selected || o.disabled || (o.closest('optgroup[disabled]'))) continue;
+        actions.push({...base, kind:'select', value:o.value,
+          current_value:[...e.selectedOptions].map(o=>o.label).join(', '),
+          label: base.label+' → '+o.label});
+      }
+    } else {
+      const editable = !e.readOnly && e.getAttribute('aria-readonly')!=='true' &&
+        (['textbox','searchbox','spinbutton'].includes(rname) ||
+          (rname==='combobox' && ['INPUT','TEXTAREA'].includes(e.tagName)));
+      const value = 'value' in e ? String(e.value) :
+        (e.isContentEditable || rname==='combobox' ? e.innerText.trim() : '');
+      actions.push({...base, kind: editable?'fill':'click', value});
+      if (editable) actions.push({...base, kind:'click', value, label:'Open '+base.label});
+    }
   }
-  var text = ''; try { text = (document.body.innerText||'').slice(0,3000); } catch(e){}
-  return JSON.stringify({url:location.href, title:(document.title||'').slice(0,80), text:text, elements:out});
+  const words = [], walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  let node, length = 0;
+  while ((node = walker.nextNode()) && length < 6000) {
+    const value = node.textContent.trim(), parent = node.parentElement;
+    if (!value || !parent || parent.closest('script,style,noscript,template') || !vis(parent)) continue;
+    range.selectNodeContents(node);
+    const r = range.getBoundingClientRect();
+    if (r.width>0 && r.height>0 && r.bottom>0 && r.top<innerHeight && r.right>0 && r.left<innerWidth) {
+      words.push(value); length += value.length;
+    }
+  }
+  const text = words.join('\n').slice(0,6000);
+  const height = document.documentElement.scrollHeight;
+  const page_key = cache.pageKey(), guards = {};
+  for (const a of actions) if (!(a.node in guards)) guards[a.node] = cache.guard(cache.nodes.get(a.node));
+  const semantics = actions.map(({rect,...a}) => a);
+  const marker = [performance.timeOrigin, location.href, scrollX, scrollY,
+    innerWidth, innerHeight, document.title, text, semantics, page_key[6]];
+  const omitted = Math.max(0, actions.length - 250);
+  actions.splice(250);
+  actions.forEach((a,i) => a.id = 'e'+(i+1));
+  if (scrollY + innerHeight < height - 2)
+    actions.push({id:'scroll_down', kind:'scroll', label:'Scroll down', delta:560});
+  if (scrollY > 0)
+    actions.push({id:'scroll_up', kind:'scroll', label:'Scroll up', delta:-560});
+  actions.push({id:'wait', kind:'wait', label:'Wait for the page to update'});
+  return JSON.stringify({url: location.href, title: document.title, text,
+    scroll: {y: scrollY, height}, actions, marker, page_key, guards,
+    omitted_actions: omitted});
 })()`
 
-// actJS2 grounds role+name visible-first, rechecks occlusion, then acts.
-// Placeholders carry JSON-encoded strings.
-const actJS2 = `(async function(){
-  var ROLE=@ROLE@, NAME=@NAME@, VERB=@VERB@, TEXT=@TEXT@;
-  var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
-  var SEL = 'button,a,input,select,textarea,[contenteditable=true],[role=button],[role=link],[role=tab],[role=menuitem],[role=menuitemcheckbox],[role=menuitemradio],[role=checkbox],[role=radio],[role=switch],[role=option],[role=combobox],[role=listbox],[role=searchbox],[role=textbox]';
-  var vis = function(el){ try { var r = el.getBoundingClientRect(); if (!(r.width > 2 && r.height > 2)) return false; var cs = getComputedStyle(el); if (cs.visibility === 'hidden' || cs.display === 'none') return false; return true; } catch(e){ return false; } };
-  var collapse = function(s){ return (s||'').replace(/\s+/g,' ').trim(); };
-  var firstLine = function(el){ try { var it = el.innerText || ''; var ls = it.split('\n'); for (var i=0;i<ls.length;i++){ var l = collapse(ls[i]); if (l) return l; } } catch(e){} return ''; };
-  var label = function(el){ try { var g = function(k){ return el.getAttribute ? (el.getAttribute(k) || '') : ''; }; var al = collapse(g('aria-label')); if (al) return al.slice(0,80); var fl = firstLine(el); if (fl) return fl.slice(0,80); if (el.placeholder) return collapse(el.placeholder).slice(0,80); if (el.type) return '(' + el.type + ')'; return '(no label)'; } catch(e){ return '(no label)'; } };
-  var roleOf = function(el){ var t = (el.tagName||'').toLowerCase(); if (t==='a') return 'link'; if (t==='button') return 'button'; if (t==='select') return 'select'; if (t==='textarea') return 'textbox'; if (t==='input'){ var ty=((el.type||'text')+'').toLowerCase(); if (ty==='checkbox') return 'checkbox'; if (ty==='radio') return 'radio'; if (ty==='submit'||ty==='button') return 'button'; return 'textbox'; } if (el.isContentEditable) return 'textbox'; var r = el.getAttribute && el.getAttribute('role'); return ((r||t||'el')+'').toLowerCase(); };
-  var pool = [];
-  var els = document.querySelectorAll(SEL);
-  for (var i=0;i<els.length;i++){ var ce = els[i]; if (roleOf(ce)===ROLE && label(ce)===NAME && vis(ce)) pool.push(ce); }
-  if (!pool.length) return JSON.stringify({done:false, error:'no visible match (re-observe?)'});
-  var el = pool[0];
-  for (var k=0;k<pool.length;k++){ if (!pool[k].disabled) { el = pool[k]; break; } }
-  var r = el.getBoundingClientRect(), x = r.x + r.width/2, y = r.y + r.height/2;
-  if (x<0 || y<0 || x>=window.innerWidth || y>=window.innerHeight) return JSON.stringify({done:false, error:'target outside viewport'});
-  var hit = document.elementFromPoint(x, y);
-  if (!hit || (hit!==el && !el.contains(hit))) return JSON.stringify({done:false, error:'target occluded (re-observe?)'});
-  var tag = (el.tagName||'').toLowerCase();
-  if (VERB==='click') { try { el.scrollIntoView({block:'center'}); } catch(e){} await sleep(120); el.click(); }
-  else if (VERB==='type') {
-    if (tag==='select') return JSON.stringify({done:false, error:'use select verb for dropdowns'});
-    el.focus();
-    try { var pr = Object.getPrototypeOf(el); var st = Object.getOwnPropertyDescriptor(pr,'value') || Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value'); if (st && st.set) st.set.call(el,TEXT); else el.value=TEXT; } catch(e){ el.value=TEXT; }
-    el.dispatchEvent(new Event('input',{bubbles:true, composed:true}));
-    el.dispatchEvent(new Event('change',{bubbles:true, composed:true}));
-  }
-  else if (VERB==='select') {
-    if (tag!=='select') return JSON.stringify({done:false, error:'not a dropdown'});
-    var want = TEXT.toLowerCase(), picked = -1;
-    for (var o=0;o<el.options.length;o++){ if ((el.options[o].text||'').toLowerCase().indexOf(want)>=0) { picked=o; break; } }
-    if (picked<0) return JSON.stringify({done:false, error:'no such option'});
-    el.selectedIndex = picked;
-    el.dispatchEvent(new Event('input',{bubbles:true, composed:true}));
-    el.dispatchEvent(new Event('change',{bubbles:true, composed:true}));
-  }
-  else return JSON.stringify({done:false, error:'unknown verb '+VERB});
-  await sleep(350);
-  return JSON.stringify({done:true, verb:VERB, url:location.href});
-})()`
-
-type obElement struct {
-	Role  string `json:"role"`
-	Name  string `json:"name"`
-	Value string `json:"value"`
-	En    bool   `json:"en"`
-	Ops   []string `json:"ops,omitempty"`
+type snapAction struct {
+	ID           string `json:"id"`
+	Kind         string `json:"kind"`
+	Node         int    `json:"node"`
+	Role         string `json:"role"`
+	Label        string `json:"label"`
+	Value        string `json:"value"`
+	CurrentValue string `json:"current_value"`
 }
 
-type observation struct {
-	URL      string      `json:"url"`
-	Title    string      `json:"title"`
-	Text     string      `json:"text"`
-	Elements []obElement `json:"elements"`
+type snapshot struct {
+	URL      string            `json:"url"`
+	Title    string            `json:"title"`
+	Text     string            `json:"text"`
+	Actions  []snapAction      `json:"actions"`
+	Marker   []any             `json:"marker"`
+	PageKey  []any             `json:"page_key"`
+	Guards   map[string][]any  `json:"guards"`
+	Scroll   struct {
+		Y      float64 `json:"y"`
+		Height float64 `json:"height"`
+	} `json:"scroll"`
 }
 
-func verbFlag(args []string, name string) (string, bool) {
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--"+name && i+1 < len(args) {
-			return args[i+1], true
-		}
-		if strings.HasPrefix(args[i], "--"+name+"=") {
-			return strings.TrimPrefix(args[i], "--"+name+"="), true
-		}
+func fingerprintSnap(snap *snapshot) string {
+	h := sha256.New()
+	h.Write([]byte(snap.URL + "\x00" + snap.Text + "\x00" + fmt.Sprintf("%d", int(snap.Scroll.Y)) + "\x00"))
+	for _, a := range snap.Actions {
+		h.Write([]byte(a.ID + "\x00" + a.Kind + "\x00" + a.Label + "\x00"))
 	}
-	return "", false
+	sum := h.Sum(nil)
+	return fmt.Sprintf("%x", sum)[:16]
 }
 
-func parseObRef(s string) (int, bool) {
-	if !strings.HasPrefix(s, "@e") {
-		return 0, false
+func scanCachePath(session string) string {
+	return filepath.Join(sessionDir(session), "scan-cache.json")
+}
+
+func scanCacheSave(session, url string, snap *snapshot) {
+	items := make([]map[string]any, 0, len(snap.Actions))
+	for _, a := range snap.Actions {
+		items = append(items, map[string]any{"id": a.ID, "kind": a.Kind, "node": a.Node, "role": a.Role, "label": a.Label})
 	}
-	n, err := strconv.Atoi(strings.TrimPrefix(s, "@e"))
-	if err != nil || n < 1 {
-		return 0, false
-	}
-	return n, true
-}
-
-func decisionsPath(session string) string {
-	return filepath.Join(sessionDir(session), "decisions.jsonl")
-}
-
-func appendDecision(session string, entry map[string]any) {
-	b, _ := json.Marshal(entry)
+	b, _ := json.Marshal(map[string]any{"url": url, "items": items})
 	_ = os.MkdirAll(sessionDir(session), 0o755)
-	f, err := os.OpenFile(decisionsPath(session), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	_, _ = f.Write(append(b, '\n'))
+	_ = os.WriteFile(scanCachePath(session), b, 0o644)
 }
 
-func readDecisions(session string, n int) []map[string]any {
-	b, err := os.ReadFile(decisionsPath(session))
+func captureSnapshot(ctx context.Context, session string, timeout time.Duration) (*snapshot, string, error) {
+	port, err := readPort(session)
 	if err != nil {
-		return nil
-	}
-	var out []map[string]any
-	for _, ln := range strings.Split(string(b), "\n") {
-		ln = strings.TrimSpace(ln)
-		if ln == "" {
-			continue
-		}
-		var m map[string]any
-		if json.Unmarshal([]byte(ln), &m) == nil {
-			out = append(out, m)
-		}
-	}
-	if len(out) > n {
-		out = out[len(out)-n:]
-	}
-	return out
-}
-
-func observeCmd(g *globals, rest []string) int {
-	ctx := context.Background()
-	port, err := readPort(g.session)
-	if err != nil {
-		return failErr("no_session", err)
+		return nil, "", err
 	}
 	t, err := pickPageTarget(port)
 	if err != nil {
-		return failErr("no_page", err)
-	}
-	timeout := time.Duration(g.timeoutMs) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 30 * time.Second
+		return nil, "", err
 	}
 	out, err := evalScript(ctx, t.WebSocketDebuggerURL, observeJS, timeout)
 	if err != nil {
-		return failErr("observe_failed", err)
+		return nil, "", err
 	}
-	var ob observation
-	if err := json.Unmarshal([]byte(out), &ob); err != nil {
-		return failErr("observe_failed", err)
+	var snap snapshot
+	if err := json.Unmarshal([]byte(out), &snap); err != nil {
+		return nil, "", err
 	}
-	items := make([]map[string]any, 0, len(ob.Elements))
-	for _, e := range ob.Elements {
-		items = append(items, map[string]any{"role": e.Role, "name": e.Name})
-	}
-	scanCacheSave(g.session, ob.URL, items)
-	tools, _, _ := listWebMCP(ctx, t.WebSocketDebuggerURL)
-	names := make([]string, 0, len(tools))
-	for _, tl := range tools {
-		names = append(names, tl.Name)
-	}
-	if g.json {
-		ok(map[string]any{"session": g.session, "url": ob.URL, "title": ob.Title,
-			"text": ob.Text, "count": len(ob.Elements), "elements": ob.Elements, "tools": names})
-		return 0
-	}
-	fmt.Printf("%s  (%d controls, %d tools)\n", ob.URL, len(ob.Elements), len(names))
-	for i, e := range ob.Elements {
-		st := ""
-		if !e.En {
-			st = " disabled"
-		}
-		fmt.Printf("  @e%-4d [%s] %s%s\n", i+1, e.Role, e.Name, st)
-	}
-	return 0
+	return &snap, fingerprintSnap(&snap), nil
 }
 
-func actCmd(g *globals, rest []string) int {
-	if len(rest) < 2 || strings.HasPrefix(rest[0], "-") || strings.HasPrefix(rest[1], "-") {
-		return fail("usage", "usage: agent-webmcp act <@eN> <click|type|select> [--text ..]")
-	}
-	ref, verb := rest[0], rest[1]
-	switch verb {
-	case "click", "type", "select":
-	default:
-		return fail("usage", "unknown act verb "+strconv.Quote(verb)+" (want click|type|select)")
-	}
-	n, valid := parseObRef(ref)
-	if !valid {
-		return fail("usage", "target must be @eN from the last observe")
-	}
-	role, name, _, _, found := scanCacheLookup(g.session, n)
-	if !found {
-		return fail("stale_ref", fmt.Sprintf("ref %s not in last observe (run: agent-webmcp observe --session %s)", ref, g.session))
-	}
-	text, _ := verbFlag(rest, "text")
-	if verb != "click" && text == "" {
-		return fail("usage", "usage: agent-webmcp act "+ref+" "+verb+" --text \"..\"")
-	}
-	q := func(s string) string {
-		b, _ := json.Marshal(s)
-		return string(b)
-	}
-	expr := actJS2
-	expr = strings.ReplaceAll(expr, "@ROLE@", q(role))
-	expr = strings.ReplaceAll(expr, "@NAME@", q(name))
-	expr = strings.ReplaceAll(expr, "@VERB@", q(verb))
-	expr = strings.ReplaceAll(expr, "@TEXT@", q(text))
-	ctx := context.Background()
-	port, err := readPort(g.session)
-	if err != nil {
-		return failErr("no_session", err)
-	}
-	t, err := pickPageTarget(port)
-	if err != nil {
-		return failErr("no_page", err)
-	}
-	before := t.URL
-	timeout := time.Duration(g.timeoutMs) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	out, err := evalScript(ctx, t.WebSocketDebuggerURL, expr, timeout)
-	if err != nil {
-		return failErr("act_failed", err)
-	}
-	var m map[string]any
-	if err := json.Unmarshal([]byte(out), &m); err != nil {
-		return failErr("act_failed", err)
-	}
-	after, _ := m["url"].(string)
-	m["session"] = g.session
-	m["navigated"] = after != "" && before != "" && after != before
-	if g.json {
-		ok(m)
-		return 0
-	}
-	if done, _ := m["done"].(bool); done {
-		fmt.Printf("%s done (navigated=%v) %s\n", verb, m["navigated"], after)
-	} else {
-		fmt.Printf("%s failed: %v\n", verb, m["error"])
-	}
-	return 0
-}
-
-func decideCmd(g *globals, rest []string) int {
-	goal, _ := verbFlag(rest, "goal")
-	if strings.TrimSpace(goal) == "" {
-		return fail("usage", "usage: agent-webmcp decide --goal \"..\" [--session NAME]")
-	}
-	if jevKey() == "" {
-		return fail("no_key", "ultrafast needs TYPESAFE_API_KEY in the environment (BYOK — the CLI never bundles a key)")
-	}
-	ctx := context.Background()
-	port, err := readPort(g.session)
-	if err != nil {
-		return failErr("no_session", err)
-	}
-	t, err := pickPageTarget(port)
-	if err != nil {
-		return failErr("no_page", err)
-	}
-	timeout := time.Duration(g.timeoutMs) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-	out, err := evalScript(ctx, t.WebSocketDebuggerURL, observeJS, timeout)
+func observeCmd(ctx context.Context, g *globals, rest []string) int {
+	snap, fp, err := captureSnapshot(ctx, g.session, time.Duration(g.timeoutMs)*time.Millisecond)
 	if err != nil {
 		return failErr("observe_failed", err)
 	}
-	var ob observation
-	if err := json.Unmarshal([]byte(out), &ob); err != nil {
-		return failErr("observe_failed", err)
-	}
-	items := make([]map[string]any, 0, len(ob.Elements))
-	for i := range ob.Elements {
-		e := &ob.Elements[i]
-		e.Ops = opsForRole(e.Role)
-		items = append(items, map[string]any{"role": e.Role, "name": e.Name})
-	}
-	scanCacheSave(g.session, ob.URL, items)
-	tools, _, _ := listWebMCP(ctx, t.WebSocketDebuggerURL)
-	toolBrief := make([]map[string]any, 0, len(tools))
-	for _, tl := range tools {
-		toolBrief = append(toolBrief, map[string]any{"name": tl.Name, "description": tl.Description})
-	}
-
-	opIDs := map[string]bool{}
-	opCriteria := map[string]any{}
-	targets := map[string]map[string]bool{}
-	targetCriteria := map[string]map[string]any{}
-	for i, e := range ob.Elements {
-		idx := strconv.Itoa(i + 1)
-		for _, op := range e.Ops {
-			if !e.En && op != "WAIT" {
-				continue
-			}
-			opIDs[op] = true
-			if targets[op] == nil {
-				targets[op] = map[string]bool{}
-				targetCriteria[op] = map[string]any{}
-			}
-			targets[op][idx] = true
-			targetCriteria[op][idx] = map[string]any{
-				"element":       fmt.Sprintf("[%s] %s %s", idx, e.Role, e.Name),
-				"current_value": e.Value,
-			}
-		}
-	}
-	for _, op := range []string{"WAIT", "DONE", "BLOCKED"} {
-		opIDs[op] = true
-	}
-	for op := range opIDs {
-		opCriteria[op] = jevOpLabels[op]
-	}
-	questions := map[string]any{
-		"operation": map[string]any{
-			"type":         "choice",
-			"instructions": map[string]any{"goal": goal, "rules": jevNextAction},
-			"criteria":     opCriteria,
-		},
-	}
-	for op, crit := range targetCriteria {
-		qid := strings.ToLower(op) + "_target"
-		questions[qid] = map[string]any{
-			"type":         "choice",
-			"instructions": map[string]any{"goal": goal, "operation": op, "rules": []string{jevNextAction, jevTarget}},
-			"criteria":     crit,
-		}
-	}
-	state := map[string]any{
-		"goal":           goal,
-		"page":           map[string]any{"url": ob.URL, "title": ob.Title, "text": ob.Text},
-		"elements":       ob.Elements,
-		"tools":          toolBrief,
-		"recent_actions": readDecisions(g.session, 10),
-	}
-	answers, usage, model, lat, err := postSystemOne(state, questions)
-	if err != nil {
-		return failErr("jev_failed", err)
-	}
-	var opAns jevChoice
-	if raw, present := answers["operation"]; present {
-		_ = json.Unmarshal(raw, &opAns)
-	}
-	op := argmaxChoice(opAns.Probabilities, opIDs)
-	if op == "" {
-		op = opAns.Choice
-	}
-	target, anomaly := "", false
-	if opIDs[op] && targets[op] != nil {
-		var tAns jevChoice
-		if raw, present := answers[strings.ToLower(op)+"_target"]; present {
-			_ = json.Unmarshal(raw, &tAns)
-		}
-		target = argmaxChoice(tAns.Probabilities, targets[op])
-		if target == "" {
-			target = tAns.Choice
-		}
-		if tAns.Choice != "" && tAns.Choice != target {
-			anomaly = true
-		}
-	}
-	if opAns.Choice != "" && opAns.Choice != op {
-		anomaly = true
-	}
-	if err := constrain(opAns, opIDs, op, target, targets[op], targets[op] != nil); err != nil {
-		return failErr("jev_unoffered", err)
-	}
-	ref := ""
-	if target != "" {
-		ref = "@e" + target
-	}
-	appendDecision(g.session, map[string]any{
-		"operation": op, "target": ref, "confidence": opAns.Confidence, "url": ob.URL,
-	})
-	res := map[string]any{"session": g.session, "url": ob.URL, "operation": op,
-		"target": ref, "confidence": opAns.Confidence, "margin": margin(opAns.Probabilities),
-		"latency_ms": lat, "usage": usage, "model": model}
-	if anomaly {
-		res["anomaly"] = true
-	}
+	scanCacheSave(g.session, snap.URL, snap)
 	if g.json {
-		ok(res)
+		els := make([]map[string]any, 0, len(snap.Actions))
+		for _, a := range snap.Actions {
+			els = append(els, map[string]any{"id": a.ID, "kind": a.Kind, "role": a.Role, "label": a.Label, "value": a.Value})
+		}
+		ok(map[string]any{
+			"session": g.session, "url": snap.URL, "title": snap.Title,
+			"text": snap.Text, "count": len(snap.Actions),
+			"elements": els, "fingerprint": fp,
+		})
 		return 0
 	}
-	fmt.Printf("%s %s (conf %.2f, %dms)\n", op, ref, opAns.Confidence, lat)
+	fmt.Printf("%s  (%d actions)\n", snap.URL, len(snap.Actions))
+	for _, a := range snap.Actions {
+		fmt.Printf("  @%-6s [%s] %s\n", a.ID, a.Kind, a.Label)
+	}
 	return 0
 }

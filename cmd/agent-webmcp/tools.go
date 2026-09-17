@@ -3,92 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
 
-// Custom tools: plain JS files stored per host, auto-loaded on open.
-// Layout: ~/.agent-webmcp/tools/<name>.js + <name>.json {hosts:[...]}.
-// A pack is an async IIFE that registers tools via the page's own
-// document.modelContext and returns a short report string.
-
-type packMeta struct {
-	Name  string   `json:"name"`
-	Hosts []string `json:"hosts"`
-	File  string   `json:"file"`
-	Added string   `json:"added"`
-}
-
-func toolsRoot() string {
-	if v := os.Getenv("AGENT_WEBMCP_HOME"); v != "" {
-		return filepath.Join(v, "tools")
-	}
-	h, err := os.UserHomeDir()
-	if err != nil || h == "" {
-		return ".agent-webmcp-tools"
-	}
-	return filepath.Join(h, ".agent-webmcp", "tools")
-}
-
-func packName(name string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-			b.WriteRune(r)
-		} else {
-			b.WriteByte('-')
-		}
-	}
-	s := strings.Trim(b.String(), "-_")
-	if s == "" {
-		return "pack"
-	}
-	return s
-}
-
-func toolsAdd(path, name string, hosts []string) (string, error) {
-	src, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	if name == "" {
-		name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	}
-	return toolsAddBytes(src, name, hosts)
-}
-
-func toolsAddBytes(src []byte, name string, hosts []string) (string, error) {
-	if len(strings.TrimSpace(string(src))) == 0 {
-		return "", errors.New("empty tool file")
-	}
-	if name == "" {
-		name = "pack"
-	}
-	name = packName(name)
-	if len(hosts) == 0 {
-		hosts = []string{"*"}
-	}
-	for i, h := range hosts {
-		hosts[i] = normalizeHost(h)
-	}
-	if err := os.MkdirAll(toolsRoot(), 0o755); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(filepath.Join(toolsRoot(), name+".js"), src, 0o644); err != nil {
-		return "", err
-	}
-	meta, _ := json.MarshalIndent(packMeta{
-		Name: name, Hosts: hosts, File: name + ".js",
-		Added: time.Now().UTC().Format(time.RFC3339),
-	}, "", "  ")
-	if err := os.WriteFile(filepath.Join(toolsRoot(), name+".json"), meta, 0o644); err != nil {
-		return "", err
-	}
-	return name, nil
-}
+// Shared page-evaluation helpers. Inspection only; actuation belongs
+// to page tools (invoke) or the paid tier (act).
 
 func normalizeHost(h string) string {
 	h = strings.ToLower(strings.TrimSpace(h))
@@ -98,139 +20,45 @@ func normalizeHost(h string) string {
 	if i := strings.IndexByte(h, '/'); i >= 0 {
 		h = h[:i]
 	}
+	if i := strings.IndexByte(h, ':'); i >= 0 {
+		h = h[:i]
+	}
+	h = strings.TrimPrefix(h, "www.")
 	if h == "" {
 		return "*"
 	}
 	return h
 }
 
-func stripWWW(h string) string { return strings.TrimPrefix(strings.ToLower(h), "www.") }
-
-func toolsList() ([]packMeta, error) {
-	ents, err := os.ReadDir(toolsRoot())
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var out []packMeta
-	for _, e := range ents {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(toolsRoot(), e.Name()))
-		if err != nil {
-			continue
-		}
-		var m packMeta
-		if json.Unmarshal(b, &m) != nil || m.Name == "" {
-			continue
-		}
-		out = append(out, m)
-	}
-	return out, nil
-}
-
-func toolsRemove(name string) error {
-	name = packName(name)
-	_ = os.Remove(filepath.Join(toolsRoot(), name+".js"))
-	if err := os.Remove(filepath.Join(toolsRoot(), name+".json")); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
-}
-
-func toolsForHost(host string) []packMeta {
-	all, err := toolsList()
-	if err != nil {
-		return nil
-	}
-	host = stripWWW(host)
-	var out []packMeta
-	for _, m := range all {
-		for _, h := range m.Hosts {
-			if h == "*" || stripWWW(h) == host {
-				out = append(out, m)
-				break
-			}
-		}
-	}
-	return out
-}
-
 func hostOfURL(u string) string {
-	u = strings.ToLower(strings.TrimSpace(u))
-	u = strings.TrimPrefix(u, "https://")
-	u = strings.TrimPrefix(u, "http://")
-	if i := strings.IndexByte(u, '/'); i >= 0 {
-		u = u[:i]
-	}
-	if i := strings.IndexByte(u, ':'); i >= 0 {
-		u = u[:i]
-	}
-	return stripWWW(u)
+	return normalizeHost(u)
 }
 
-// overlayRecordFile tracks which tool names this CLI registered into the
-// session's live page (parsed from pack "ok:<name>" report lines). list uses
-// it to mark provenance structurally, so agents never have to guess
-// native vs custom from description text.
-func overlayRecordPath(session string) string {
-	return filepath.Join(sessionDir(session), "overlay-tools.json")
-}
-
-// recordOverlayTools replaces the session's overlay record with names parsed
-// from loadPacks report lines ("<pack>: ok:<tool>" / multiline).
-func recordOverlayTools(session string, reportLines []string) {
-	var names []string
-	for _, line := range reportLines {
-		if i := strings.Index(line, ":"); i >= 0 {
-			line = line[i+1:]
+func verbFlag(args []string, name string) (string, bool) {
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--"+name && i+1 < len(args) {
+			return args[i+1], true
 		}
-		for _, l := range strings.Split(line, "\n") {
-			l = strings.TrimSpace(l)
-			if n, ok := strings.CutPrefix(l, "ok:"); ok {
-				n = strings.TrimSpace(n)
-				if n != "" {
-					names = append(names, n)
-				}
-			}
+		if strings.HasPrefix(args[i], "--"+name+"=") {
+			return strings.TrimPrefix(args[i], "--"+name+"="), true
 		}
 	}
-	if names == nil {
-		names = []string{}
-	}
-	b, _ := json.Marshal(names)
-	_ = os.WriteFile(overlayRecordPath(session), b, 0o644)
+	return "", false
 }
 
-func readOverlayTools(session string) map[string]bool {
-	b, err := os.ReadFile(overlayRecordPath(session))
-	if err != nil {
-		return nil
+func readEvalArg(rest []string) (string, error) {
+	if len(rest) == 0 {
+		return "", fmt.Errorf("usage: agent-webmcp eval <js|@file>")
 	}
-	var names []string
-	if json.Unmarshal(b, &names) != nil {
-		return nil
-	}
-	m := make(map[string]bool, len(names))
-	for _, n := range names {
-		m[n] = true
-	}
-	return m
-}
-
-func markOverlays(tools []WebMCPTool, over map[string]bool) []WebMCPTool {
-	if len(over) == 0 {
-		return tools
-	}
-	for i := range tools {
-		if over[tools[i].Name] {
-			tools[i].Overlay = boolPtr(true)
+	expr := strings.Join(rest, " ")
+	if trimmed := strings.TrimSpace(expr); strings.HasPrefix(trimmed, "@") && !strings.Contains(trimmed, " ") {
+		b, err := os.ReadFile(strings.TrimPrefix(trimmed, "@"))
+		if err != nil {
+			return "", err
 		}
+		return string(b), nil
 	}
-	return tools
+	return expr, nil
 }
 
 // evalScript runs JS in the page and awaits a by-value result.
@@ -248,72 +76,53 @@ func evalScript(ctx context.Context, wsURL, script string, timeout time.Duration
 	if err != nil {
 		return "", err
 	}
-	var ev struct {
+	var res struct {
 		Result struct {
-			Type  string `json:"type"`
-			Value any    `json:"value"`
+			Type  string          `json:"type"`
+			Value json.RawMessage `json:"value"`
 		} `json:"result"`
-		ExceptionDetails any `json:"exceptionDetails,omitempty"`
+		ExceptionDetails *struct {
+			Text string `json:"text"`
+		} `json:"exceptionDetails"`
 	}
-	if err := json.Unmarshal(raw, &ev); err != nil {
+	if err := json.Unmarshal(raw, &res); err != nil {
 		return "", err
 	}
-	if ev.ExceptionDetails != nil {
-		b, _ := json.Marshal(ev.ExceptionDetails)
-		return "", errors.New("js exception: " + string(b))
+	if res.ExceptionDetails != nil {
+		return "", fmt.Errorf("js exception: %s", res.ExceptionDetails.Text)
 	}
-	switch v := ev.Result.Value.(type) {
-	case string:
-		return v, nil
-	case nil:
+	if len(res.Result.Value) == 0 {
 		return "", nil
-	default:
-		b, _ := json.Marshal(v)
-		return string(b), nil
 	}
+	var s string
+	if json.Unmarshal(res.Result.Value, &s) == nil {
+		return s, nil
+	}
+	return string(res.Result.Value), nil
 }
 
-// reinjectSession reloads stored packs into the session's live tab and
-// returns how many tools reported ok. Call it once when a tool vanishes:
-// a tool that navigates (location.href, form submit) orphans the page's
-// registry — the names die with the old document and nothing re-injects
-// them until the next CLI `open`. Re-inject heals that without a bounce.
-func reinjectSession(session string) int {
-	port, err := readPort(session)
-	if err != nil {
-		return 0
-	}
-	t, err := pickPageTarget(port)
-	if err != nil || t.URL == "" {
-		return 0
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	done := loadPacks(ctx, t.WebSocketDebuggerURL, hostOfURL(t.URL))
-	recordOverlayTools(session, done)
-	n := 0
-	for _, d := range done {
-		n += strings.Count(d, "ok:")
-	}
-	return n
-}
-
-// loadPacks evals stored packs for host on the page. Best-effort: collects
-// "name: report" lines, never fails the caller.
-func loadPacks(ctx context.Context, wsURL, host string) []string {
-	var done []string
-	for _, m := range toolsForHost(host) {
-		b, err := os.ReadFile(filepath.Join(toolsRoot(), m.File))
-		if err != nil {
-			done = append(done, m.Name+": read failed: "+err.Error())
-			continue
-		}
-		rep, err := evalScript(ctx, wsURL, string(b), 15*time.Second)
-		if err != nil {
-			done = append(done, m.Name+": inject failed: "+err.Error())
-			continue
-		}
-		done = append(done, m.Name+": "+strings.TrimSpace(rep))
-	}
-	return done
-}
+// reconJS inventories visible interactive controls + gate signals.
+// Machine inventories, human assigns meaning.
+const reconJS = `(() => {
+  var norm = function(s){ return ((s||'').replace(/\s+/g,' ').trim()); };
+  var chain = function(el){ var c=[], p=el.parentElement; for (var i=0;i<4&&p;i++){ c.push((p.tagName||'?')+'.'+(((p.getAttribute&&p.getAttribute('role'))||(p.className||'')).toString().split(' ')[0]).slice(0,30)); p=p.parentElement; } return c.join('<'); };
+  var SEL = 'button,a,input,select,textarea,[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=radio],[role=switch],[role=textbox],[role=searchbox],[role=combobox]';
+  var out = [];
+  var els = document.querySelectorAll(SEL);
+  for (var i=0;i<els.length && out.length<150;i++){
+    var el = els[i];
+    var r; try { r = el.getBoundingClientRect(); } catch(e){ continue; }
+    if (!(r.width>2&&r.height>2)) continue;
+    var cs; try { cs = getComputedStyle(el); } catch(e){ continue; }
+    if (cs.visibility==='hidden'||cs.display==='none') continue;
+    var name = norm(el.getAttribute&&el.getAttribute('aria-label')) || norm(el.innerText).split('\n')[0].slice(0,80) || norm(el.placeholder) || '';
+    if (!name) continue;
+    out.push({role: (el.getAttribute&&el.getAttribute('role'))||el.tagName.toLowerCase(), name: name,
+      x: Math.round(r.x), y: Math.round(r.y), ctx: chain(el),
+      sel: el.getAttribute&&el.getAttribute('data-testid') ? '[data-testid="'+el.getAttribute('data-testid')+'"]' : (el.id ? '#'+el.id : '')});
+  }
+  var gates = [];
+  var html = document.documentElement.innerHTML.slice(0, 400000);
+  if (/hcaptcha|cf-challenge|turnstile|recaptcha|akam\/|sensor_data/i.test(html)) gates.push('bot-defense-present');
+  return JSON.stringify({url: location.href, controls: out, gates: gates});
+})()`

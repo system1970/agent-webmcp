@@ -2,90 +2,61 @@ package main
 
 import (
 	"fmt"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 )
 
-var sharedHTTP = &http.Client{
-	Transport: &http.Transport{
-		MaxIdleConnsPerHost:   8,
-		MaxConnsPerHost:       8,
-		IdleConnTimeout:       30 * time.Second,
-		DisableCompression:    true, // localhost: skip gzip for speed
-		ResponseHeaderTimeout: 5 * time.Second,
-	},
-	Timeout: 8 * time.Second,
-}
-
-func findChrome(explicit string) string {
+func findChrome(explicit string) (string, error) {
+	candidates := []string{}
 	if explicit != "" {
-		return explicit
+		candidates = append(candidates, explicit)
 	}
-	if v := os.Getenv("AGENT_WEBMCP_CHROME"); v != "" {
-		return v
+	for _, env := range []string{"AGENT_WEBMCP_CHROME", "CHROME_PATH"} {
+		if v := os.Getenv(env); v != "" {
+			candidates = append(candidates, v)
+		}
 	}
-	if v := os.Getenv("CHROME_PATH"); v != "" {
-		return v
-	}
-	cands := []string{}
-	if runtime.GOOS == "windows" {
-		cands = append(cands,
+	switch runtime.GOOS {
+	case "windows":
+		candidates = append(candidates,
 			`C:\Program Files\Google\Chrome\Application\chrome.exe`,
 			`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
+			filepath.Join(os.Getenv("LOCALAPPDATA"), `Google\Chrome\Application\chrome.exe`),
+			`C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe`,
 		)
-		if h, _ := os.UserHomeDir(); h != "" {
-			cands = append(cands, filepath.Join(h, `AppData\Local\Google\Chrome\Application\chrome.exe`))
-		}
-		for _, n := range []string{"chrome.exe", "chrome", "chromium.exe", "chromium"} {
-			if p, err := exec.LookPath(n); err == nil {
-				return p
-			}
-		}
-	} else if runtime.GOOS == "darwin" {
-		cands = append(cands,
+	case "darwin":
+		candidates = append(candidates,
 			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
 			"/Applications/Chromium.app/Contents/MacOS/Chromium",
 		)
-		for _, n := range []string{"google-chrome", "chrome", "chromium", "chromium-browser"} {
-			if p, err := exec.LookPath(n); err == nil {
-				return p
-			}
+	default:
+		candidates = append(candidates, "google-chrome", "chromium", "chromium-browser", "brave-browser")
+	}
+	for _, c := range candidates {
+		if c == "" {
+			continue
 		}
-	} else {
-		for _, n := range []string{"google-chrome", "google-chrome-stable", "chrome", "chromium", "chromium-browser"} {
-			if p, err := exec.LookPath(n); err == nil {
-				return p
+		if filepath.IsAbs(c) || strings.ContainsAny(c, `/\`) {
+			if st, err := os.Stat(c); err == nil && !st.IsDir() {
+				return c, nil
 			}
+			continue
+		}
+		if p, err := exec.LookPath(c); err == nil {
+			return p, nil
 		}
 	}
-	for _, c := range cands {
-		if st, err := os.Stat(c); err == nil && !st.IsDir() {
-			return c
-		}
-	}
-	return ""
+	return "", fmt.Errorf("chrome not found: install Chrome 149+ or pass --chrome <path>")
 }
 
-func freePort() (int, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port, nil
-}
-
-// chromeArgs builds a fast, WebMCP-enabled launch.
-func chromeArgs(port int, profile string, headed bool, extraBlank bool) []string {
-	a := []string{
-		"--remote-debugging-port=" + strconv.Itoa(port),
+func chromeArgs(port int, profile string, headed bool) []string {
+	args := []string{
+		fmt.Sprintf("--remote-debugging-port=%d", port),
 		"--remote-allow-origins=*",
 		"--user-data-dir=" + profile,
 		"--no-first-run",
@@ -94,46 +65,69 @@ func chromeArgs(port int, profile string, headed bool, extraBlank bool) []string
 		"--disable-background-timer-throttling",
 		"--disable-backgrounding-occluded-windows",
 		"--disable-renderer-backgrounding",
-		// WebMCP experimental flags (harmless on builds without them).
-		"--enable-features=WebMCP,WebMCPTesting,DevToolsWebMCPSupport",
-		"--enable-webmcp-testing",
+		"--enable-features=WebMCP,WebMCPTesting",
 	}
-	if !headed {
-		a = append(a, "--headless=new", "--hide-scrollbars")
+	if extra := strings.Fields(os.Getenv("AGENT_WEBMCP_CHROME_FLAGS")); len(extra) > 0 {
+		args = append(args, extra...)
+	}
+	if headed {
+		args = append(args, "--start-maximized")
 	} else {
-		a = append(a, "--start-maximized")
+		args = append(args, "--headless=new", "--hide-scrollbars", "--window-size=1440,900")
 	}
-	// Opt-in escape hatch for containers/CI (e.g. --no-sandbox where user
-	// namespaces are unavailable). Appended last so user flags win repeats.
-	// Whitespace-separated, no quoting: AGENT_WEBMCP_CHROME_FLAGS="--no-sandbox".
-	a = append(a, chromeExtraFlags()...)
-	if extraBlank {
-		a = append(a, "about:blank")
-	}
-	return a
+	return append(args, "about:blank")
 }
 
-// chromeExtraFlags returns user-supplied chrome flags from the environment.
-func chromeExtraFlags() []string {
-	return strings.Fields(os.Getenv("AGENT_WEBMCP_CHROME_FLAGS"))
+// ensureChrome reuses the session's live browser or launches a fresh one.
+// The child outlives the CLI so consecutive calls share tabs and logins.
+func ensureChrome(session, chromeBin string, headed bool, timeout time.Duration) (port int, reused bool, err error) {
+	if port, err := readPort(session); err == nil {
+		var v map[string]any
+		if err := cdpGet(port, "/json/version", &v); err == nil {
+			return port, true, nil
+		}
+	}
+	if chromeBin == "" {
+		if chromeBin, err = findChrome(""); err != nil {
+			return 0, false, err
+		}
+	} else if chromeBin, err = findChrome(chromeBin); err != nil {
+		return 0, false, err
+	}
+	if port, err = freePort(); err != nil {
+		return 0, false, err
+	}
+	profile := filepath.Join(sessionDir(session), "profile")
+	if err := os.MkdirAll(profile, 0o755); err != nil {
+		return 0, false, err
+	}
+	logPath := filepath.Join(sessionDir(session), "chrome.log")
+	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return 0, false, err
+	}
+	defer log.Close()
+	cmd := exec.Command(chromeBin, chromeArgs(port, profile, headed)...)
+	cmd.Stdout, cmd.Stderr = log, log
+	if err := cmd.Start(); err != nil {
+		return 0, false, fmt.Errorf("chrome launch failed: %w", err)
+	}
+	go cmd.Wait()
+	_ = writePort(session, port)
+	_ = writePid(session, cmd.Process.Pid)
+	if err := waitCDP(port, timeout); err != nil {
+		return 0, false, err
+	}
+	return port, false, nil
 }
 
-// chromeLaunchError decorates a CDP wait failure with the tail of chrome's
-// own log, so sandbox/GPU crashes show their real cause instead of a bare
-// timeout. The full log lives at logPath.
-func chromeLaunchError(logPath string, port int, cause error) error {
-	tail := "no chrome log captured"
-	if b, err := os.ReadFile(logPath); err == nil && len(b) > 0 {
-		lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
-		if len(lines) > 5 {
-			lines = lines[len(lines)-5:]
+func closeSession(session string) error {
+	if pid, err := readPid(session); err == nil && pid > 0 {
+		if p, err := os.FindProcess(pid); err == nil {
+			_ = p.Kill()
 		}
-		s := strings.TrimSpace(strings.Join(lines, " | "))
-		if len(s) > 1200 {
-			s = s[:1200] + "…"
-		}
-		tail = "chrome log tail: " + s
 	}
-	return fmt.Errorf("%w (%s; rootless containers often need --no-sandbox via AGENT_WEBMCP_CHROME_FLAGS; full log: %s)",
-		cause, tail, logPath)
+	_ = os.Remove(filepath.Join(sessionDir(session), "cdp-port"))
+	_ = os.Remove(filepath.Join(sessionDir(session), "chrome.pid"))
+	return nil // profile/ stays for fast relaunch
 }

@@ -5,38 +5,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
-
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func usage() {
-	fmt.Fprint(os.Stderr, `agent-webmcp `+version+` — ultra-light WebMCP browser CLI
+	fmt.Fprint(os.Stderr, `agent-webmcp `+version+` — typed WebMCP bridge
 
 usage:
-  agent-webmcp open [url] [--session NAME] [--desc "purpose"] [--headed] [--chrome PATH] [--json]
+  agent-webmcp open [url] [--session NAME] [--headed] [--chrome PATH] [--json]
   agent-webmcp list [--session NAME] [--json]
-  agent-webmcp invoke <tool> [--session NAME] [--params JSON|@file] [--frame ID] [--timeout-ms N] [--json]
-  agent-webmcp observe [--session NAME] [--json]                       # Jev-shaped state: url/title/text/elements/tools
-  agent-webmcp act <@eN> <click|type|select> [--text ..] [--session NAME] [--json]
-  agent-webmcp decide --goal ".." [--session NAME] [--json]            # one Jev call: operation + @eN target (needs TYPESAFE_API_KEY)
-  agent-webmcp eval <js|@file> [--session NAME] [--json]            # escape hatch: inspection only, prefer page tools
-  agent-webmcp tools <add <file> [--for HOST] [--name NAME] | list | load | remove <name>>
+  agent-webmcp invoke <tool> [--params JSON|@file] [--frame ID] [--session NAME] [--json]
+  agent-webmcp eval <js|@file> [--session NAME] [--json]
+  agent-webmcp observe [--session NAME] [--json]
+  agent-webmcp recon [--session NAME] [--json]
+  agent-webmcp decide --goal ".." [--session NAME] [--json]
+  agent-webmcp act [--session NAME] [--json]
+  agent-webmcp tick --goal ".." [--session NAME] [--json]
+  agent-webmcp run --goal ".." [--session NAME] [--max-steps N] [--json]
   agent-webmcp close [--session NAME | --all]
-  agent-webmcp sessions [--json]                       # picker: reuse by desc/url before opening new
-  agent-webmcp sessions note --session NAME --desc "purpose"   # relabel without launching
+  agent-webmcp sessions [--json]
   agent-webmcp status [--session NAME] [--json]
-  agent-webmcp mcp [--session NAME]
   agent-webmcp version
-
-env:
-  AGENT_WEBMCP_CHROME  chrome binary path
-  AGENT_WEBMCP_CHROME_FLAGS  extra chrome flags, whitespace-separated (e.g. "--no-sandbox")
-  AGENT_WEBMCP_HOME    sessions root override
 `)
 }
 
@@ -49,7 +41,7 @@ type globals struct {
 	all       bool
 	params    string
 	frame     string
-	desc      string
+	text      string
 }
 
 func parseGlobals(args []string) (globals, []string) {
@@ -68,8 +60,6 @@ func parseGlobals(args []string) (globals, []string) {
 			}
 		case strings.HasPrefix(a, "--session="):
 			g.session = strings.TrimPrefix(a, "--session=")
-		case strings.HasPrefix(a, "-s="):
-			g.session = strings.TrimPrefix(a, "-s=")
 		case a == "--json":
 			g.json = true
 		case a == "--headed":
@@ -78,13 +68,6 @@ func parseGlobals(args []string) (globals, []string) {
 			g.headed = false
 		case a == "--all":
 			g.all = true
-		case a == "--chrome":
-			if i+1 < len(args) {
-				i++
-				g.chrome = args[i]
-			}
-		case strings.HasPrefix(a, "--chrome="):
-			g.chrome = strings.TrimPrefix(a, "--chrome=")
 		case a == "--params":
 			if i+1 < len(args) {
 				i++
@@ -97,8 +80,22 @@ func parseGlobals(args []string) (globals, []string) {
 				i++
 				g.frame = args[i]
 			}
+		case a == "--text":
+			if i+1 < len(args) {
+				i++
+				g.text = args[i]
+			}
+		case strings.HasPrefix(a, "--text="):
+			g.text = strings.TrimPrefix(a, "--text=")
 		case strings.HasPrefix(a, "--frame="):
 			g.frame = strings.TrimPrefix(a, "--frame=")
+		case a == "--chrome":
+			if i+1 < len(args) {
+				i++
+				g.chrome = args[i]
+			}
+		case strings.HasPrefix(a, "--chrome="):
+			g.chrome = strings.TrimPrefix(a, "--chrome=")
 		case a == "--timeout-ms":
 			if i+1 < len(args) {
 				i++
@@ -110,17 +107,6 @@ func parseGlobals(args []string) (globals, []string) {
 			if n, err := parseInt(strings.TrimPrefix(a, "--timeout-ms=")); err == nil && n > 0 {
 				g.timeoutMs = n
 			}
-		case a == "--desc" || a == "--description":
-			if i+1 < len(args) {
-				i++
-				g.desc = args[i]
-			}
-		case strings.HasPrefix(a, "--desc="):
-			g.desc = strings.TrimPrefix(a, "--desc=")
-		case strings.HasPrefix(a, "--description="):
-			g.desc = strings.TrimPrefix(a, "--description=")
-		case a == "--help" || a == "-h":
-			rest = append(rest, a)
 		default:
 			rest = append(rest, a)
 		}
@@ -142,10 +128,9 @@ func run(args []string) int {
 	}
 	g, rest := parseGlobals(args[1:])
 	jsonOut = g.json
-	cmd := args[0]
 	ctx := context.Background()
 
-	switch cmd {
+	switch args[0] {
 	case "version", "--version", "-V":
 		fmt.Println("agent-webmcp " + version)
 		return 0
@@ -155,10 +140,6 @@ func run(args []string) int {
 	case "open", "navigate", "goto":
 		var url string
 		for _, a := range rest {
-			if a == "--help" || a == "-h" {
-				usage()
-				return 0
-			}
 			if !strings.HasPrefix(a, "-") && url == "" {
 				url = a
 			}
@@ -170,36 +151,102 @@ func run(args []string) int {
 		if err != nil {
 			return failErr("open_failed", err)
 		}
-		if strings.TrimSpace(g.desc) != "" {
-			writeDesc(g.session, g.desc)
-		}
-		touchSession(g.session, r.URL)
 		if g.json {
-			ok(r)
+			ok(map[string]any{"session": r.Session, "url": r.URL, "port": r.Port, "headed": r.Headed, "reused": r.Reused})
 			return 0
 		}
-		m := readMeta(g.session)
 		fmt.Printf("session=%s port=%d url=%s\n", r.Session, r.Port, r.URL)
-		if strings.TrimSpace(m.Desc) != "" {
-			fmt.Printf("desc: %s\n", m.Desc)
-		} else if strings.TrimSpace(g.desc) == "" {
-			fmt.Printf("hint: label it: agent-webmcp sessions note --session %s --desc \"purpose\"\n", g.session)
-		}
-		for _, c := range r.Custom {
-			fmt.Printf("custom: %s\n", c)
-		}
-		if n := r.WebMCP.ToolCount; n == 0 {
-			fmt.Println("webmcp: no tools (run: agent-webmcp list)")
-		} else {
-			fmt.Printf("webmcp: %v tool(s) available — run: agent-webmcp list\n", n)
-			for _, t := range r.Tools {
-				fmt.Printf("  - %s: %s\n", t.Name, firstLine(t.Description))
+		return 0
+	case "close", "quit", "exit":
+		if g.all {
+			dirs, _ := sessionNames()
+			for _, name := range dirs {
+				_ = closeSession(name)
 			}
+			if g.json {
+				ok(map[string]any{"closed": dirs})
+				return 0
+			}
+			fmt.Printf("closed %d session(s)\n", len(dirs))
+			return 0
+		}
+		if err := closeSession(g.session); err != nil {
+			return failErr("close_failed", err)
+		}
+		if g.json {
+			ok(map[string]any{"session": g.session, "closed": true})
+			return 0
+		}
+		fmt.Printf("closed session=%s\n", g.session)
+		return 0
+	case "sessions", "session":
+		type row struct {
+			Name string `json:"name"`
+			Live bool   `json:"live"`
+			Port int    `json:"port,omitempty"`
+			URL  string `json:"url,omitempty"`
+		}
+		var rows []row
+		for _, name := range mustSessionNames() {
+			r := row{Name: name}
+			if port, err := readPort(name); err == nil {
+				if targets, err := listTargets(port); err == nil {
+					r.Live, r.Port = true, port
+					for _, t := range targets {
+						if t.Type == "page" {
+							r.URL = t.URL
+							break
+						}
+					}
+				}
+			}
+			rows = append(rows, r)
+		}
+		if rows == nil {
+			rows = []row{}
+		}
+		if g.json {
+			ok(map[string]any{"sessions": rows})
+			return 0
+		}
+		if len(rows) == 0 {
+			fmt.Println("no sessions")
+			return 0
+		}
+		for _, r := range rows {
+			state := "dead"
+			if r.Live {
+				state = "live"
+			}
+			fmt.Printf("%s  %s  %s\n", r.Name, state, r.URL)
 		}
 		return 0
-	case "list", "webmcp":
-		// `webmcp list` compat
-		if len(rest) > 0 && rest[0] == "list" {
+	case "status":
+		port, err := readPort(g.session)
+		if err != nil {
+			return failErr("no_session", err)
+		}
+		targets, err := listTargets(port)
+		if err != nil {
+			return failErr("unreachable", err)
+		}
+		pages, url := 0, ""
+		for _, t := range targets {
+			if t.Type == "page" {
+				pages++
+				if url == "" {
+					url = t.URL
+				}
+			}
+		}
+		if g.json {
+			ok(map[string]any{"session": g.session, "port": port, "pages": pages, "url": url})
+			return 0
+		}
+		fmt.Printf("session=%s port=%d pages=%d url=%s\n", g.session, port, pages, url)
+		return 0
+	case "list", "webmcp":		// `webmcp list` compat with agent-browser.
+		if args[0] == "webmcp" && len(rest) > 0 && rest[0] == "list" {
 			rest = rest[1:]
 		}
 		port, err := readPort(g.session)
@@ -210,17 +257,16 @@ func run(args []string) int {
 		if err != nil {
 			return failErr("no_page", err)
 		}
-		lctx, cancel := context.WithTimeout(ctx, time.Duration(g.timeoutMs)*time.Millisecond)
-		defer cancel()
-		tools, code, err := listWebMCP(lctx, t.WebSocketDebuggerURL)
+		tools, _, err := listWebMCP(ctx, t.WebSocketDebuggerURL, time.Duration(g.timeoutMs)*time.Millisecond)
 		if err != nil {
-			if code == "webmcp_unsupported" || isNotFound(err) {
-				return fail("webmcp_unsupported", "browser build has no WebMCP CDP domain (use newer Chrome, headed or headless=new with WebMCP flags)")
+			if isNotFound(err) {
+				return fail("webmcp_unsupported", "browser has no WebMCP CDP domain (use Chrome 149+)")
 			}
 			return failErr("list_failed", err)
 		}
-		tools = markOverlays(tools, readOverlayTools(g.session))
-		frameCacheSaveAll(g.session, tools)
+		if tools == nil {
+			tools = []WebMCPTool{}
+		}
 		if g.json {
 			ok(map[string]any{"session": g.session, "url": t.URL, "tools": tools})
 			return 0
@@ -231,38 +277,16 @@ func run(args []string) int {
 		}
 		fmt.Printf("webmcp: %d tool(s) on %s\n", len(tools), t.URL)
 		for _, tl := range tools {
-			ro := ""
-			if tl.ReadOnly != nil && *tl.ReadOnly {
-				ro = " [read-only]"
-			}
-			ov := ""
-			if tl.Overlay != nil && *tl.Overlay {
-				ov = " [overlay: agent-webmcp custom, not the site's]"
-			}
-			fmt.Printf("  - %s%s%s: %s\n", tl.Name, ro, ov, firstLine(tl.Description))
+			fmt.Printf("  - %s: %s\n", tl.Name, firstLine(tl.Description))
 		}
 		return 0
 	case "invoke":
 		if len(rest) == 0 || strings.HasPrefix(rest[0], "-") {
 			return fail("usage", "usage: agent-webmcp invoke <tool> [--params JSON|@file] [--frame ID]")
 		}
-		tool := rest[0]
-		params := g.params
-		// allow positional JSON second arg
-		for _, a := range rest[1:] {
-			if !strings.HasPrefix(a, "-") && params == "" {
-				params = a
-			}
-		}
-		if strings.HasPrefix(params, "@") {
-			b, err := os.ReadFile(strings.TrimPrefix(params, "@"))
-			if err != nil {
-				return failErr("params_read_failed", err)
-			}
-			params = strings.TrimSpace(strings.TrimPrefix(string(b), "\ufeff"))
-		}
-		if params == "" {
-			params = "{}"
+		tool, params := rest[0], g.params
+		if params == "" && len(rest) > 1 && !strings.HasPrefix(rest[1], "-") {
+			params = rest[1]
 		}
 		port, err := readPort(g.session)
 		if err != nil {
@@ -272,332 +296,37 @@ func run(args []string) int {
 		if err != nil {
 			return failErr("no_page", err)
 		}
-		ictx, cancel := context.WithTimeout(ctx, time.Duration(g.timeoutMs)*time.Millisecond)
-		defer cancel()
-		raw, err := invokeWebMCPSession(ictx, t.WebSocketDebuggerURL, g.session, tool, params, g.frame, time.Duration(g.timeoutMs)*time.Millisecond)
-		if err != nil && strings.Contains(err.Error(), "not found (run: agent-webmcp list)") {
-			// A previous tool may have navigated and orphaned the page's
-			// registry. Re-inject stored packs once, re-resolve, retry once.
-			if reinjectSession(g.session) > 0 {
-				if t2, rerr := pickPageTarget(port); rerr == nil {
-					t = t2
-					raw, err = invokeWebMCPSession(ictx, t.WebSocketDebuggerURL, g.session, tool, params, g.frame, time.Duration(g.timeoutMs)*time.Millisecond)
-				}
-			}
-		}
+		raw, err := invokeWebMCP(ctx, t.WebSocketDebuggerURL, tool, params, g.frame, time.Duration(g.timeoutMs)*time.Millisecond)
 		if err != nil {
-			if isNotFound(err) {
-				return fail("webmcp_unsupported", "invoke not supported by this browser build: "+err.Error())
-			}
 			return failErr("invoke_failed", err)
 		}
-		if g.json {
-			var v any
-			if json.Unmarshal(raw, &v) == nil {
-				ok(map[string]any{"tool": tool, "result": v})
-			} else {
-				ok(map[string]any{"tool": tool, "result": string(raw)})
-			}
-			return 0
-		}
-		// Human: pretty-print result payload.
-		var v any
-		if json.Unmarshal(raw, &v) == nil {
-			b, _ := json.MarshalIndent(v, "", "  ")
-			fmt.Println(string(b))
-		} else {
-			fmt.Println(string(raw))
-		}
-		return 0
-	case "observe":
-		return observeCmd(&g, rest)
-	case "act":
-		return actCmd(&g, rest)
-	case "decide":
-		return decideCmd(&g, rest)
-	case "close", "quit", "exit":
-		if g.all {
-			root := sessionRoot()
-			ents, _ := os.ReadDir(root)
-			for _, e := range ents {
-				if e.IsDir() {
-					_ = closeSession(e.Name())
-				}
-			}
-			if g.json {
-				ok(map[string]any{"closed": "all"})
-			} else {
-				fmt.Println("closed all sessions")
-			}
-			return 0
-		}
-		if err := closeSession(g.session); err != nil {
-			return failErr("close_failed", err)
+		var val any = string(raw)
+		var js any
+		if json.Unmarshal(raw, &js) == nil {
+			val = js
 		}
 		if g.json {
-			ok(map[string]any{"closed": g.session})
-		} else {
-			fmt.Println("closed session " + g.session)
-		}
-		return 0
-	case "sessions", "session":
-		if len(rest) > 0 && (rest[0] == "list" || rest[0] == "ls") {
-			rest = rest[1:]
-		}
-		if len(rest) > 0 && rest[0] == "note" {
-			if strings.TrimSpace(g.desc) == "" {
-				return fail("usage", "usage: agent-webmcp sessions note --session NAME --desc \"purpose\"")
-			}
-			_ = os.MkdirAll(sessionDir(g.session), 0o755)
-			writeDesc(g.session, g.desc)
-			if g.json {
-				ok(map[string]any{"session": g.session, "desc": strings.TrimSpace(g.desc)})
-			} else {
-				fmt.Printf("session %s: %s\n", g.session, strings.TrimSpace(g.desc))
-			}
+			ok(map[string]any{"tool": tool, "result": val})
 			return 0
 		}
-		root := sessionRoot()
-		ents, _ := os.ReadDir(root)
-		type row struct {
-			Name     string `json:"name"`
-			Live     bool   `json:"live"`
-			Port     int    `json:"port,omitempty"`
-			URL      string `json:"url,omitempty"`
-			Desc     string `json:"desc,omitempty"`
-			LastUsed string `json:"lastUsed,omitempty"`
-			Idle     string `json:"idle,omitempty"`
-		}
-		var rows []row
-		for _, e := range ents {
-			if !e.IsDir() {
-				continue
-			}
-			r := row{Name: e.Name()}
-			m := readMeta(e.Name())
-			r.Desc = m.Desc
-			r.LastUsed = m.LastUsed
-			r.Idle = idleFor(m.LastUsed)
-			if p, err := readPort(e.Name()); err == nil {
-				r.Port = p
-				if ts, err := listTargets(p); err == nil {
-					r.Live = true
-					for _, t := range ts {
-						if t.Type == "page" {
-							r.URL = t.URL
-							break
-						}
-					}
-				}
-			}
-			if r.URL == "" {
-				r.URL = m.LastURL
-			}
-			rows = append(rows, r)
-		}
-		if g.json {
-			if rows == nil {
-				rows = []row{}
-			}
-			ok(map[string]any{"sessions": rows})
-			return 0
-		}
-		if len(rows) == 0 {
-			fmt.Println("no sessions")
-			return 0
-		}
-		for _, r := range rows {
-			st := "dead"
-			if r.Live {
-				st = "live :" + strconv.Itoa(r.Port) + " " + r.URL
-			} else if r.URL != "" {
-				st = "dead " + r.URL
-			}
-			desc := r.Desc
-			if desc == "" {
-				desc = "-"
-			}
-			idle := r.Idle
-			if idle == "" {
-				idle = "-"
-			}
-			fmt.Printf("  %-16s %-10s desc=%s idle=%s\n    %s\n", r.Name, map[bool]string{true: "live", false: "dead"}[r.Live], desc, idle, st)
-		}
-		fmt.Println("reuse: agent-webmcp open --session NAME (no URL = attach) · relabel: sessions note --session NAME --desc \"purpose\"")
+		fmt.Println(string(raw))
 		return 0
-	case "status":
-		port, err := readPort(g.session)
-		if err != nil {
-			return failErr("no_session", err)
-		}
-		ts, err := listTargets(port)
-		if err != nil {
-			return failErr("cdp_unreachable", err)
-		}
-		pages := 0
-		active := ""
-		for _, t := range ts {
-			if t.Type == "page" {
-				pages++
-				if active == "" {
-					active = t.URL
-				}
-			}
-		}
-		if g.json {
-			ok(map[string]any{"session": g.session, "port": port, "pages": pages, "url": active, "profile": filepath.Join(sessionDir(g.session), "profile")})
-		} else {
-			fmt.Printf("session=%s port=%d pages=%d url=%s\n", g.session, port, pages, active)
-		}
-		return 0
-	case "mcp":
-		return mcpServe(g.session)
 	case "eval":
-		if len(rest) == 0 {
-			return fail("usage", "usage: agent-webmcp eval <js|@file> [--session NAME]")
-		}
-		port, err := readPort(g.session)
-		if err != nil {
-			return failErr("no_session", err)
-		}
-		t, err := pickPageTarget(port)
-		if err != nil {
-			return failErr("no_page", err)
-		}
-		ectx, cancel := context.WithTimeout(ctx, time.Duration(g.timeoutMs)*time.Millisecond)
-		defer cancel()
-		expr := strings.Join(rest, " ")
-		if len(rest) == 1 && strings.HasPrefix(rest[0], "@") {
-			b, err := os.ReadFile(strings.TrimPrefix(rest[0], "@"))
-			if err != nil {
-				return failErr("eval_read_failed", err)
-			}
-			expr = strings.TrimSpace(strings.TrimPrefix(string(b), "\ufeff"))
-		}
-		out, err := evalScript(ectx, t.WebSocketDebuggerURL, expr, time.Duration(g.timeoutMs)*time.Millisecond)
-		if err != nil {
-			return failErr("eval_failed", err)
-		}
-		if g.json {
-			ok(map[string]any{"value": out})
-			return 0
-		}
-		fmt.Println(out)
-		return 0
-	case "tools", "tool":
-		if len(rest) == 0 {
-			return fail("usage", "usage: agent-webmcp tools <add <file> [--for HOST] [--name NAME] | list | load | remove <name>>")
-		}
-		switch rest[0] {
-		case "list":
-			packs, err := toolsList()
-			if err != nil {
-				return failErr("tools_list_failed", err)
-			}
-			if g.json {
-				if packs == nil {
-					packs = []packMeta{}
-				}
-				ok(map[string]any{"packs": packs})
-				return 0
-			}
-			if len(packs) == 0 {
-				fmt.Println("no stored custom tools (agent-webmcp tools add <file> --for <host>)")
-				return 0
-			}
-			for _, p := range packs {
-				fmt.Printf("  %s  hosts=%s\n", p.Name, strings.Join(p.Hosts, ","))
-			}
-			return 0
-		case "add":
-			if len(rest) < 2 || strings.HasPrefix(rest[1], "-") {
-				return fail("usage", "usage: agent-webmcp tools add <file> [--for HOST] [--name NAME]")
-			}
-			file := rest[1]
-			var hosts []string
-			name := ""
-			for i := 2; i < len(rest); i++ {
-				switch {
-				case rest[i] == "--for" && i+1 < len(rest):
-					i++
-					hosts = append(hosts, strings.Split(rest[i], ",")...)
-				case strings.HasPrefix(rest[i], "--for="):
-					hosts = append(hosts, strings.Split(strings.TrimPrefix(rest[i], "--for="), ",")...)
-				case rest[i] == "--name" && i+1 < len(rest):
-					i++
-					name = rest[i]
-				case strings.HasPrefix(rest[i], "--name="):
-					name = strings.TrimPrefix(rest[i], "--name=")
-				}
-			}
-			saved, err := toolsAdd(file, name, hosts)
-			if err != nil {
-				return failErr("tools_add_failed", err)
-			}
-			loaded := ""
-			if port, err := readPort(g.session); err == nil {
-				if t, err := pickPageTarget(port); err == nil && t.URL != "" {
-					for _, line := range loadPacks(ctx, t.WebSocketDebuggerURL, hostOfURL(t.URL)) {
-						if strings.HasPrefix(line, saved+":") {
-							loaded = strings.TrimSpace(strings.TrimPrefix(line, saved+":"))
-						}
-					}
-				}
-			}
-			if g.json {
-				ok(map[string]any{"pack": saved, "hosts": hosts, "loaded": loaded})
-			} else if loaded != "" {
-				fmt.Printf("stored %s and loaded into current tab: %s\n", saved, loaded)
-			} else {
-				fmt.Printf("stored %s (loads automatically when you open a matching site)\n", saved)
-			}
-			return 0
-		case "remove", "rm", "delete":
-			if len(rest) < 2 {
-				return fail("usage", "usage: agent-webmcp tools remove <name>")
-			}
-			if err := toolsRemove(rest[1]); err != nil {
-				return failErr("tools_remove_failed", err)
-			}
-			if g.json {
-				ok(map[string]any{"removed": packName(rest[1])})
-			} else {
-				fmt.Println("removed " + packName(rest[1]) + " (live tabs keep it until reload)")
-			}
-			return 0
-		case "load":
-			port, err := readPort(g.session)
-			if err != nil {
-				return failErr("no_session", err)
-			}
-			t, err := pickPageTarget(port)
-			if err != nil {
-				return failErr("no_page", err)
-			}
-			done := loadPacks(ctx, t.WebSocketDebuggerURL, hostOfURL(t.URL))
-			recordOverlayTools(g.session, done)
-			if g.json {
-				ok(map[string]any{"host": hostOfURL(t.URL), "loaded": done})
-			} else if len(done) == 0 {
-				fmt.Println("no stored tools match " + hostOfURL(t.URL))
-			} else {
-				for _, d := range done {
-					fmt.Println("  " + d)
-				}
-			}
-			return 0
-		}
-		return fail("usage", "usage: agent-webmcp tools <add|list|load|remove>")
+		return evalCmd(ctx, &g, rest)
+	case "observe":
+		return observeCmd(ctx, &g, rest)
+	case "recon":
+		return reconCmd(ctx, &g, rest)
+	case "decide":
+		return decideCmd(ctx, &g, rest)
+	case "act":
+		return actCmd(ctx, &g, rest)
+	case "tick":
+		return tickCmd(ctx, &g, rest)
+	case "run":
+		return runCmd(ctx, &g, rest)
+	default:
+		usage()
+		return 2
 	}
-	return fail("unknown_command", "unknown command: "+cmd+" (run: agent-webmcp help)")
-}
-
-func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return strings.TrimSpace(s[:i])
-	}
-	if len(s) > 160 {
-		return strings.TrimSpace(s[:160]) + "…"
-	}
-	return strings.TrimSpace(s)
 }

@@ -3,13 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
+	"net"
 	"net/http"
 	"net/url"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,7 +14,6 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Target is one entry of /json/list.
 type Target struct {
 	ID                   string `json:"id"`
 	Type                 string `json:"type"`
@@ -25,152 +21,108 @@ type Target struct {
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 }
 
+var httpClient = &http.Client{Timeout: 8 * time.Second}
+
 func cdpGet(port int, path string, out any) error {
-	u := fmt.Sprintf("http://127.0.0.1:%d%s", port, path)
-	req, err := http.NewRequest("GET", u, nil)
-	if err != nil {
-		return fmt.Errorf("cdp %s: build request: %w", path, err)
-	}
-	resp, err := sharedHTTP.Do(req)
+	resp, err := httpClient.Get(fmt.Sprintf("http://127.0.0.1:%d%s", port, path))
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("cdp %s: %s: %s", path, resp.Status, strings.TrimSpace(string(b)))
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func cdpPut(port int, path string, out any) error {
+	req, err := http.NewRequest(http.MethodPut, fmt.Sprintf("http://127.0.0.1:%d%s", port, path), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if out == nil {
+		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-func cdpPut(port int, path string) error {
-	u := fmt.Sprintf("http://127.0.0.1:%d%s", port, path)
-	req, err := http.NewRequest("PUT", u, nil)
-	if err != nil {
-		return fmt.Errorf("cdp %s: build request: %w", path, err)
-	}
-	resp, err := sharedHTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("cdp %s: %s", path, resp.Status)
-	}
-	return nil
-}
-
 func listTargets(port int) ([]Target, error) {
-	var t []Target
-	if err := cdpGet(port, "/json/list", &t); err != nil {
+	var targets []Target
+	if err := cdpGet(port, "/json/list", &targets); err != nil {
 		return nil, err
 	}
-	return t, nil
+	return targets, nil
 }
 
+// waitCDP polls /json/version until Chrome answers or timeout hits.
 func waitCDP(port int, timeout time.Duration) error {
-	dead := time.Now().Add(timeout)
-	for {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
 		var v map[string]any
 		if err := cdpGet(port, "/json/version", &v); err == nil {
 			return nil
 		}
-		if time.Now().After(dead) {
-			return errors.New("timed out waiting for chrome CDP on port " + strconv.Itoa(port))
-		}
 		time.Sleep(80 * time.Millisecond)
 	}
+	return fmt.Errorf("timed out waiting for chrome CDP on port %d", port)
 }
 
 func pickPageTarget(port int) (Target, error) {
-	ts, err := listTargets(port)
+	targets, err := listTargets(port)
 	if err != nil {
 		return Target{}, err
 	}
-	for _, t := range ts {
+	for _, t := range targets {
 		if t.Type == "page" && t.WebSocketDebuggerURL != "" {
 			return t, nil
 		}
 	}
-	return Target{}, errors.New("no page target (open a page first)")
+	return Target{}, fmt.Errorf("no_page: no open page target (run: open <url>)")
 }
 
-func newPageTarget(port int, urlStr string) (Target, error) {
-	path := "/json/new"
-	if urlStr != "" {
-		path = "/json/new?" + url.QueryEscape(urlStr)
-	}
-	// Chrome's /json/new returns the created target as JSON.
-	u := fmt.Sprintf("http://127.0.0.1:%d%s", port, path)
-	req, err := http.NewRequest("PUT", u, nil)
-	if err != nil {
-		return Target{}, fmt.Errorf("cdp %s: build request: %w", path, err)
-	}
-	resp, err := sharedHTTP.Do(req)
-	if err != nil {
-		return Target{}, err
-	}
-	defer resp.Body.Close()
+func newPageTarget(port int, rawURL string) (Target, error) {
 	var t Target
-	if err := json.NewDecoder(resp.Body).Decode(&t); err != nil {
-		return Target{}, err
+	if err := cdpPut(port, "/json/new?"+url.QueryEscape(rawURL), &t); err == nil && t.WebSocketDebuggerURL != "" {
+		return t, nil
 	}
-	if t.WebSocketDebuggerURL == "" {
-		// Fall back to listing.
-		time.Sleep(150 * time.Millisecond)
-		return pickPageTarget(port)
-	}
-	return t, nil
+	time.Sleep(150 * time.Millisecond)
+	return pickPageTarget(port)
 }
 
-// ---- minimal WS JSON-RPC client ----
-
-type rpcRequest struct {
-	ID     int64  `json:"id"`
-	Method string `json:"method"`
-	Params any    `json:"params,omitempty"`
-}
-
-type rpcResponse struct {
-	ID     int64           `json:"id"`
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  *rpcError       `json:"error,omitempty"`
-	Method string          `json:"method,omitempty"` // events carry method, no id
-	Params json.RawMessage `json:"params,omitempty"`
-}
-
-type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-func (e *rpcError) Error() string { return fmt.Sprintf("cdp %d: %s", e.Code, e.Message) }
-
+// CDP is one WebSocket connection: Call sends, readLoop routes replies.
 type CDP struct {
 	conn    *websocket.Conn
 	next    atomic.Int64
-	wmu     sync.Mutex
-	pending sync.Map // int64 -> chan rpcResponse
-	events  chan rpcResponse
-	closed  atomic.Bool
+	pending sync.Map // id -> chan rpcReply
+	events  chan rpcEvent
+}
+
+type rpcReply struct {
+	Result json.RawMessage `json:"result"`
+	Error  *rpcError       `json:"error"`
+}
+
+type rpcError struct {
+	Message string `json:"message"`
+}
+
+type rpcEvent struct {
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
 }
 
 func dialCDP(ctx context.Context, wsURL string) (*CDP, error) {
-	// coder/websocket dial with compression disabled for localhost speed.
-	opts := &websocket.DialOptions{
-		CompressionMode: websocket.CompressionDisabled,
-		HTTPClient:      sharedHTTP,
-	}
-	c, _, err := websocket.Dial(ctx, wsURL, opts)
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{CompressionMode: websocket.CompressionDisabled})
 	if err != nil {
 		return nil, err
 	}
-	c.SetReadLimit(64 << 20) // 64MB: tool schemas/results can be large
-	cl := &CDP{conn: c, events: make(chan rpcResponse, 256)}
-	cl.next.Store(1)
-	go cl.readLoop()
-	return cl, nil
+	conn.SetReadLimit(64 << 20)
+	c := &CDP{conn: conn, events: make(chan rpcEvent, 256)}
+	c.next.Store(1)
+	go c.readLoop()
+	return c, nil
 }
 
 func (c *CDP) readLoop() {
@@ -179,63 +131,56 @@ func (c *CDP) readLoop() {
 		if err != nil {
 			return
 		}
-		var m rpcResponse
-		if err := json.Unmarshal(data, &m); err != nil {
+		var msg struct {
+			ID     *int64          `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+			Result json.RawMessage `json:"result"`
+			Error  *rpcError       `json:"error"`
+		}
+		if err := json.Unmarshal(data, &msg); err != nil {
 			continue
 		}
-		if m.ID != 0 {
-			if ch, ok := c.pending.Load(m.ID); ok {
-				ch.(chan rpcResponse) <- m
+		if msg.ID != nil {
+			if ch, ok := c.pending.LoadAndDelete(*msg.ID); ok {
+				ch.(chan rpcReply) <- rpcReply{Result: msg.Result, Error: msg.Error}
 			}
 			continue
 		}
-		// event
 		select {
-		case c.events <- m:
+		case c.events <- rpcEvent{Method: msg.Method, Params: msg.Params}:
 		default:
 		}
 	}
 }
 
-func (c *CDP) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+func (c *CDP) Call(ctx context.Context, method string, params map[string]any) (json.RawMessage, error) {
 	id := c.next.Add(1)
-	ch := make(chan rpcResponse, 1)
+	ch := make(chan rpcReply, 1)
 	c.pending.Store(id, ch)
 	defer c.pending.Delete(id)
-	req := rpcRequest{ID: id, Method: method, Params: params}
-	data, err := json.Marshal(req)
-	if err != nil {
+	body, _ := json.Marshal(map[string]any{"id": id, "method": method, "params": params})
+	if err := c.conn.Write(ctx, websocket.MessageText, body); err != nil {
 		return nil, err
-	}
-	c.wmu.Lock()
-	werr := c.conn.Write(ctx, websocket.MessageText, data)
-	c.wmu.Unlock()
-	if werr != nil {
-		return nil, werr
 	}
 	select {
+	case reply := <-ch:
+		if reply.Error != nil {
+			return nil, fmt.Errorf("cdp %s: %s", method, reply.Error.Message)
+		}
+		return reply.Result, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case m := <-ch:
-		if m.Error != nil {
-			return nil, m.Error
-		}
-		return m.Result, nil
 	}
 }
 
-func (c *CDP) Close() {
-	if c.closed.Swap(true) {
-		return
-	}
-	_ = c.conn.Close(websocket.StatusNormalClosure, "")
-}
+func (c *CDP) Close() { _ = c.conn.Close(websocket.StatusNormalClosure, "") }
 
-func cdpCall(ctx context.Context, wsURL, method string, params any) (json.RawMessage, error) {
-	c, err := dialCDP(ctx, wsURL)
+func freePort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	defer c.Close()
-	return c.Call(ctx, method, params)
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
 }
