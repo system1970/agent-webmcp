@@ -313,6 +313,9 @@ func waitToolResponded(ctx context.Context, c *CDP, invocationID string, timeout
 				if p.ErrorText != "" {
 					return nil, fmt.Errorf("%s", p.ErrorText)
 				}
+				if len(p.Output) != 0 {
+					return nil, fmt.Errorf("tool failed: %s: %s", p.Status, firstLine(string(p.Output)))
+				}
 				return nil, fmt.Errorf("tool failed: %s", p.Status)
 			}
 		case <-time.After(minDuration(remain, 100*time.Millisecond)):

@@ -25,6 +25,7 @@ usage:
   agent-webmcp act [--session NAME] [--json]
   agent-webmcp tick --goal ".." [--session NAME] [--json]
   agent-webmcp run --goal ".." [--session NAME] [--max-steps N] [--json]
+  agent-webmcp tools <add|list|load|remove|verify> [--session NAME] [--json]
   agent-webmcp close [--session NAME | --all]
   agent-webmcp sessions [--json]
   agent-webmcp status [--session NAME] [--json]
@@ -151,11 +152,22 @@ func run(args []string) int {
 		if err != nil {
 			return failErr("open_failed", err)
 		}
+		// Auto-inject verified custom tools for the mapped site.
+		// Best-effort: an injection failure never fails the open.
+		var injected []string
+		if port, perr := readPort(g.session); perr == nil {
+			if t, terr := pickPageTarget(port); terr == nil {
+				injected, _ = injectVerifiedForURL(ctx, g.session, t.WebSocketDebuggerURL, t.URL, 15*time.Second)
+			}
+		}
 		if g.json {
-			ok(map[string]any{"session": r.Session, "url": r.URL, "port": r.Port, "headed": r.Headed, "reused": r.Reused})
+			ok(map[string]any{"session": r.Session, "url": r.URL, "port": r.Port, "headed": r.Headed, "reused": r.Reused, "customTools": injected})
 			return 0
 		}
 		fmt.Printf("session=%s port=%d url=%s\n", r.Session, r.Port, r.URL)
+		if len(injected) > 0 {
+			fmt.Printf("custom tools: injected %d tool(s)\n", len(injected))
+		}
 		return 0
 	case "close", "quit", "exit":
 		if g.all {
@@ -267,8 +279,15 @@ func run(args []string) int {
 		if tools == nil {
 			tools = []WebMCPTool{}
 		}
+		custom := customToolNames(g.session)
 		if g.json {
-			ok(map[string]any{"session": g.session, "url": t.URL, "tools": tools})
+			names := []string{}
+			for _, tl := range tools {
+				if custom[tl.Name] {
+					names = append(names, tl.Name)
+				}
+			}
+			ok(map[string]any{"session": g.session, "url": t.URL, "tools": tools, "custom": names})
 			return 0
 		}
 		if len(tools) == 0 {
@@ -277,7 +296,11 @@ func run(args []string) int {
 		}
 		fmt.Printf("webmcp: %d tool(s) on %s\n", len(tools), t.URL)
 		for _, tl := range tools {
-			fmt.Printf("  - %s: %s\n", tl.Name, firstLine(tl.Description))
+			tag := ""
+			if custom[tl.Name] {
+				tag = " [custom: agent-webmcp custom tool, not the site's]"
+			}
+			fmt.Printf("  - %s: %s%s\n", tl.Name, firstLine(tl.Description), tag)
 		}
 		return 0
 	case "invoke":
@@ -295,6 +318,12 @@ func run(args []string) int {
 		t, err := pickPageTarget(port)
 		if err != nil {
 			return failErr("no_page", err)
+		}
+		// Self-healing invoke: a full navigation drops per-document custom
+		// tools. If the named tool is session-recorded but absent, re-inject
+		// silently and proceed instead of failing on a stale page.
+		if listed, _, lerr := listWebMCP(ctx, t.WebSocketDebuggerURL, time.Duration(g.timeoutMs)*time.Millisecond); lerr == nil {
+			ensureCustomTools(ctx, g.session, t.WebSocketDebuggerURL, t.URL, time.Duration(g.timeoutMs)*time.Millisecond, listed)
 		}
 		raw, err := invokeWebMCP(ctx, t.WebSocketDebuggerURL, tool, params, g.frame, time.Duration(g.timeoutMs)*time.Millisecond)
 		if err != nil {
@@ -325,6 +354,8 @@ func run(args []string) int {
 		return tickCmd(ctx, &g, rest)
 	case "run":
 		return runCmd(ctx, &g, rest)
+	case "tools":
+		return toolsCmd(ctx, &g, rest)
 	default:
 		usage()
 		return 2
