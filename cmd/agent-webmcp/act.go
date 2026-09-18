@@ -19,15 +19,72 @@ const resolveJS = `(node => {
   const e = window.__jevFast && window.__jevFast.nodes.get(node);
   if (!e || !e.isConnected) return JSON.stringify({error:'detached'});
   if (e.matches(':disabled') || e.closest('[aria-disabled="true"],[inert]')) return JSON.stringify({error:'disabled'});
+  const test = () => {
+    const r = e.getBoundingClientRect(), x = r.x+r.width/2, y = r.y+r.height/2;
+    if (!r.width || !r.height) return {error:'hidden'};
+    if (x<0 || y<0 || x>=innerWidth || y>=innerHeight) return {error:'outside viewport'};
+    try {
+      if (!e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return {error:'hidden'};
+    } catch(err) { return {error:'hidden'}; }
+    const hit = document.elementFromPoint(x, y);
+    if (!hit || (hit!==e && !e.contains(hit))) return {error:'occluded'};
+    return {x, y};
+  };
+  // Geometry resolves just before input: scroll first, measure second.
+  // Sticky headers/banners occlude center clicks; retry at offsets.
+  try { e.scrollIntoView({block:'center'}); } catch(err) {}
+  let r = test();
+  if (r.error === 'occluded' || r.error === 'outside viewport') {
+    window.scrollBy(0, -140); r = test();
+  }
+  if (r.error === 'occluded' || r.error === 'outside viewport') {
+    try { e.scrollIntoView({block:'start'}); } catch(err) {}
+    window.scrollBy(0, 120); r = test();
+  }
+  return JSON.stringify(r);
+})(__NODE__)`
+
+// resolveKeyJS re-registers a replaced node under a fresh identity.
+// Hydrating widgets swap nodes mid-loop; stable keys (id -> href ->
+// placeholder -> name) survive the swap. Returns the node id, or 0.
+const resolveKeyJS = `((node, key) => {
+  const cache = window.__jevFast;
+  if (!cache) return 0;
+  let e = cache.nodes.get(node);
+  if (e && e.isConnected) return node;
+  const vis = x => { try { return x.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}); } catch(err){ return false; } };
+  const ok = x => x && x.isConnected && vis(x);
+  if (key.fid) { const c = document.getElementById(key.fid); if (ok(c)) e = c; }
+  if (!e && key.href) {
+    try {
+      const abs = new URL(key.href, location.href).href;
+      e = [...document.querySelectorAll('a[href]')].find(x => { try { return x.href === abs && ok(x); } catch(err){ return false; } });
+    } catch(err){}
+  }
+  if (!e && key.ph) e = [...document.querySelectorAll('input,textarea')].find(x => (x.placeholder||'') === key.ph && ok(x));
+  if (!e && key.nm) e = [...document.querySelectorAll('input,textarea,select')].find(x => (x.name||'') === key.nm && ok(x));
+  if (!e) return 0;
+  if (!cache.ids.has(e)) cache.ids.set(e, cache.next++);
+  const id = cache.ids.get(e); cache.nodes.set(id, e); return id;
+})(__NODE__, __KEY__)`
+
+// domSetJS sets a field value in-page with the native setter (so
+// framework-controlled inputs observe the change) and fires input.
+// Fallback when synthetic Input.insertText stalls; the caller verifies
+// the resulting value matches the requested text.
+const domSetJS = `(node => {
+  const cache = window.__jevFast;
+  const e = cache && cache.nodes.get(node);
+  if (!e || !e.isConnected || !('value' in e)) return JSON.stringify({error:'detached'});
+  try { e.focus(); } catch(err) {}
+  const v = TEXT;
   try {
-    if (!e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})) return JSON.stringify({error:'hidden'});
-  } catch(err) { return JSON.stringify({error:'hidden'}); }
-  const r = e.getBoundingClientRect(), x = r.x+r.width/2, y = r.y+r.height/2;
-  if (!r.width || !r.height || x<0 || y<0 || x>=innerWidth || y>=innerHeight)
-    return JSON.stringify({error:'outside viewport'});
-  const hit = document.elementFromPoint(x, y);
-  if (!hit || (hit!==e && !e.contains(hit))) return JSON.stringify({error:'occluded'});
-  return JSON.stringify({x, y});
+    const proto = e.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (desc && desc.set) desc.set.call(e, v); else e.value = v;
+  } catch(err) { e.value = v; }
+  e.dispatchEvent(new Event('input', {bubbles:true}));
+  return JSON.stringify({ok:true, value: String(e.value)});
 })(__NODE__)`
 
 // settleJS waits for useful state after input: combobox fills wait up to
@@ -91,6 +148,53 @@ func toolSchema(tools []WebMCPTool, name string) map[string]any {
 		if tl.Name == name {
 			return tl.InputSchema
 		}
+	}
+	return nil
+}
+
+// resolveNodeByKey re-registers a replaced node under a fresh identity.
+// Returns the new node id, or an error when no stable key matches.
+func resolveNodeByKey(ctx context.Context, wsURL string, node int, a *snapAction, timeout time.Duration) (int, error) {
+	if a.FID == "" && a.Href == "" && a.PH == "" && a.NM == "" {
+		return 0, fmt.Errorf("no stable key for target %s", a.ID)
+	}
+	kb, _ := json.Marshal(map[string]string{"fid": a.FID, "href": a.Href, "ph": a.PH, "nm": a.NM})
+	expr := strings.ReplaceAll(resolveKeyJS, "__NODE__", fmt.Sprintf("%d", node))
+	expr = strings.ReplaceAll(expr, "__KEY__", string(kb))
+	out, err := evalScript(ctx, wsURL, expr, timeout)
+	if err != nil {
+		return 0, err
+	}
+	var id int
+	if err := json.Unmarshal([]byte(out), &id); err != nil || id <= 0 {
+		return 0, fmt.Errorf("key resolution found no live node for %s", a.ID)
+	}
+	return id, nil
+}
+
+// domSetText sets a field value in-page (native setter + input event).
+// Fallback when synthetic Input.insertText stalls; verifies the value.
+func domSetText(ctx context.Context, wsURL string, node int, text string, timeout time.Duration) error {
+	vb, _ := json.Marshal(text)
+	expr := strings.ReplaceAll(domSetJS, "__NODE__", fmt.Sprintf("%d", node))
+	expr = strings.ReplaceAll(expr, "TEXT", string(vb))
+	out, err := evalScript(ctx, wsURL, expr, timeout)
+	if err != nil {
+		return err
+	}
+	var r struct {
+		OK    bool   `json:"ok"`
+		Value string `json:"value"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(out), &r); err != nil {
+		return err
+	}
+	if !r.OK {
+		return fmt.Errorf("domset: %s", r.Error)
+	}
+	if r.Value != text {
+		return fmt.Errorf("domset mismatch (re-decide)")
 	}
 	return nil
 }
@@ -286,6 +390,20 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 	if err := json.Unmarshal([]byte(out), &pt); err != nil {
 		return fail("act_failed", err)
 	}
+	if pt.Error == "detached" {
+		// The observed node was replaced (hydrating widget). Re-resolve
+		// by stable key once before giving up to a re-decide.
+		if id, kerr := resolveNodeByKey(ctx, t.WebSocketDebuggerURL, action.Node, action, timeout); kerr == nil {
+			action.Node = id
+			expr := strings.ReplaceAll(resolveJS, "__NODE__", fmt.Sprintf("%d", action.Node))
+			if out2, err2 := evalScript(ctx, t.WebSocketDebuggerURL, expr, timeout); err2 == nil {
+				out = out2
+				if err := json.Unmarshal([]byte(out), &pt); err != nil {
+					return fail("act_failed", err)
+				}
+			}
+		}
+	}
 	if pt.Error != "" {
 		return fail("stale", fmt.Errorf("target %s (re-decide)", pt.Error))
 	}
@@ -321,7 +439,11 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 			}
 		}
 		if err := callInput("Input.insertText", map[string]any{"text": text}); err != nil {
-			return fail("act_failed", err)
+			// Synthetic input stalled (node replaced mid-sequence):
+			// set in-page with the native setter and verify the value.
+			if derr := domSetText(ctx, t.WebSocketDebuggerURL, action.Node, text, timeout); derr != nil {
+				return fail("stale", derr)
+			}
 		}
 	}
 	combo := action.Role == "combobox"

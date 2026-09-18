@@ -93,6 +93,8 @@ const observeJS = `(() => {
     if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
     const base = {node: identity(e), role: rname, label: name(e)||rname,
+      fid: e.id || '', nm: e.name || '', ph: e.getAttribute('placeholder') || '',
+      href: e.tagName==='A' ? (e.getAttribute('href') || '') : '',
       rect: {x:r.x, y:r.y, w:r.width, h:r.height}};
     if (e.tagName==='SELECT') {
       for (const o of e.options) {
@@ -151,6 +153,13 @@ type snapAction struct {
 	Label        string `json:"label"`
 	Value        string `json:"value"`
 	CurrentValue string `json:"current_value"`
+	// Stable keys for act-time re-resolution when the observed node is
+	// gone (hydrating widgets replace nodes mid-loop). Resolution order:
+	// node identity -> id -> href -> placeholder -> name -> snapshot index.
+	FID  string `json:"fid"`
+	PH   string `json:"ph"`
+	NM   string `json:"nm"`
+	Href string `json:"href"`
 }
 
 type snapshot struct {
@@ -171,7 +180,9 @@ func fingerprintSnap(snap *snapshot) string {
 	h := sha256.New()
 	h.Write([]byte(snap.URL + "\x00" + snap.Text + "\x00" + fmt.Sprintf("%d", int(snap.Scroll.Y)) + "\x00"))
 	for _, a := range snap.Actions {
-		h.Write([]byte(a.ID + "\x00" + a.Kind + "\x00" + a.Label + "\x00"))
+		// Values included: a re-type that lands must read as a change,
+		// and a dropped value (hydration) must read as one too.
+		h.Write([]byte(a.ID + "\x00" + a.Kind + "\x00" + a.Label + "\x00" + a.Value + "\x00"))
 	}
 	sum := h.Sum(nil)
 	return fmt.Sprintf("%x", sum)[:16]
@@ -184,7 +195,8 @@ func scanCachePath(session string) string {
 func scanCacheSave(session, url string, snap *snapshot) {
 	items := make([]map[string]any, 0, len(snap.Actions))
 	for _, a := range snap.Actions {
-		items = append(items, map[string]any{"id": a.ID, "kind": a.Kind, "node": a.Node, "role": a.Role, "label": a.Label})
+		items = append(items, map[string]any{"id": a.ID, "kind": a.Kind, "node": a.Node, "role": a.Role, "label": a.Label,
+			"fid": a.FID, "ph": a.PH, "nm": a.NM, "href": a.Href})
 	}
 	b, _ := json.Marshal(map[string]any{"url": url, "items": items})
 	_ = os.MkdirAll(sessionDir(session), 0o755)
@@ -220,7 +232,8 @@ func observeCmd(ctx context.Context, g *globals, rest []string) int {
 	if g.json {
 		els := make([]map[string]any, 0, len(snap.Actions))
 		for _, a := range snap.Actions {
-			els = append(els, map[string]any{"id": a.ID, "kind": a.Kind, "role": a.Role, "label": a.Label, "value": a.Value})
+			els = append(els, map[string]any{"id": a.ID, "kind": a.Kind, "role": a.Role, "label": a.Label, "value": a.Value,
+				"fid": a.FID, "ph": a.PH, "nm": a.NM, "href": a.Href})
 		}
 		ok(map[string]any{
 			"session": g.session, "url": snap.URL, "title": snap.Title,

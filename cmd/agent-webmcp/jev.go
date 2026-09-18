@@ -40,9 +40,13 @@ DONE requires visible evidence that ALL requirements are satisfied. If asked to 
 a matching link is not enough. BLOCKED means no supported operation can make progress.`
 
 const jevTarget = `Choose the best observed target if the next operation is the one specified in this question.
-Use the user's entire goal, field values, nearby text, and recent actions. This question chooses only
+Use the user's entire goal, field values, nearby text, and recent actions. Prefer targets on pages not in the visited list; do not go back to recently visited pages. This question chooses only
 a target for that operation; another question decides which operation to execute. Do not choose
 a field that already contains the requested value. Choose only an offered element index.`
+
+// jevExplore replaces permissive stop rules on forced retries: a
+// low-confidence BLOCKED is uncertainty, not impossibility.
+const jevExplore = `Exploration is mandatory: pick the visible target that best advances toward the goal. There is always a best target.`
 
 // goal_complete is judged independently of operation selection: whether the
 // user's entire goal is already satisfied by visible page state. A separate

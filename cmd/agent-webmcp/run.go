@@ -24,11 +24,12 @@ func runCmd(ctx context.Context, g *globals, rest []string) int {
 	}
 	timeout := time.Duration(g.timeoutMs) * time.Millisecond
 	reuse := map[string]string{}
+	visited := []string{}
 	stuck := 0
 	steps := 0
 	var last *decision
 	for steps = 0; steps < maxSteps; steps++ {
-		receipt, d, code, err := tickOnce(ctx, g.session, goal, timeout, "", "", reuse)
+		receipt, d, code, err := tickOnce(ctx, g.session, goal, timeout, "", "", reuse, visited)
 		if err != nil {
 			// Agent-supplied values needed: hand back to the calling
 			// agent with exactly what's missing. The agent is the
@@ -44,6 +45,9 @@ func runCmd(ctx context.Context, g *globals, rest []string) int {
 			return 1
 		}
 		last = d
+		if u, _ := receipt["url"].(string); u != "" {
+			visited = append(visited, u)
+		}
 		if g.json {
 			fmt.Printf("%s\n", mustJSON(receipt))
 		} else {

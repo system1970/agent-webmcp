@@ -61,13 +61,32 @@ func opsForKind(kind string) string {
 	return ""
 }
 
+// lastVisited keeps the tail of the visited-URL list for state.
+func lastVisited(v []string, n int) []string {
+	if len(v) <= n {
+		return v
+	}
+	return v[len(v)-n:]
+}
+
 func decideCmd(ctx context.Context, g *globals, rest []string) int {
 	goal, _ := verbFlag(rest, "goal")
 	if strings.TrimSpace(goal) == "" {
 		return fail("usage", "usage: agent-webmcp decide --goal \"..\" [--session NAME]")
 	}
 	timeout := time.Duration(g.timeoutMs) * time.Millisecond
-	d, snap, tools, code, err := decideOnce(ctx, g.session, goal, timeout)
+	d, snap, tools, code, err := decideOnce(ctx, g.session, goal, timeout, nil, false)
+	if err != nil {
+		return failErr(code, err)
+	}
+	if (d.Operation == "BLOCKED" || d.Operation == "WAIT") && d.Confidence < 0.6 {
+		if d2, snap2, tools2, code2, err2 := decideOnce(ctx, g.session, goal, timeout, nil, true); err2 == nil {
+			if d2.Operation != "BLOCKED" || d2.Confidence > d.Confidence {
+				d, snap, tools = d2, snap2, tools2
+			}
+			_ = code2
+		}
+	}
 	if err != nil {
 		return failErr(code, err)
 	}
@@ -86,7 +105,10 @@ func decideCmd(ctx context.Context, g *globals, rest []string) int {
 }
 
 // decideOnce: snapshot + fan-out POST + validate. Shared by decide and tick.
-func decideOnce(ctx context.Context, session, goal string, timeout time.Duration) (*decision, *snapshot, []WebMCPTool, string, error) {
+// visited carries recent page URLs so the policy avoids going in circles.
+// forceExplore drops BLOCKED from the offered ops for one retry when a
+// low-confidence stop looks like uncertainty rather than impossibility.
+func decideOnce(ctx context.Context, session, goal string, timeout time.Duration, visited []string, forceExplore bool) (*decision, *snapshot, []WebMCPTool, string, error) {
 	fail := func(code string, err error) (*decision, *snapshot, []WebMCPTool, string, error) {
 		return nil, nil, nil, code, err
 	}
@@ -97,6 +119,9 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 	if err != nil {
 		return fail("observe_failed", err)
 	}
+	if detectBotWall(snap.URL, snap.Text) {
+		return fail("bot_wall", fmt.Errorf("bot check page (%s) — stopping before burning steps", snap.URL))
+	}
 	port, err := readPort(session)
 	if err != nil {
 		return fail("no_session", err)
@@ -106,6 +131,7 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 		return fail("no_page", err)
 	}
 	tools, _, _ := listWebMCP(ctx, t.WebSocketDebuggerURL, timeout)
+	tools = ensureCustomTools(ctx, session, t.WebSocketDebuggerURL, snap.URL, timeout, tools)
 	opIDs := map[string]bool{}
 	opCriteria := map[string]any{}
 	targets := map[string]map[string]bool{}
@@ -138,8 +164,11 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 			targetCriteria["INVOKE"][tl.Name] = tl.Name + ": " + firstLine(tl.Description)
 		}
 	}
-	for _, op := range []string{"WAIT", "BLOCKED"} {
+	for _, op := range []string{"WAIT"} {
 		opIDs[op] = true
+	}
+	if !forceExplore {
+		opIDs["BLOCKED"] = true
 	}
 	for op := range opIDs {
 		opCriteria[op] = jevOpLabels[op]
@@ -155,10 +184,16 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 	for _, tl := range tools {
 		toolBrief = append(toolBrief, map[string]any{"name": tl.Name, "description": tl.Description})
 	}
+	opRules := any(jevNextAction)
+	tgtRules := []string{jevNextAction, jevTarget}
+	if forceExplore {
+		opRules = []string{jevNextAction, jevExplore}
+		tgtRules = []string{jevNextAction, jevTarget, jevExplore}
+	}
 	questions := map[string]any{
 		"operation": map[string]any{
 			"type":         "choice",
-			"instructions": map[string]any{"goal": goal, "rules": jevNextAction},
+			"instructions": map[string]any{"goal": goal, "rules": opRules},
 			"criteria":     opCriteria,
 		},
 		"goal_complete": map[string]any{
@@ -170,7 +205,7 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 		qid := strings.ToLower(op) + "_target"
 		questions[qid] = map[string]any{
 			"type":         "choice",
-			"instructions": map[string]any{"goal": goal, "operation": op, "rules": []string{jevNextAction, jevTarget}},
+			"instructions": map[string]any{"goal": goal, "operation": op, "rules": tgtRules},
 			"criteria":     crit,
 		}
 	}
@@ -191,6 +226,7 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 		"elements":       els,
 		"tools":          toolBrief,
 		"recent_actions": recent,
+		"visited":        lastVisited(visited, 12),
 	}
 	answers, usage, model, lat, err := postSystemOne(state, questions)
 	if err != nil {

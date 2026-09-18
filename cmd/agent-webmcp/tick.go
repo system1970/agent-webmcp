@@ -24,7 +24,7 @@ func tickCmd(ctx context.Context, g *globals, rest []string) int {
 	timeout := time.Duration(g.timeoutMs) * time.Millisecond
 	started := time.Now()
 	reuse := map[string]string{}
-	receipt, d, code, err := tickOnce(ctx, g.session, goal, timeout, g.text, g.params, reuse)
+	receipt, d, code, err := tickOnce(ctx, g.session, goal, timeout, g.text, g.params, reuse, nil)
 	if err != nil {
 		return failErr(code, err)
 	}
@@ -39,7 +39,7 @@ func tickCmd(ctx context.Context, g *globals, rest []string) int {
 	return 0
 }
 
-func tickOnce(ctx context.Context, session, goal string, timeout time.Duration, text, params string, reuse map[string]string) (map[string]any, *decision, string, error) {
+func tickOnce(ctx context.Context, session, goal string, timeout time.Duration, text, params string, reuse map[string]string, visited []string) (map[string]any, *decision, string, error) {
 	fail := func(code string, err error) (map[string]any, *decision, string, error) {
 		return nil, nil, code, err
 	}
@@ -49,18 +49,27 @@ func tickOnce(ctx context.Context, session, goal string, timeout time.Duration, 
 	for attempt := 0; attempt < 2; attempt++ {
 		var code string
 		var err error
-		d, snap, tools, code, err = decideOnce(ctx, session, goal, timeout)
+		d, snap, tools, code, err = decideOnce(ctx, session, goal, timeout, visited, false)
 		if err != nil {
 			return fail(code, err)
 		}
 		// Fresh eyes once on low-margin actionable calls.
 		if d.Margin < marginRetryFloor && attempt == 0 &&
 			d.Operation != "DONE" && d.Operation != "BLOCKED" && d.Operation != "WAIT" {
-			d2, snap2, tools2, code2, err2 := decideOnce(ctx, session, goal, timeout)
+			d2, snap2, tools2, code2, err2 := decideOnce(ctx, session, goal, timeout, visited, false)
 			if err2 == nil && d2.Confidence > d.Confidence {
 				d, snap, tools = d2, snap2, tools2
 			} else if err2 != nil {
 				_ = code2
+			}
+		}
+		// A low-confidence stop is uncertainty, not impossibility:
+		// one retry with BLOCKED unoffered and mandatory-explore rules.
+		if (d.Operation == "BLOCKED" || d.Operation == "WAIT") && d.Confidence < 0.6 {
+			if d2, snap2, tools2, _, err2 := decideOnce(ctx, session, goal, timeout, visited, true); err2 == nil {
+				if d2.Operation != "BLOCKED" || d2.Confidence > d.Confidence {
+					d, snap, tools = d2, snap2, tools2
+				}
 			}
 		}
 		saveDecision(session, d, snap, tools, goal)
