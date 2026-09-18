@@ -1,4 +1,0 @@
-{"t":"decide","step":1,"op":"CLICK","target":"e1","conf":0.99,"done_p":0.49,"jev_ms":1703,"url":"https://www.bbc.com/"}
-{"t":"act","step":1,"op":"CLICK","target":"e1","act_ms":8895,"changed":true,"url":"https://www.bbc.com/news/articles/cwly7vkke4jxo"}
-{"t":"decide","step":2,"op":"DONE","target":null,"conf":0.21,"done_p":0.91,"jev_ms":1477,"url":"https://www.bbc.com/news/articles/cwly7vkke4jxo"}
-{"t":"stop","reason":"DONE","steps":2}

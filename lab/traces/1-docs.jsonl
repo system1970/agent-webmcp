@@ -1,4 +1,0 @@
-{"t":"decide","step":1,"op":"CLICK","target":"e8","conf":1,"done_p":0.06,"jev_ms":1667,"url":"https://docs.typesafe.ai/introduction"}
-{"t":"act","step":1,"op":"CLICK","target":"e8","act_ms":8448,"changed":true,"url":"https://docs.typesafe.ai/confidence"}
-{"t":"decide","step":2,"op":"DONE","target":null,"conf":0.52,"done_p":0.96,"jev_ms":1504,"url":"https://docs.typesafe.ai/confidence"}
-{"t":"stop","reason":"DONE","steps":2}

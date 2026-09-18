@@ -1,4 +1,0 @@
-{"t":"decide","step":1,"op":"CLICK","target":"e60","conf":0.99,"done_p":0.04,"jev_ms":1377,"url":"https://github.com/browser-use/jev-ultrafast"}
-{"t":"act","step":1,"op":"CLICK","target":"e60","act_ms":1922,"changed":true,"url":"https://github.com/browser-use/jev-ultrafast/blob/main/docs/performance.md","js":1}
-{"t":"decide","step":2,"op":"DONE","target":null,"conf":0.29,"done_p":0.95,"jev_ms":431,"url":"https://github.com/browser-use/jev-ultrafast/blob/main/docs/performance.md"}
-{"t":"stop","reason":"DONE","steps":2}
