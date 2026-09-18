@@ -1,0 +1,4 @@
+{"t":"decide","step":1,"op":"CLICK","target":"e17","conf":0.99,"done_p":0.07,"jev_ms":1724,"url":"https://news.ycombinator.com/"}
+{"t":"act","step":1,"op":"CLICK","target":"e17","act_ms":2411,"changed":true,"url":"https://news.ycombinator.com/item?id=49743097"}
+{"t":"decide","step":2,"op":"DONE","target":null,"conf":0.22,"done_p":0.86,"jev_ms":715,"url":"https://news.ycombinator.com/item?id=49743097"}
+{"t":"stop","reason":"DONE","steps":2}

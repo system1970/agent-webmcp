@@ -1,0 +1,4 @@
+{"t":"decide","step":1,"op":"CLICK","target":"e6","conf":0.95,"done_p":0.15,"jev_ms":1421,"url":"https://vercel.com/docs"}
+{"t":"act","step":1,"op":"CLICK","target":"e6","act_ms":8652,"changed":true,"url":"https://vercel.com/docs/ai-gateway"}
+{"t":"decide","step":2,"op":"DONE","target":null,"conf":0.37,"done_p":0.91,"jev_ms":1417,"url":"https://vercel.com/docs/ai-gateway"}
+{"t":"stop","reason":"DONE","steps":2}

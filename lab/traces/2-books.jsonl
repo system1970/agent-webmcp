@@ -1,0 +1,6 @@
+{"t":"decide","step":1,"op":"CLICK","target":"e114","conf":0.99,"done_p":0.02,"jev_ms":1734,"url":"https://books.toscrape.com/"}
+{"t":"act","step":1,"op":"CLICK","target":"e114","act_ms":2183,"changed":true,"url":"https://books.toscrape.com/catalogue/page-2.html"}
+{"t":"decide","step":2,"op":"CLICK","target":"e2","conf":0.99,"done_p":0.17,"jev_ms":637,"url":"https://books.toscrape.com/catalogue/page-2.html"}
+{"t":"act","step":2,"op":"CLICK","target":"e2","act_ms":1299,"changed":true,"url":"https://books.toscrape.com/catalogue/in-her-wake_980/index.html"}
+{"t":"decide","step":3,"op":"DONE","target":null,"conf":0.2,"done_p":0.98,"jev_ms":366,"url":"https://books.toscrape.com/catalogue/in-her-wake_980/index.html"}
+{"t":"stop","reason":"DONE","steps":3}

@@ -1,0 +1,10 @@
+{"t":"decide","step":1,"op":"CLICK","target":"e60","conf":0.99,"done_p":0.04,"jev_ms":1686,"url":"https://github.com/browser-use/jev-ultrafast"}
+{"t":"decide","step":2,"op":"CLICK","target":"e60","conf":0.89,"done_p":0.06,"jev_ms":395,"url":"https://github.com/browser-use/jev-ultrafast"}
+{"t":"act","step":2,"op":"CLICK","target":"e60","act_ms":8213,"changed":false,"url":"https://github.com/browser-use/jev-ultrafast"}
+{"t":"decide","step":3,"op":"CLICK","target":"e60","conf":0.44,"done_p":0.09,"jev_ms":1231,"url":"https://github.com/browser-use/jev-ultrafast"}
+{"t":"decide","step":4,"op":"CLICK","target":"e60","conf":0.5,"done_p":0.08,"jev_ms":408,"url":"https://github.com/browser-use/jev-ultrafast"}
+{"t":"act","step":4,"op":"CLICK","target":"e60","act_ms":8206,"changed":true,"url":"https://github.com/browser-use/jev-ultrafast?tab=readme-ov-file"}
+{"t":"decide","step":5,"op":"CLICK","target":"e17","conf":0.61,"done_p":0.06,"jev_ms":948,"url":"https://github.com/browser-use/jev-ultrafast?tab=readme-ov-file"}
+{"t":"decide","step":6,"op":"CLICK","target":"e17","conf":0.67,"done_p":0.05,"jev_ms":415,"url":"https://github.com/browser-use/jev-ultrafast?tab=readme-ov-file"}
+{"t":"decide","step":7,"op":"CLICK","target":"e17","conf":0.69,"done_p":0.05,"jev_ms":396,"url":"https://github.com/browser-use/jev-ultrafast?tab=readme-ov-file"}
+{"t":"decide","step":8,"op":"CLICK","target":"e17","conf":0.53,"done_p":0.05,"jev_ms":333,"url":"https://github.com/browser-use/jev-ultrafast?tab=readme-ov-file"}
