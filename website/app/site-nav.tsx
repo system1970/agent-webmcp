@@ -2,7 +2,7 @@ import Brand from "./brand";
 
 const DIRECTORY = "https://webmcp.com";
 
-export default function SiteNav({ current }: { current: "/" | "/skills" }) {
+export default function SiteNav({ current }: { current: "/" }) {
   const link = (active: boolean) =>
     `rounded text-[13.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
       active ? "font-medium text-ink" : "text-ink-2 hover:text-ink"
@@ -17,25 +17,11 @@ export default function SiteNav({ current }: { current: "/" | "/skills" }) {
           aria-label="Primary"
           className="hidden items-center gap-6 lg:flex"
         >
-          <a
-            href="/skills"
-            aria-current={current === "/skills" ? "page" : undefined}
-            className={link(current === "/skills")}
-          >
-            Skills
-          </a>
           <a href={DIRECTORY} className={link(false)}>
             webmcp.com ↗
           </a>
         </nav>
         <div className="flex shrink-0 items-center justify-self-end gap-1 sm:gap-2">
-          <a
-            href="/skills"
-            aria-current={current === "/skills" ? "page" : undefined}
-            className={`${link(current === "/skills")} lg:hidden`}
-          >
-            Skills
-          </a>
           <a
             href="https://github.com/system1970/agent-webmcp"
             className={link(false)}

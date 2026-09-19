@@ -24,19 +24,13 @@ export default function Home() {
             existing browser interactions into custom tools, so your agent
             can work with your software, not just read about it.
           </p>
-          <div className="mt-9 flex flex-wrap items-start justify-center gap-3">
-            <SetupAgentButton />
-            <a
-              href="/skills"
-              className="inline-flex h-12 items-center justify-center rounded-full border border-line px-7 text-[15px] font-medium no-underline hover:bg-hover"
-            >
-              Explore skills ↗
-            </a>
-          </div>
           <p className="mt-7 text-[13px] text-ink-2">
-            <a href={`${REPO}/releases/tag/v0.1.0`}>v0.1.0</a> · Chrome 149
+            <a href={`${REPO}/releases/tag/v0.3.0`}>v0.3.0</a> · Chrome 149
             or newer · Windows, macOS, Linux
           </p>
+          <div className="mt-9 flex flex-wrap items-start justify-center gap-3">
+            <SetupAgentButton />
+          </div>
           <div className="mt-10 flex w-full justify-center">
             <InstallBlock />
           </div>

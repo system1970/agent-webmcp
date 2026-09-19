@@ -1,7 +1,6 @@
 import { ImageResponse } from "next/og";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import skillsFile from "../../../public/skills.json";
 
 export const runtime = "nodejs";
 export const contentType = "image/png";
@@ -10,29 +9,6 @@ const SANS =
   'Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif';
 const MONO =
   "Geist Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-
-type SkillLite = {
-  path: string;
-  title?: string;
-  domain?: string;
-  kind?: string;
-  access?: string | null;
-};
-
-function findSkill(path: string): SkillLite | null {
-  const raw = skillsFile as unknown as { skills?: unknown };
-  if (!Array.isArray(raw.skills)) return null;
-  for (const s of raw.skills) {
-    if (
-      typeof s === "object" &&
-      s !== null &&
-      (s as Record<string, unknown>).path === path
-    ) {
-      return s as SkillLite;
-    }
-  }
-  return null;
-}
 
 let logoCache: string | null = null;
 async function logo(): Promise<string> {
@@ -146,31 +122,8 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
-  const segs = (await params).path ?? [];
-  const rel = segs.join("/");
-
-  // /og/skills/<domain>/<skill> (or /og/skills/mintlify)
+  void (await params).path;
   const src = await logo();
-  if (segs[0] === "skills") {
-    const skillPath = segs.slice(1).join("/");
-    const s = findSkill(skillPath);
-    const title = s?.title || skillPath || "agent-webmcp skill";
-    const top = `${s?.kind || "toolset"} · ${s?.domain || ""}`.trim();
-    const footLeft = s?.access === "login" ? "Login required" : "Public";
-    return new ImageResponse(
-      card(
-        src,
-        top,
-        title,
-        skillPath,
-        footLeft,
-        `agent-webmcp.vercel.app/skills/${skillPath}`,
-        title.length > 30 ? 58 : 70
-      ),
-      { width: 1200, height: 630 }
-    );
-  }
-
   return new ImageResponse(
     card(
       src,
