@@ -87,18 +87,15 @@ func stampNow() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
-// currentPageURL best-efforts the session's live page URL for remedies.
-// Empty when the session is dead — the caller phrases around that.
+// currentPageURL best-efforts the session's live tab URL for remedies.
+// Empty when the session has no bound tab — the caller phrases around that.
 func currentPageURL(session string) string {
-	port, err := readPort(session)
+	timeout := 10 * time.Second
+	u, err := sessionURL(session, timeout)
 	if err != nil {
 		return ""
 	}
-	t, err := pickPageTarget(port)
-	if err != nil {
-		return ""
-	}
-	return t.URL
+	return u
 }
 
 func notifySend(title, body string) {
@@ -171,7 +168,7 @@ func authProbeCmd(ctx context.Context, g *globals, rest []string) int {
 		fmt.Printf("auth %s: host=%s wall=%v state=%s\n", s.Session, s.Host, out["login_wall"], s.State)
 		return 0
 	}
-	if _, err := readPort(g.session); err != nil {
+	if _, _, err := readTargetBinding(g.session); err != nil {
 		return report(authStamp{Host: "", State: "no_session", CheckedAt: stampNow(), Session: g.session},
 			map[string]any{"url": "", "login_wall": false, "marker_present": false})
 	}
@@ -230,10 +227,10 @@ func authHandoffCmd(ctx context.Context, g *globals, rest []string) int {
 	reason, _ := verbFlag(rest, "reason")
 	timeout := time.Duration(g.timeoutMs) * time.Millisecond
 
-	// Headed is a launch property, not a tab property: a headless live
-	// browser stays headless. Relaunch on the same profile so stored
-	// logins survive; the human gets a visible window.
-	_ = closeSession(g.session)
+	// Headed is a launch property and the login must land in the shared
+	// profile: relaunch the profile browser headed on the login page.
+	// Tabs reset; the profile (and every login it holds) persists.
+	killProfileBrowser(sessionProfile)
 	r, err := openURL(ctx, g.session, url, g.chrome, true, 30*time.Second)
 	if err != nil {
 		return failErr("handoff_failed", err)

@@ -173,6 +173,40 @@ func resolveNodeByKey(ctx context.Context, wsURL string, node int, a *snapAction
 	return id, nil
 }
 
+// readValueJS reads a field's live value for post-input verification.
+// The insertText path confirms what landed; mismatch falls back to the
+// verifying domSetText, then stale. (Stagehand's fill read-back.)
+const readValueJS = `(node => {
+  try {
+    const e = window.__jevFast && window.__jevFast.nodes.get(node);
+    return JSON.stringify({value: e && 'value' in e ? e.value : null});
+  } catch(err) { return JSON.stringify({value: null}); }
+})(__NODE__)`
+
+// verifyFieldValue confirms the live field value matches the requested
+// text after synthetic input.
+func verifyFieldValue(ctx context.Context, wsURL string, node int, text string, timeout time.Duration) error {
+	expr := strings.ReplaceAll(readValueJS, "__NODE__", fmt.Sprintf("%d", node))
+	out, err := evalScript(ctx, wsURL, expr, timeout)
+	if err != nil {
+		return err
+	}
+	var r struct {
+		Value *string `json:"value"`
+	}
+	if err := json.Unmarshal([]byte(out), &r); err != nil {
+		return err
+	}
+	if r.Value == nil || *r.Value != text {
+		got := "<unreadable>"
+		if r.Value != nil {
+			got = *r.Value
+		}
+		return fmt.Errorf("insertText mismatch (want %q, live %q)", text, got)
+	}
+	return nil
+}
+
 // domSetText sets a field value in-page (native setter + input event).
 // Fallback when synthetic Input.insertText stalls; verifies the value.
 func domSetText(ctx context.Context, wsURL string, node int, text string, timeout time.Duration) error {
@@ -264,11 +298,7 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 	fail := func(code string, err error) (map[string]any, string, error) {
 		return nil, code, err
 	}
-	port, err := readPort(session)
-	if err != nil {
-		return fail("no_session", err)
-	}
-	t, err := pickPageTarget(port)
+	t, err := sessionTarget(session, timeout)
 	if err != nil {
 		return fail("no_page", err)
 	}
@@ -442,6 +472,11 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 		if err := callInput("Input.insertText", map[string]any{"text": text}); err != nil {
 			// Synthetic input stalled (node replaced mid-sequence):
 			// set in-page with the native setter and verify the value.
+			if derr := domSetText(ctx, t.WebSocketDebuggerURL, action.Node, text, timeout); derr != nil {
+				return fail("stale", derr)
+			}
+		} else if verr := verifyFieldValue(ctx, t.WebSocketDebuggerURL, action.Node, text, timeout); verr != nil {
+			// Landed text differs from requested: same fallback, then stale.
 			if derr := domSetText(ctx, t.WebSocketDebuggerURL, action.Node, text, timeout); derr != nil {
 				return fail("stale", derr)
 			}

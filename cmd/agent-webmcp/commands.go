@@ -15,11 +15,7 @@ func evalCmd(ctx context.Context, g *globals, rest []string) int {
 	if err != nil {
 		return failErr("usage", err)
 	}
-	port, err := readPort(g.session)
-	if err != nil {
-		return failErr("no_session", err)
-	}
-	t, err := pickPageTarget(port)
+	t, err := sessionTarget(g.session, time.Duration(g.timeoutMs)*time.Millisecond)
 	if err != nil {
 		return failErr("no_page", err)
 	}
@@ -41,11 +37,7 @@ func evalCmd(ctx context.Context, g *globals, rest []string) int {
 }
 
 func reconCmd(ctx context.Context, g *globals, rest []string) int {
-	port, err := readPort(g.session)
-	if err != nil {
-		return failErr("no_session", err)
-	}
-	t, err := pickPageTarget(port)
+	t, err := sessionTarget(g.session, time.Duration(g.timeoutMs)*time.Millisecond)
 	if err != nil {
 		return failErr("no_page", err)
 	}

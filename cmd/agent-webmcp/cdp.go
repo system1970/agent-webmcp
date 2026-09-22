@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -67,28 +66,6 @@ func waitCDP(port int, timeout time.Duration) error {
 		time.Sleep(80 * time.Millisecond)
 	}
 	return fmt.Errorf("timed out waiting for chrome CDP on port %d", port)
-}
-
-func pickPageTarget(port int) (Target, error) {
-	targets, err := listTargets(port)
-	if err != nil {
-		return Target{}, err
-	}
-	for _, t := range targets {
-		if t.Type == "page" && t.WebSocketDebuggerURL != "" {
-			return t, nil
-		}
-	}
-	return Target{}, fmt.Errorf("no_page: no open page target (run: open <url>)")
-}
-
-func newPageTarget(port int, rawURL string) (Target, error) {
-	var t Target
-	if err := cdpPut(port, "/json/new?"+url.QueryEscape(rawURL), &t); err == nil && t.WebSocketDebuggerURL != "" {
-		return t, nil
-	}
-	time.Sleep(150 * time.Millisecond)
-	return pickPageTarget(port)
 }
 
 // CDP is one WebSocket connection: Call sends, readLoop routes replies.

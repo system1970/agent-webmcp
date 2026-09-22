@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 )
 
 func findChrome(explicit string) (string, error) {
@@ -78,56 +77,12 @@ func chromeArgs(port int, profile string, headed bool) []string {
 	return append(args, "about:blank")
 }
 
-// ensureChrome reuses the session's live browser or launches a fresh one.
-// The child outlives the CLI so consecutive calls share tabs and logins.
-func ensureChrome(session, chromeBin string, headed bool, timeout time.Duration) (port int, reused bool, err error) {
-	if port, err := readPort(session); err == nil {
-		var v map[string]any
-		if err := cdpGet(port, "/json/version", &v); err == nil {
-			return port, true, nil
-		}
-	}
-	if chromeBin == "" {
-		if chromeBin, err = findChrome(""); err != nil {
-			return 0, false, err
-		}
-	} else if chromeBin, err = findChrome(chromeBin); err != nil {
-		return 0, false, err
-	}
-	if port, err = freePort(); err != nil {
-		return 0, false, err
-	}
-	profile := filepath.Join(sessionDir(session), "profile")
-	if err := os.MkdirAll(profile, 0o755); err != nil {
-		return 0, false, err
-	}
-	logPath := filepath.Join(sessionDir(session), "chrome.log")
-	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return 0, false, err
-	}
-	defer log.Close()
-	cmd := exec.Command(chromeBin, chromeArgs(port, profile, headed)...)
-	cmd.Stdout, cmd.Stderr = log, log
-	if err := cmd.Start(); err != nil {
-		return 0, false, fmt.Errorf("chrome launch failed: %w", err)
-	}
-	go cmd.Wait()
-	_ = writePort(session, port)
-	_ = writePid(session, cmd.Process.Pid)
-	if err := waitCDP(port, timeout); err != nil {
-		return 0, false, err
-	}
-	return port, false, nil
-}
+// ensureChrome is superseded by ensureProfileBrowser (profile.go): one
+// browser per profile, sessions bind to tabs. Kept symbols: findChrome,
+// chromeArgs below.
 
 func closeSession(session string) error {
-	if pid, err := readPid(session); err == nil && pid > 0 {
-		if p, err := os.FindProcess(pid); err == nil {
-			_ = p.Kill()
-		}
-	}
-	_ = os.Remove(filepath.Join(sessionDir(session), "cdp-port"))
-	_ = os.Remove(filepath.Join(sessionDir(session), "chrome.pid"))
-	return nil // profile/ stays for fast relaunch
+	// Shared browser keeps running; only the session's tab closes.
+	// Evidence stays; legacy per-session browsers die on sight.
+	return closeSessionTab(session)
 }

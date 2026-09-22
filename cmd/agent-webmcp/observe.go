@@ -204,11 +204,7 @@ func scanCacheSave(session, url string, snap *snapshot) {
 }
 
 func captureSnapshot(ctx context.Context, session string, timeout time.Duration) (*snapshot, string, error) {
-	port, err := readPort(session)
-	if err != nil {
-		return nil, "", err
-	}
-	t, err := pickPageTarget(port)
+	t, err := sessionTarget(session, timeout)
 	if err != nil {
 		return nil, "", err
 	}

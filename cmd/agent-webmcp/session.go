@@ -39,32 +39,6 @@ func sessionDir(name string) string {
 	return filepath.Join(sessionRoot(), sanitizeSession(name))
 }
 
-func readPort(name string) (int, error) {
-	b, err := os.ReadFile(filepath.Join(sessionDir(name), "cdp-port"))
-	if err != nil {
-		return 0, err
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	if err != nil || n <= 0 {
-		return 0, errBadPort
-	}
-	return n, nil
-}
-
-func writePort(name string, port int) error {
-	if err := os.MkdirAll(sessionDir(name), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(sessionDir(name), "cdp-port"), []byte(strconv.Itoa(port)), 0o644)
-}
-
-func writePid(name string, pid int) error {
-	if err := os.MkdirAll(sessionDir(name), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(sessionDir(name), "chrome.pid"), []byte(strconv.Itoa(pid)), 0o644)
-}
-
 func readPid(name string) (int, error) {
 	b, err := os.ReadFile(filepath.Join(sessionDir(name), "chrome.pid"))
 	if err != nil {

@@ -15,7 +15,8 @@ func usage() {
 	fmt.Fprint(os.Stderr, `agent-webmcp `+version+` — typed WebMCP bridge
 
 usage:
-  agent-webmcp open [url] [--session NAME] [--headed] [--chrome PATH] [--json]
+  agent-webmcp open [url] [--session NAME] [--headed] [--chrome PATH] [--profile NAME] [--json]
+  agent-webmcp crawl <url> [--session NAME] [--json]
   agent-webmcp list [--session NAME] [--json]
   agent-webmcp invoke <tool> [--params JSON|@file] [--frame ID] [--session NAME] [--json]
   agent-webmcp eval <js|@file> [--session NAME] [--json]
@@ -36,6 +37,7 @@ usage:
 
 type globals struct {
 	session   string
+	profile   string
 	json      bool
 	chrome    string
 	headed    bool
@@ -62,6 +64,13 @@ func parseGlobals(args []string) (globals, []string) {
 			}
 		case strings.HasPrefix(a, "--session="):
 			g.session = strings.TrimPrefix(a, "--session=")
+		case a == "--profile":
+			if i+1 < len(args) {
+				i++
+				g.profile = args[i]
+			}
+		case strings.HasPrefix(a, "--profile="):
+			g.profile = strings.TrimPrefix(a, "--profile=")
 		case a == "--json":
 			g.json = true
 		case a == "--headed":
@@ -130,6 +139,7 @@ func run(args []string) int {
 	}
 	g, rest := parseGlobals(args[1:])
 	jsonOut = g.json
+	sessionProfile = resolveProfile(&g)
 	ctx := context.Background()
 
 	switch args[0] {
@@ -156,13 +166,11 @@ func run(args []string) int {
 		// Auto-inject verified custom tools for the mapped site.
 		// Best-effort: an injection failure never fails the open.
 		var injected []string
-		if port, perr := readPort(g.session); perr == nil {
-			if t, terr := pickPageTarget(port); terr == nil {
-				injected, _ = injectVerifiedForURL(ctx, g.session, t.WebSocketDebuggerURL, t.URL, 15*time.Second)
-			}
+		if t, terr := sessionTarget(g.session, 15*time.Second); terr == nil {
+			injected, _ = injectVerifiedForURL(ctx, g.session, t.WebSocketDebuggerURL, t.URL, 15*time.Second)
 		}
 		if g.json {
-			ok(map[string]any{"session": r.Session, "url": r.URL, "port": r.Port, "headed": r.Headed, "reused": r.Reused, "customTools": injected})
+			ok(map[string]any{"session": r.Session, "profile": r.Profile, "url": r.URL, "port": r.Port, "headed": r.Headed, "reused": r.Reused, "customTools": injected})
 			return 0
 		}
 		fmt.Printf("session=%s port=%d url=%s\n", r.Session, r.Port, r.URL)
@@ -176,6 +184,7 @@ func run(args []string) int {
 			for _, name := range dirs {
 				_ = closeSession(name)
 			}
+			killAllProfileBrowsers()
 			if g.json {
 				ok(map[string]any{"closed": dirs})
 				return 0
@@ -202,16 +211,13 @@ func run(args []string) int {
 		var rows []row
 		for _, name := range mustSessionNames() {
 			r := row{Name: name}
-			if port, err := readPort(name); err == nil {
-				if targets, err := listTargets(port); err == nil {
-					r.Live, r.Port = true, port
-					for _, t := range targets {
-						if t.Type == "page" {
-							r.URL = t.URL
-							break
-						}
-					}
+			if prof, _, berr := readTargetBinding(name); berr == nil {
+				if port, perr := profilePort(prof); perr == nil {
+					r.Port = port
 				}
+			}
+			if t, err := sessionTarget(name, 10*time.Second); err == nil {
+				r.Live, r.URL = true, t.URL
 			}
 			rows = append(rows, r)
 		}
@@ -235,38 +241,34 @@ func run(args []string) int {
 		}
 		return 0
 	case "status":
-		port, err := readPort(g.session)
+		t, err := sessionTarget(g.session, 10*time.Second)
 		if err != nil {
-			return failErr("no_session", err)
+			return failErr("no_page", err)
 		}
-		targets, err := listTargets(port)
-		if err != nil {
-			return failErr("unreachable", err)
-		}
-		pages, url := 0, ""
-		for _, t := range targets {
-			if t.Type == "page" {
-				pages++
-				if url == "" {
-					url = t.URL
+		profile, pages := "", 0
+		if prof, _, berr := readTargetBinding(g.session); berr == nil {
+			profile = prof
+			if port, perr := profilePort(prof); perr == nil {
+				if targets, lerr := listTargets(port); lerr == nil {
+					for _, x := range targets {
+						if x.Type == "page" {
+							pages++
+						}
+					}
 				}
 			}
 		}
 		if g.json {
-			ok(map[string]any{"session": g.session, "port": port, "pages": pages, "url": url})
+			ok(map[string]any{"session": g.session, "profile": profile, "tabs": pages, "url": t.URL})
 			return 0
 		}
-		fmt.Printf("session=%s port=%d pages=%d url=%s\n", g.session, port, pages, url)
+		fmt.Printf("session=%s profile=%s tabs=%d url=%s\n", g.session, profile, pages, t.URL)
 		return 0
 	case "list", "webmcp":		// `webmcp list` compat with agent-browser.
 		if args[0] == "webmcp" && len(rest) > 0 && rest[0] == "list" {
 			rest = rest[1:]
 		}
-		port, err := readPort(g.session)
-		if err != nil {
-			return failErr("no_session", err)
-		}
-		t, err := pickPageTarget(port)
+		t, err := sessionTarget(g.session, time.Duration(g.timeoutMs)*time.Millisecond)
 		if err != nil {
 			return failErr("no_page", err)
 		}
@@ -312,11 +314,7 @@ func run(args []string) int {
 		if params == "" && len(rest) > 1 && !strings.HasPrefix(rest[1], "-") {
 			params = rest[1]
 		}
-		port, err := readPort(g.session)
-		if err != nil {
-			return failErr("no_session", err)
-		}
-		t, err := pickPageTarget(port)
+		t, err := sessionTarget(g.session, time.Duration(g.timeoutMs)*time.Millisecond)
 		if err != nil {
 			return failErr("no_page", err)
 		}
@@ -355,6 +353,8 @@ func run(args []string) int {
 		return tickCmd(ctx, &g, rest)
 	case "run":
 		return runCmd(ctx, &g, rest)
+	case "crawl":
+		return crawlCmd(ctx, &g, rest)
 	case "auth":
 		return authCmd(ctx, &g, rest)
 	case "tools":
