@@ -115,11 +115,6 @@ func customToolsPath(session string) string {
 	return filepath.Join(sessionDir(session), "tools.json")
 }
 
-// legacyPacksPath is the pre-rename session record; read once for compat.
-func legacyPacksPath(session string) string {
-	return filepath.Join(sessionDir(session), "packs.json")
-}
-
 // recordCustomTools remembers which custom tool names a session injected,
 // so `list` can tag provenance without trusting page output.
 func recordCustomTools(session string, names []string) {
@@ -154,7 +149,6 @@ func customToolNames(session string) map[string]bool {
 		}
 	}
 	read(customToolsPath(session))
-	read(legacyPacksPath(session))
 	return out
 }
 

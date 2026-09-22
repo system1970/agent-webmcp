@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -27,7 +28,6 @@ func runCmd(ctx context.Context, g *globals, rest []string) int {
 	visited := []string{}
 	stuck := 0
 	steps := 0
-	var last *decision
 	for steps = 0; steps < maxSteps; steps++ {
 		receipt, d, code, err := tickOnce(ctx, g.session, goal, timeout, "", "", reuse, visited)
 		if err != nil {
@@ -37,6 +37,11 @@ func runCmd(ctx context.Context, g *globals, rest []string) int {
 			if code == "text_needed" || code == "args_needed" {
 				return finishRun(g, goal, "BLOCKED", steps, "needs agent: "+err.Error())
 			}
+			// Login wall: a typed pause, not a failure. The remedy
+			// is a one-time human handoff, then the goal re-runs.
+			if code == "auth_required" {
+				return finishAuthRequired(g, goal, steps, currentPageURL(g.session))
+			}
 			if g.json {
 				fmt.Printf("%s\n", mustJSON(map[string]any{"ok": false, "code": code, "error": err.Error(), "steps": steps}))
 			} else {
@@ -44,7 +49,6 @@ func runCmd(ctx context.Context, g *globals, rest []string) int {
 			}
 			return 1
 		}
-		last = d
 		if u, _ := receipt["url"].(string); u != "" {
 			visited = append(visited, u)
 		}
@@ -56,7 +60,15 @@ func runCmd(ctx context.Context, g *globals, rest []string) int {
 				receipt["page_changed"], d.Confidence)
 		}
 		if d.Operation == "DONE" || d.Operation == "BLOCKED" {
-			return finishRun(g, goal, d.Operation, steps+1, "terminal choice")
+			if acceptTerminal(d) {
+				return finishRun(g, goal, d.Operation, steps+1, "terminal choice")
+			}
+			// A shrug is not a result: the stop was already given
+			// its forced-exploration second look inside the tick,
+			// so record it as an unconfirmed BLOCKED, never success.
+			return finishRun(g, goal, "BLOCKED", steps+1,
+				fmt.Sprintf("unconfirmed stop: %s at conf %.2f < %.2f (goal_complete %.2f)",
+					d.Operation, d.Confidence, terminalConfidenceFloor, d.GoalComplete))
 		}
 		if changed, _ := receipt["page_changed"].(bool); !changed && d.Operation != "WAIT" && d.Operation != "INVOKE" {
 			stuck++
@@ -67,15 +79,25 @@ func runCmd(ctx context.Context, g *globals, rest []string) int {
 			stuck = 0
 		}
 	}
-	_ = last
 	return finishRun(g, goal, "BLOCKED", steps, "step budget exhausted")
 }
 
+// Exit codes are the contract: 0 = DONE, 1 = blocked/failed, 2 =
+// auth_required (a typed pause with a human remedy, not a failure).
 func finishRun(g *globals, goal, status string, steps int, reason string) int {
-	if g.json {
-		ok(map[string]any{"status": status, "steps": steps, "reason": reason, "goal": goal})
+	data := map[string]any{"status": status, "steps": steps, "reason": reason, "goal": goal}
+	if status == "DONE" {
+		if g.json {
+			ok(data)
+			return 0
+		}
+		fmt.Printf("run %s after %d steps (%s) — verify independently\n", status, steps, reason)
 		return 0
 	}
-	fmt.Printf("run %s after %d steps (%s) — verify independently\n", status, steps, reason)
-	return 0
+	if g.json {
+		fmt.Printf("%s\n", mustJSON(map[string]any{"ok": false, "code": "blocked", "error": reason, "data": data}))
+		return 1
+	}
+	fmt.Fprintf(os.Stderr, "run %s after %d steps (%s) — verify independently\n", status, steps, reason)
+	return 1
 }

@@ -64,6 +64,7 @@ var jevOpLabels = map[string]string{
 	"CLICK":     "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
 	"TYPE_TEXT": "Enter or replace text in an editable field. The text is supplied separately; choose only the field.",
 	"SELECT":    "Select an observed dropdown value.",
+	"SCROLL":    "Scroll the page up or down to bring more content into view.",
 	"INVOKE":    "Call a page tool. The tool and its arguments are chosen in the invoke head.",
 	"WAIT":      "The needed control is absent/disabled, or submitted results are still loading.",
 	"DONE":      "Every requirement is visibly satisfied.",
