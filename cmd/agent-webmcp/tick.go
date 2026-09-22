@@ -65,13 +65,7 @@ func tickOnce(ctx context.Context, session, goal string, timeout time.Duration, 
 		}
 		// A low-confidence stop is uncertainty, not impossibility:
 		// one retry with BLOCKED unoffered and mandatory-explore rules.
-		if (d.Operation == "BLOCKED" || d.Operation == "WAIT") && d.Confidence < 0.6 {
-			if d2, snap2, tools2, _, err2 := decideOnce(ctx, session, goal, timeout, visited, true); err2 == nil {
-				if d2.Operation != "BLOCKED" || d2.Confidence > d.Confidence {
-					d, snap, tools = d2, snap2, tools2
-				}
-			}
-		}
+		d, snap, tools = retryUncertainStop(ctx, session, goal, timeout, visited, d, snap, tools)
 		saveDecision(session, d, snap, tools, goal)
 		receipt, code, err := actExecute(ctx, session, goal, d, snap, tools, timeout, text, params, reuse)
 		if err == nil {

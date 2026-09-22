@@ -37,7 +37,7 @@ func snapshotPath(session string) string {
 
 func saveDecision(session string, d *decision, snap *snapshot, tools []WebMCPTool, goal string) {
 	_ = os.MkdirAll(sessionDir(session), 0o755)
-	b, _ := json.Marshal(map[string]any{"goal": goal, "decision": d})
+	b, _ := json.Marshal(map[string]any{"kind": "decision", "goal": goal, "decision": d})
 	f, err := os.OpenFile(decisionsPath(session), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err == nil {
 		_, _ = f.Write(append(b, '\n'))
@@ -56,7 +56,7 @@ func opsForKind(kind string) string {
 	case "select":
 		return "SELECT"
 	case "scroll":
-		return ""
+		return "SCROLL"
 	}
 	return ""
 }
@@ -79,17 +79,7 @@ func decideCmd(ctx context.Context, g *globals, rest []string) int {
 	if err != nil {
 		return failErr(code, err)
 	}
-	if (d.Operation == "BLOCKED" || d.Operation == "WAIT") && d.Confidence < 0.6 {
-		if d2, snap2, tools2, code2, err2 := decideOnce(ctx, g.session, goal, timeout, nil, true); err2 == nil {
-			if d2.Operation != "BLOCKED" || d2.Confidence > d.Confidence {
-				d, snap, tools = d2, snap2, tools2
-			}
-			_ = code2
-		}
-	}
-	if err != nil {
-		return failErr(code, err)
-	}
+	d, snap, tools = retryUncertainStop(ctx, g.session, goal, timeout, nil, d, snap, tools)
 	saveDecision(g.session, d, snap, tools, goal)
 	if g.json {
 		ok(map[string]any{
@@ -122,6 +112,9 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 	if detectBotWall(snap.URL, snap.Text) {
 		return fail("bot_wall", fmt.Errorf("bot check page (%s) — stopping before burning steps", snap.URL))
 	}
+	if detectLoginWall(snap.URL, snap.Text) {
+		return fail("auth_required", fmt.Errorf("login wall at %s — one-time handoff: auth handoff --session %s --url %s", snap.URL, session, snap.URL))
+	}
 	port, err := readPort(session)
 	if err != nil {
 		return fail("no_session", err)
@@ -140,7 +133,10 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 	for _, a := range snap.Actions {
 		byID[a.ID] = a
 		op := ""
-		if a.Kind == "scroll" || a.Kind == "wait" {
+		// Scroll is an offered op (the page is longer than the
+		// viewport); the synthetic wait action stays unoffered —
+		// the WAIT op covers it.
+		if a.Kind == "wait" {
 			continue
 		}
 		op = opsForKind(a.Kind)
@@ -175,7 +171,7 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 	}
 	els := make([]map[string]any, 0, len(snap.Actions))
 	for _, a := range snap.Actions {
-		if a.Kind == "scroll" || a.Kind == "wait" {
+		if a.Kind == "wait" {
 			continue
 		}
 		els = append(els, map[string]any{"index": a.ID, "kind": a.Kind, "role": a.Role, "label": a.Label, "value": a.Value})

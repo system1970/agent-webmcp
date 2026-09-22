@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 func usage() {
 	fmt.Fprint(os.Stderr, `agent-webmcp `+version+` — typed WebMCP bridge
@@ -25,6 +25,7 @@ usage:
   agent-webmcp act [--session NAME] [--json]
   agent-webmcp tick --goal ".." [--session NAME] [--json]
   agent-webmcp run --goal ".." [--session NAME] [--max-steps N] [--json]
+  agent-webmcp auth <probe|handoff> [--session NAME] [--json]
   agent-webmcp tools <add|list|load|remove|verify> [--session NAME] [--json]
   agent-webmcp close [--session NAME | --all]
   agent-webmcp sessions [--json]
@@ -354,6 +355,8 @@ func run(args []string) int {
 		return tickCmd(ctx, &g, rest)
 	case "run":
 		return runCmd(ctx, &g, rest)
+	case "auth":
+		return authCmd(ctx, &g, rest)
 	case "tools":
 		return toolsCmd(ctx, &g, rest)
 	default:

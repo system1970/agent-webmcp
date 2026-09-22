@@ -134,6 +134,7 @@ func readHistory(session string, n int) []map[string]any {
 }
 
 func appendExecuted(session string, entry map[string]any) {
+	entry["kind"] = "executed"
 	b, _ := json.Marshal(entry)
 	f, err := os.OpenFile(decisionsPath(session), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
