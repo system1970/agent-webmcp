@@ -101,6 +101,38 @@ func TestJudgmentKinds(t *testing.T) {
 	}
 }
 
+func TestBuildStateRedacted(t *testing.T) {
+	snap := &snapshot{
+		URL: "https://x.com/login", Title: "Login", Text: "Sign in",
+		Actions: []snapAction{
+			{ID: "e1", Kind: "fill", Role: "textbox", Label: "Password", Value: "s3cret-pw"},
+			{ID: "e2", Kind: "click", Role: "button", Label: "Sign in"},
+		},
+	}
+	history := []map[string]any{
+		{"operation": "CLICK", "target": "e0", "text": "user@email.com", "page_changed": true, "confidence": 0.9},
+	}
+	b, _ := json.Marshal(buildState("goal", snap, nil, history, nil))
+	var st map[string]any
+	if err := json.Unmarshal(b, &st); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range st["elements"].([]any) {
+		if _, ok := e.(map[string]any)["value"]; ok {
+			t.Errorf("element value leaked into Jev state: %v", e)
+		}
+	}
+	for _, r := range st["recent_actions"].([]any) {
+		if _, ok := r.(map[string]any)["text"]; ok {
+			t.Errorf("agent text leaked into Jev state: %v", r)
+		}
+	}
+	s := string(b)
+	if strings.Contains(s, "s3cret-pw") || strings.Contains(s, "user@email.com") {
+		t.Errorf("secret material present in serialized state")
+	}
+}
+
 func TestAuthStampRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AGENT_WEBMCP_HOME", dir)

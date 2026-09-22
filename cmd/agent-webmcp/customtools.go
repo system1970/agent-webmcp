@@ -372,11 +372,7 @@ func toolsCmd(ctx context.Context, g *globals, rest []string) int {
 		fmt.Printf("custom tool %s removed\n", name)
 		return 0
 	case "load":
-		port, err := readPort(g.session)
-		if err != nil {
-			return failErr("no_session", err)
-		}
-		t, err := pickPageTarget(port)
+		t, err := sessionTarget(g.session, timeout)
 		if err != nil {
 			return failErr("no_page", err)
 		}
@@ -436,11 +432,7 @@ func toolsCmd(ctx context.Context, g *globals, rest []string) int {
 			}
 			meta.TestURL = u
 		}
-		port, err := readPort(g.session)
-		if err != nil {
-			return failErr("no_session", err)
-		}
-		t, err := pickPageTarget(port)
+		t, err := sessionTarget(g.session, timeout)
 		if err != nil {
 			return failErr("no_page", err)
 		}
@@ -452,10 +444,8 @@ func toolsCmd(ctx context.Context, g *globals, rest []string) int {
 		if _, err := openURL(ctx, g.session, t.URL, g.chrome, g.headed, timeout); err != nil {
 			return failErr("open_failed", err)
 		}
-		if port, err := readPort(g.session); err == nil {
-			if nt, err := pickPageTarget(port); err == nil {
-				t = nt
-			}
+		if nt, err := sessionTarget(g.session, timeout); err == nil {
+			t = nt
 		}
 		injected, reports := injectCustomTools(ctx, g.session, t.WebSocketDebuggerURL, []toolMeta{*meta}, timeout)
 		present, _, lerr := listWebMCP(ctx, t.WebSocketDebuggerURL, timeout)

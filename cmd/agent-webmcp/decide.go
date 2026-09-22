@@ -94,6 +94,44 @@ func decideCmd(ctx context.Context, g *globals, rest []string) int {
 	return 0
 }
 
+// buildState assembles Jev state with variable redaction. Live field
+// values and agent-supplied text stay in the snapshot and guards for
+// act, but never enter model state: the judge sees labels, roles, and
+// history shapes — never secrets. (Stagehand redacts %variable% the
+// same way, in requests and traces.)
+func buildState(goal string, snap *snapshot, tools []WebMCPTool, history []map[string]any, visited []string) map[string]any {
+	els := make([]map[string]any, 0, len(snap.Actions))
+	for _, a := range snap.Actions {
+		if a.Kind == "wait" {
+			continue
+		}
+		els = append(els, map[string]any{"index": a.ID, "kind": a.Kind, "role": a.Role, "label": a.Label})
+	}
+	toolBrief := make([]map[string]any, 0, len(tools))
+	for _, tl := range tools {
+		toolBrief = append(toolBrief, map[string]any{"name": tl.Name, "description": tl.Description})
+	}
+	recent := []map[string]any{}
+	for _, m := range history {
+		op, _ := m["operation"].(string)
+		if op == "" {
+			continue
+		}
+		recent = append(recent, map[string]any{
+			"action": m["target"], "kind": op,
+			"page_changed": m["page_changed"], "confidence": m["confidence"],
+		})
+	}
+	return map[string]any{
+		"goal":           goal,
+		"page":           map[string]any{"url": snap.URL, "title": snap.Title, "text": snap.Text},
+		"elements":       els,
+		"tools":          toolBrief,
+		"recent_actions": recent,
+		"visited":        lastVisited(visited, 12),
+	}
+}
+
 // decideOnce: snapshot + fan-out POST + validate. Shared by decide and tick.
 // visited carries recent page URLs so the policy avoids going in circles.
 // forceExplore drops BLOCKED from the offered ops for one retry when a
@@ -115,11 +153,7 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 	if detectLoginWall(snap.URL, snap.Text) {
 		return fail("auth_required", fmt.Errorf("login wall at %s — one-time handoff: auth handoff --session %s --url %s", snap.URL, session, snap.URL))
 	}
-	port, err := readPort(session)
-	if err != nil {
-		return fail("no_session", err)
-	}
-	t, err := pickPageTarget(port)
+	t, err := sessionTarget(session, timeout)
 	if err != nil {
 		return fail("no_page", err)
 	}
@@ -163,22 +197,17 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 	for _, op := range []string{"WAIT"} {
 		opIDs[op] = true
 	}
+	// Every target head offers an explicit no-match: a forced pick among
+	// ill-fitting targets is a guess, and guesses are never stored.
+	for op := range targets {
+		targets[op]["none"] = true
+		targetCriteria[op]["none"] = "None of the offered targets fits the goal — choose this instead of guessing."
+	}
 	if !forceExplore {
 		opIDs["BLOCKED"] = true
 	}
 	for op := range opIDs {
 		opCriteria[op] = jevOpLabels[op]
-	}
-	els := make([]map[string]any, 0, len(snap.Actions))
-	for _, a := range snap.Actions {
-		if a.Kind == "wait" {
-			continue
-		}
-		els = append(els, map[string]any{"index": a.ID, "kind": a.Kind, "role": a.Role, "label": a.Label, "value": a.Value})
-	}
-	toolBrief := make([]map[string]any, 0, len(tools))
-	for _, tl := range tools {
-		toolBrief = append(toolBrief, map[string]any{"name": tl.Name, "description": tl.Description})
 	}
 	opRules := any(jevNextAction)
 	tgtRules := []string{jevNextAction, jevTarget}
@@ -205,25 +234,7 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 			"criteria":     crit,
 		}
 	}
-	recent := []map[string]any{}
-	for _, m := range readHistory(session, 10) {
-		op, _ := m["operation"].(string)
-		if op == "" {
-			continue
-		}
-		recent = append(recent, map[string]any{
-			"action": m["target"], "kind": op, "text": m["text"],
-			"page_changed": m["page_changed"], "confidence": m["confidence"],
-		})
-	}
-	state := map[string]any{
-		"goal":           goal,
-		"page":           map[string]any{"url": snap.URL, "title": snap.Title, "text": snap.Text},
-		"elements":       els,
-		"tools":          toolBrief,
-		"recent_actions": recent,
-		"visited":        lastVisited(visited, 12),
-	}
+	state := buildState(goal, snap, tools, readHistory(session, 10), visited)
 	answers, usage, model, lat, err := postSystemOne(state, questions)
 	if err != nil {
 		return fail("jev_failed", err)
@@ -256,9 +267,6 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 			choice = target
 		}
 	}
-	if err := constrain(opIDs, op, target, targets[op], targets[op] != nil); err != nil {
-		return fail("jev_unoffered", err)
-	}
 	completeP := -1.0
 	if raw, ok := answers["goal_complete"]; ok {
 		var n struct {
@@ -270,6 +278,24 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 	}
 	if completeP >= goalCompleteThreshold {
 		op, target, choice = "DONE", "", "DONE"
+	} else if target == "none" {
+		// Explicit no-match is not a target: one forced-exploration
+		// second look, then an honest low-confidence BLOCKED. The run
+		// refuses it as success; act never sees "none".
+		if !forceExplore {
+			if d2, snap2, tools2, _, err2 := decideOnce(ctx, session, goal, timeout, visited, true); err2 == nil && d2.Operation != "BLOCKED" {
+				return d2, snap2, tools2, "", nil
+			}
+		}
+		return &decision{
+			Operation: "BLOCKED", Target: "", Choice: "no offered target fits",
+			Confidence: 0.5, Margin: margin(opAns.Probabilities),
+			GoalComplete: completeP, Anomaly: anomaly, Probabilities: opAns.Probabilities,
+			LatencyMs: lat, Model: model, Usage: usage,
+		}, snap, tools, "", nil
+	}
+	if err := constrain(opIDs, op, target, targets[op], targets[op] != nil); err != nil {
+		return fail("jev_unoffered", err)
 	}
 	d := &decision{
 		Operation: op, Target: target, Choice: choice,
