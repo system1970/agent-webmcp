@@ -149,7 +149,7 @@ func listWebMCP(ctx context.Context, wsURL string, timeout time.Duration) ([]Web
 			case "WebMCP.toolsAdded", "WebMCP.toolsChanged":
 				var p struct {
 					Tools   []map[string]any `json:"tools"`
-					FrameID string            `json:"frameId"`
+					FrameID string           `json:"frameId"`
 				}
 				if json.Unmarshal(ev.Params, &p) == nil {
 					for _, m := range p.Tools {
@@ -170,7 +170,7 @@ func listWebMCP(ctx context.Context, wsURL string, timeout time.Duration) ([]Web
 			case "WebMCP.toolsRemoved":
 				var p struct {
 					Tools   []map[string]any `json:"tools"`
-					FrameID string            `json:"frameId"`
+					FrameID string           `json:"frameId"`
 				}
 				if json.Unmarshal(ev.Params, &p) == nil {
 					for _, m := range p.Tools {
@@ -252,7 +252,7 @@ func resolveFrame(ctx context.Context, wsURL, name string, timeout time.Duration
 			}
 			var p struct {
 				Tools   []map[string]any `json:"tools"`
-				FrameID string            `json:"frameId"`
+				FrameID string           `json:"frameId"`
 			}
 			if json.Unmarshal(ev.Params, &p) != nil {
 				continue

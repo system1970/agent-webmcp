@@ -21,7 +21,6 @@ usage:
   agent-webmcp invoke <tool> [--params JSON|@file] [--frame ID] [--session NAME] [--json]
   agent-webmcp eval <js|@file> [--session NAME] [--json]
   agent-webmcp observe [--session NAME] [--json]
-  agent-webmcp recon [--session NAME] [--json]
   agent-webmcp decide --goal ".." [--session NAME] [--json]
   agent-webmcp act [--session NAME] [--json]
   agent-webmcp tick --goal ".." [--session NAME] [--json]
@@ -373,8 +372,6 @@ func run(args []string) int {
 		return evalCmd(ctx, &g, rest)
 	case "observe":
 		return observeCmd(ctx, &g, rest)
-	case "recon":
-		return reconCmd(ctx, &g, rest)
 	case "decide":
 		return decideCmd(ctx, &g, rest)
 	case "act":

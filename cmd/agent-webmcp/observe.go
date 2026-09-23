@@ -164,14 +164,14 @@ type snapAction struct {
 }
 
 type snapshot struct {
-	URL      string            `json:"url"`
-	Title    string            `json:"title"`
-	Text     string            `json:"text"`
-	Actions  []snapAction      `json:"actions"`
-	Marker   []any             `json:"marker"`
-	PageKey  []any             `json:"page_key"`
-	Guards   map[string][]any  `json:"guards"`
-	Scroll   struct {
+	URL     string           `json:"url"`
+	Title   string           `json:"title"`
+	Text    string           `json:"text"`
+	Actions []snapAction     `json:"actions"`
+	Marker  []any            `json:"marker"`
+	PageKey []any            `json:"page_key"`
+	Guards  map[string][]any `json:"guards"`
+	Scroll  struct {
 		Y      float64 `json:"y"`
 		Height float64 `json:"height"`
 	} `json:"scroll"`
