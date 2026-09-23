@@ -12,8 +12,8 @@ export default function JevLoopPage() {
         Jev loop
       </h1>
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        One question per step — <em>of these observed elements, which
-        advances the goal?</em> — answered by Jev as a typed Choice over a
+        One question per step: <em>of these observed elements, which
+        advances the goal?</em> This is a typed Choice over a
         code-enumerated action space. The model returns an index into a table
         the harness built: never selectors, coordinates, or JavaScript.
       </p>
@@ -23,7 +23,7 @@ export default function JevLoopPage() {
           <strong className="text-ink">Snapshot.</strong> Actions, guards, and
           values stay in the snapshot for execution; Jev state carries labels,
           roles, and a <code className="font-mono text-[13px] text-ink">filled</code>{" "}
-          presence-bit only — never values. Password, file, and hidden fields
+          presence-bit only, never values. Password, file, and hidden fields
           are excluded at capture.
         </li>
         <li>
@@ -54,7 +54,7 @@ export default function JevLoopPage() {
         <code className="font-mono text-[13px] text-ink">text_needed</code>{" "}
         instead of guessing.
       </p>
-      <CodeBlock code={`export TYPESAFE_API_KEY="..."   # BYOK — never bundled, never logged\nagent-webmcp run --goal "Open the revenue board" --session work --max-steps 8 --json`} />
+      <CodeBlock code={`export TYPESAFE_API_KEY="..."   # BYOK: never bundled, never logged\nagent-webmcp run --goal "Open the revenue board" --session work --max-steps 8 --json`} />
     </article>
   );
 }

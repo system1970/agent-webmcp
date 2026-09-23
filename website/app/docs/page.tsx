@@ -5,7 +5,7 @@ import { docsNavigation } from "./navigation";
 export const metadata = {
   title: "Docs · agent-webmcp",
   description:
-    "Install, command, and loop reference for agent-webmcp — the typed WebMCP bridge for real Chrome.",
+    "Install, command, and loop reference for agent-webmcp: the typed WebMCP bridge for real Chrome.",
 };
 
 export default function DocsIndex() {

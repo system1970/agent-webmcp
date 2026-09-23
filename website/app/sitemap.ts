@@ -11,5 +11,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${BASE}/docs/commands`, lastModified: new Date() },
     { url: `${BASE}/docs/custom-tools`, lastModified: new Date() },
     { url: `${BASE}/docs/jev-loop`, lastModified: new Date() },
+    { url: `${BASE}/docs/troubleshooting`, lastModified: new Date() },
   ];
 }
