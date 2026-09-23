@@ -17,9 +17,9 @@ export default function CustomToolsPage() {
         <code className="font-mono text-[13px] text-ink">
           document.modelContext
         </code>{" "}
-        — deterministic, for stable DOM.{" "}
+        : deterministic, for stable DOM.{" "}
         <strong className="text-ink">Loop tools</strong> carry a goal template
-        executed as a bounded Jev run — for wizards, conditional flows, and
+        executed as a bounded Jev run: for wizards, conditional flows, and
         dynamic widgets that page JS cannot judge. Page JS can never reach
         the loop, so the split is structural, not stylistic.
       </p>
@@ -45,7 +45,7 @@ agent-webmcp invoke example_search --params '{"query":"AI"}' --session work`}
       />
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
         Write goals in observable terms (“a form with Name and email fields
-        is visible”), never ordinals (“step 2”) — the judge certifies what it
+        is visible”), never ordinals (“step 2”). The judge certifies what it
         can see. <code className="font-mono text-[13px] text-ink">expect</code>{" "}
         markers are asserted in code after the run: the judge navigates,
         code certifies. Unverified tools never auto-inject.

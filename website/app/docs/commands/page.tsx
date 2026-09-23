@@ -35,7 +35,7 @@ export default function CommandsPage() {
         these.
       </p>
       <h2 className="mt-8 text-xl font-medium text-ink">
-        Free — $0, no keys
+        Free: $0, no keys
       </h2>
       <CodeBlock code={FREE} lang="text" />
       <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
@@ -60,7 +60,7 @@ export default function CommandsPage() {
         </li>
       </ul>
       <h2 className="mt-8 text-xl font-medium text-ink">
-        Ultrafast — needs TYPESAFE_API_KEY
+        Ultrafast: needs TYPESAFE_API_KEY
       </h2>
       <CodeBlock code={PAID} lang="text" />
       <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
@@ -85,7 +85,7 @@ export default function CommandsPage() {
           <code className="font-mono text-[13px] text-ink">auth probe</code> is
           read-only gate sensing;{" "}
           <code className="font-mono text-[13px] text-ink">auth handoff</code>{" "}
-          relaunches headed and waits for a human login — the human types, the
+          relaunches headed and waits for a human login. The human types; the
           secret never enters model context.
         </li>
       </ul>

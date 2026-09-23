@@ -2,7 +2,7 @@ import { CodeBlock } from "../code-block";
 
 export const metadata = {
   title: "Quick start · agent-webmcp docs",
-  description: "Open, list, invoke, verify, close — the golden path in five commands.",
+  description: "Open, list, invoke, verify, close: the golden path in five commands.",
 };
 
 export default function QuickStartPage() {
@@ -30,7 +30,7 @@ agent-webmcp close --session setup-check`}
       />
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
         An empty <code className="font-mono text-[13px] text-ink">list</code>{" "}
-        means the page exposes no tools — say so instead of guessing. Verify
+        means the page exposes no tools. Say so instead of guessing. Verify
         every result against live page state before anything consequential.
       </p>
     </article>
