@@ -2,7 +2,7 @@ import { CodeBlock } from "../code-block";
 
 export const metadata = {
   title: "Custom tools · agent-webmcp docs",
-  description: "Author verified tools per site: page JS for stable DOM, loop goals for flows needing judgment.",
+  description: "Deterministic page tools and judgment-backed loop tools, both verified live.",
 };
 
 export default function CustomToolsPage() {
@@ -12,16 +12,19 @@ export default function CustomToolsPage() {
         Custom tools
       </h1>
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        Two kinds. <strong className="text-ink">Page tools</strong> are
-        JavaScript evaluated in the page that registers via{" "}
+        Sites rarely expose what you need, so you author it. There are two
+        kinds because pages come in two temperaments.{" "}
+        <strong className="text-ink">Page tools</strong> are JavaScript run
+        inside the page that registers through{" "}
         <code className="font-mono text-[13px] text-ink">
           document.modelContext
-        </code>{" "}
-        : deterministic, for stable DOM.{" "}
+        </code>
+        . Use them where the DOM sits still: search boxes, listings, extracts.{" "}
         <strong className="text-ink">Loop tools</strong> carry a goal template
-        executed as a bounded Jev run: for wizards, conditional flows, and
-        dynamic widgets that page JS cannot judge. Page JS can never reach
-        the loop, so the split is structural, not stylistic.
+        that executes as a bounded Jev run. Use them where the page fights
+        back: wizards, conditional steps, widgets that re-render under you.
+        Page JavaScript cannot reach the loop, so pick by temperament, not
+        taste.
       </p>
       <h2 className="mt-8 text-xl font-medium text-ink">Author a page tool</h2>
       <CodeBlock
@@ -30,9 +33,9 @@ export default function CustomToolsPage() {
 #    guards re-registration, and prints 'ok:<name>'.
 # 2. Register it for a host:
 agent-webmcp tools add ./search.js --for example.com --name example_search
-# 3. Verify against the live page:
+# 3. Prove it against the live page:
 agent-webmcp tools verify example_search --session work
-# 4. Use it (auto-injects on every open of the host):
+# 4. From here it auto-injects on every open of the host:
 agent-webmcp invoke example_search --params '{"query":"AI"}' --session work`}
       />
       <h2 className="mt-8 text-xl font-medium text-ink">Author a loop tool</h2>
@@ -44,11 +47,13 @@ agent-webmcp invoke example_search --params '{"query":"AI"}' --session work`}
   --expect "Welcome" --expect-url example.com/welcome`}
       />
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        Write goals in observable terms (“a form with Name and email fields
-        is visible”), never ordinals (“step 2”). The judge certifies what it
-        can see. <code className="font-mono text-[13px] text-ink">expect</code>{" "}
-        markers are asserted in code after the run: the judge navigates,
-        code certifies. Unverified tools never auto-inject.
+        Describe the stopping point in observable terms (“a form with Name
+        and email fields is visible”), never as a step number. Step numbers
+        mean nothing to a judge that only sees the current page. The{" "}
+        <code className="font-mono text-[13px] text-ink">expect</code> markers
+        get asserted in code after the run, so certification never depends on
+        the model grading its own work. Anything unverified never
+        auto-injects.
       </p>
     </article>
   );
