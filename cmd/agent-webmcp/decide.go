@@ -35,9 +35,13 @@ func snapshotPath(session string) string {
 	return filepath.Join(sessionDir(session), "last-snapshot.json")
 }
 
-func saveDecision(session string, d *decision, snap *snapshot, tools []WebMCPTool, goal string) {
+func saveDecision(session string, d *decision, snap *snapshot, tools []WebMCPTool, goal, run string) {
 	_ = os.MkdirAll(sessionDir(session), 0o755)
-	b, _ := json.Marshal(map[string]any{"kind": "decision", "goal": goal, "decision": d})
+	rec := map[string]any{"kind": "decision", "goal": goal, "decision": d}
+	if run != "" {
+		rec["run"] = run
+	}
+	b, _ := json.Marshal(rec)
 	f, err := os.OpenFile(decisionsPath(session), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err == nil {
 		_, _ = f.Write(append(b, '\n'))
@@ -75,12 +79,12 @@ func decideCmd(ctx context.Context, g *globals, rest []string) int {
 		return fail("usage", "usage: agent-webmcp decide --goal \"..\" [--session NAME]")
 	}
 	timeout := time.Duration(g.timeoutMs) * time.Millisecond
-	d, snap, tools, code, err := decideOnce(ctx, g.session, goal, timeout, nil, false)
+	d, snap, tools, code, err := decideOnce(ctx, g.session, goal, timeout, nil, false, "")
 	if err != nil {
 		return failErr(code, err)
 	}
-	d, snap, tools = retryUncertainStop(ctx, g.session, goal, timeout, nil, d, snap, tools)
-	saveDecision(g.session, d, snap, tools, goal)
+	d, snap, tools = retryUncertainStop(ctx, g.session, goal, timeout, nil, d, snap, tools, "")
+	saveDecision(g.session, d, snap, tools, goal, "")
 	if g.json {
 		ok(map[string]any{
 			"operation": d.Operation, "target": d.Target, "choice": d.Choice,
@@ -136,7 +140,7 @@ func buildState(goal string, snap *snapshot, tools []WebMCPTool, history []map[s
 // visited carries recent page URLs so the policy avoids going in circles.
 // forceExplore drops BLOCKED from the offered ops for one retry when a
 // low-confidence stop looks like uncertainty rather than impossibility.
-func decideOnce(ctx context.Context, session, goal string, timeout time.Duration, visited []string, forceExplore bool) (*decision, *snapshot, []WebMCPTool, string, error) {
+func decideOnce(ctx context.Context, session, goal string, timeout time.Duration, visited []string, forceExplore bool, run string) (*decision, *snapshot, []WebMCPTool, string, error) {
 	fail := func(code string, err error) (*decision, *snapshot, []WebMCPTool, string, error) {
 		return nil, nil, nil, code, err
 	}
@@ -194,7 +198,7 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 			targetCriteria["INVOKE"][tl.Name] = tl.Name + ": " + firstLine(tl.Description)
 		}
 	}
-	for _, op := range []string{"WAIT"} {
+	for _, op := range []string{"WAIT", "DONE"} {
 		opIDs[op] = true
 	}
 	// Every target head offers an explicit no-match: a forced pick among
@@ -234,7 +238,7 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 			"criteria":     crit,
 		}
 	}
-	state := buildState(goal, snap, tools, readHistory(session, 10), visited)
+	state := buildState(goal, snap, tools, readHistory(session, 10, run), visited)
 	answers, usage, model, lat, err := postSystemOne(state, questions)
 	if err != nil {
 		return fail("jev_failed", err)
@@ -283,7 +287,7 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 		// second look, then an honest low-confidence BLOCKED. The run
 		// refuses it as success; act never sees "none".
 		if !forceExplore {
-			if d2, snap2, tools2, _, err2 := decideOnce(ctx, session, goal, timeout, visited, true); err2 == nil && d2.Operation != "BLOCKED" {
+			if d2, snap2, tools2, _, err2 := decideOnce(ctx, session, goal, timeout, visited, true, run); err2 == nil && d2.Operation != "BLOCKED" {
 				return d2, snap2, tools2, "", nil
 			}
 		}
