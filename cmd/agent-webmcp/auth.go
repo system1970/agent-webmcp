@@ -208,9 +208,7 @@ func authHandoffCmd(ctx context.Context, g *globals, rest []string) int {
 	if url == "" {
 		return fail("usage", "usage: agent-webmcp auth handoff --url <login-url> [--session NAME] [--wait SEC] [--marker TEXT] [--reason TEXT]")
 	}
-	if !strings.Contains(url, "://") {
-		url = "https://" + url
-	}
+	url = withScheme(url)
 	waitSecs := 300
 	if v, ok := verbFlag(rest, "wait"); ok {
 		if n, err := parseInt(v); err == nil {

@@ -19,6 +19,12 @@ One static Go binary that drives real Chrome over CDP as a typed tool bridge.
 - **CDP control**: `close`, `sessions`, `status`, `eval`, `observe`, `crawl`.
 - **Custom tool authoring**: `tools add/list/remove/load/verify` — write your
   own JS tools, inject them per host, verify against the live page.
+  Page JS cannot reach the loop; tools needing judgment are loop-backed:
+  `tools add --goal "..{{param}}.." --for HOST --name NAME --fields "a,b"`.
+- **Loop tools**: goal template + params, executed as a bounded Jev run on
+  `invoke`; `tools verify` runs test params then asserts outcome markers
+  (`--expect`, `--expect-url`) in code. Verified **iff markers present** —
+  judge navigates, code certifies. Unverified tools never auto-inject.
 - **Jev ultrafast loop** (needs `TYPESAFE_API_KEY`): `decide`, `act`, `tick`,
   `run` — autonomous bounded goals at machine speed.
 

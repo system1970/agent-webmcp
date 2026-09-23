@@ -182,12 +182,7 @@ func addLoopTool(g *globals, rest []string, goalTmpl string) int {
 		}
 		expect.URLContains = strings.TrimSpace(u)
 	}
-	maxSteps := 0
-	if v, ok := verbFlag(rest, "max-steps"); ok {
-		if n, err := parseInt(v); err == nil && n > 0 && n <= 30 {
-			maxSteps = n
-		}
-	}
+	maxSteps := flagMaxSteps(rest)
 	meta := toolMeta{Name: name, Hosts: hosts, Added: time.Now().UTC().Format(time.RFC3339),
 		Kind: "loop", Desc: desc, Goal: goalTmpl, Params: params,
 		FillParam: fill, MaxSteps: maxSteps, Confirm: hasFlag(rest, "confirm"),
@@ -258,26 +253,18 @@ func verifyLoopTool(ctx context.Context, g *globals, rest []string, meta *toolMe
 		return fail("usage", "usage: agent-webmcp tools verify "+meta.Name+" --params '{...}' [--session NAME] [--url URL]")
 	}
 	if u, ok := verbFlag(rest, "url"); ok && u != "" {
-		if !strings.Contains(u, "://") {
-			u = "https://" + u
-		}
-		if _, err := openURL(ctx, g.session, u, g.chrome, g.headed, timeout); err != nil {
+		if _, err := openURL(ctx, g.session, withScheme(u), g.chrome, g.headed, timeout); err != nil {
 			return failErr("open_failed", err)
 		}
 	}
 	args, err := parseParams(g.params)
 	if err != nil {
-		return failPlain(g, "bad_params", err.Error())
+		return fail("bad_params", err.Error())
 	}
 	if args == nil {
 		args = map[string]any{}
 	}
-	maxSteps := 0
-	if v, ok := verbFlag(rest, "max-steps"); ok {
-		if n, err := parseInt(v); err == nil && n > 0 && n <= 30 {
-			maxSteps = n
-		}
-	}
+	maxSteps := flagMaxSteps(rest)
 	status, steps, reason, _, code, err := runLoopToolCore(ctx, g.session, meta, args, timeout, maxSteps)
 	verified := false
 	detail := reason
@@ -634,10 +621,7 @@ func toolsCmd(ctx context.Context, g *globals, rest []string) int {
 			return verifyLoopTool(ctx, g, rest, meta, timeout)
 		}
 		if u, ok := verbFlag(rest, "url"); ok && u != "" {
-			if !strings.Contains(u, "://") {
-				u = "https://" + u
-			}
-			meta.TestURL = u
+			meta.TestURL = withScheme(u)
 		}
 		t, err := sessionTarget(g.session, timeout)
 		if err != nil {
