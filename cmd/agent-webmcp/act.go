@@ -111,7 +111,7 @@ const settleJS = `(isCombo => new Promise(resolve => {
   requestAnimationFrame(ready);
 }))(__COMBO__)`
 
-func readHistory(session string, n int) []map[string]any {
+func readHistory(session string, n int, run string) []map[string]any {
 	b, err := os.ReadFile(decisionsPath(session))
 	if err != nil {
 		return nil
@@ -124,6 +124,14 @@ func readHistory(session string, n int) []map[string]any {
 		}
 		var m map[string]any
 		if json.Unmarshal([]byte(ln), &m) == nil {
+			// Run-scoped reads see only their own run: last night's
+			// success must not read as this attempt's evidence.
+			// run=="" (split verbs) keeps the full session history.
+			if run != "" {
+				if r, _ := m["run"].(string); r != run {
+					continue
+				}
+			}
 			out = append(out, m)
 		}
 	}
@@ -133,8 +141,11 @@ func readHistory(session string, n int) []map[string]any {
 	return out
 }
 
-func appendExecuted(session string, entry map[string]any) {
+func appendExecuted(session, run string, entry map[string]any) {
 	entry["kind"] = "executed"
+	if run != "" {
+		entry["run"] = run
+	}
 	b, _ := json.Marshal(entry)
 	f, err := os.OpenFile(decisionsPath(session), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -275,7 +286,7 @@ func actCmd(ctx context.Context, g *globals, rest []string) int {
 		return fail("no_decision", "saved decision incomplete (re-decide)")
 	}
 	text, params := g.text, g.params
-	receipt, code, err := actExecute(ctx, g.session, goal, d, saved, tools, timeout, text, params, map[string]string{})
+	receipt, code, err := actExecute(ctx, g.session, goal, d, saved, tools, timeout, text, params, map[string]string{}, "")
 	if err != nil {
 		return failErr(code, err)
 	}
@@ -294,7 +305,7 @@ func actCmd(ctx context.Context, g *globals, rest []string) int {
 // actExecute runs one decision. Text/params come from the calling agent
 // (flags), never generated: the agent holding the goal is the text model.
 // reuse carries pending text across stale retries within a tick.
-func actExecute(ctx context.Context, session, goal string, d *decision, saved *snapshot, tools []WebMCPTool, timeout time.Duration, text, params string, reuse map[string]string) (map[string]any, string, error) {
+func actExecute(ctx context.Context, session, goal string, d *decision, saved *snapshot, tools []WebMCPTool, timeout time.Duration, text, params string, reuse map[string]string, run string) (map[string]any, string, error) {
 	fail := func(code string, err error) (map[string]any, string, error) {
 		return nil, code, err
 	}
@@ -316,7 +327,7 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 		return map[string]any{"operation": d.Operation, "target": "", "executed": false}, "", nil
 	case "WAIT":
 		time.Sleep(100 * time.Millisecond)
-		appendExecuted(session, map[string]any{"operation": "WAIT", "target": ""})
+		appendExecuted(session, run, map[string]any{"operation": "WAIT", "target": ""})
 		return map[string]any{"operation": "WAIT", "target": "", "executed": true}, "", nil
 	case "INVOKE":
 		paramsJSON := strings.TrimSpace(params)
@@ -348,7 +359,7 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 		if json.Unmarshal(raw, &js) == nil {
 			val = js
 		}
-		appendExecuted(session, map[string]any{"operation": "INVOKE", "target": d.Target})
+		appendExecuted(session, run, map[string]any{"operation": "INVOKE", "target": d.Target})
 		return map[string]any{"operation": "INVOKE", "target": d.Target, "executed": true, "result": val}, "", nil
 	}
 	var action *snapAction
@@ -378,7 +389,7 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 		}); err != nil {
 			return fail("act_failed", err)
 		}
-		appendExecuted(session, map[string]any{"operation": d.Operation, "target": d.Target})
+		appendExecuted(session, run, map[string]any{"operation": d.Operation, "target": d.Target})
 		return map[string]any{"operation": d.Operation, "target": d.Target, "executed": true}, "", nil
 	}
 	// Text is agent-supplied (flags); pending text survives a stale retry.
@@ -406,7 +417,7 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 		return fail("stale", fmt.Errorf("page changed since decision (re-decide)"))
 	}
 	if action.Kind == "select" {
-		return actSelect(ctx, session, t.WebSocketDebuggerURL, action, timeout)
+		return actSelect(ctx, session, t.WebSocketDebuggerURL, action, timeout, run)
 	}
 	expr := strings.ReplaceAll(resolveJS, "__NODE__", fmt.Sprintf("%d", action.Node))
 	out, err := evalScript(ctx, t.WebSocketDebuggerURL, expr, timeout)
@@ -449,10 +460,13 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 		_, err := c.Call(ectx, method, params)
 		return err
 	}
-	for _, ev := range []string{"mousePressed", "mouseReleased"} {
-		if err := callInput("Input.dispatchMouseEvent", map[string]any{
-			"type": ev, "x": pt.X, "y": pt.Y, "button": "left", "clickCount": 1,
-		}); err != nil {
+	for _, ev := range []string{"mouseMoved", "mousePressed", "mouseReleased"} {
+		params := map[string]any{"type": ev, "x": pt.X, "y": pt.Y}
+		if ev != "mouseMoved" {
+			params["button"] = "left"
+			params["clickCount"] = 1
+		}
+		if err := callInput("Input.dispatchMouseEvent", params); err != nil {
 			return fail("act_failed", err)
 		}
 	}
@@ -497,7 +511,7 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 	if text != "" {
 		entry["text"] = text
 	}
-	appendExecuted(session, entry)
+	appendExecuted(session, run, entry)
 	receipt := map[string]any{"operation": d.Operation, "target": d.Target, "executed": true, "x": pt.X, "y": pt.Y}
 	if text != "" {
 		receipt["text"] = text
@@ -507,7 +521,7 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 
 // actSelect sets a native dropdown by observed option value. Uncertain
 // mutation results stop instead of retrying as stale reads.
-func actSelect(ctx context.Context, session, wsURL string, action *snapAction, timeout time.Duration) (map[string]any, string, error) {
+func actSelect(ctx context.Context, session, wsURL string, action *snapAction, timeout time.Duration, run string) (map[string]any, string, error) {
 	expr := `(node => {
   const e = window.__jevFast && window.__jevFast.nodes.get(node);
   if (!e || !e.isConnected) return JSON.stringify({error:'detached'});
@@ -535,6 +549,6 @@ func actSelect(ctx context.Context, session, wsURL string, action *snapAction, t
 	if !r.OK {
 		return nil, "select_unconfirmed", fmt.Errorf("dropdown execution was not confirmed: %s", r.Error)
 	}
-	appendExecuted(session, map[string]any{"operation": "SELECT", "target": action.ID})
+	appendExecuted(session, run, map[string]any{"operation": "SELECT", "target": action.ID})
 	return map[string]any{"operation": "SELECT", "target": action.ID, "executed": true}, "", nil
 }

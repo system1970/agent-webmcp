@@ -17,8 +17,10 @@ func TestAcceptTerminal(t *testing.T) {
 		{"nil refuses", nil, false},
 		{"done at threshold", &decision{Operation: "DONE", Confidence: 0.2, GoalComplete: 0.7}, true},
 		{"done above threshold", &decision{Operation: "DONE", Confidence: 0.9, GoalComplete: 0.95}, true},
-		{"done below threshold refuses", &decision{Operation: "DONE", Confidence: 0.9, GoalComplete: 0.69}, false},
+		{"done below noul threshold but choice head clears", &decision{Operation: "DONE", Confidence: 0.9, GoalComplete: 0.69}, true},
 		{"done judges its own head not the op head", &decision{Operation: "DONE", Confidence: 0.35, GoalComplete: 0.9}, true},
+		{"done accepted on explicit choice head alone", &decision{Operation: "DONE", Confidence: 0.95, GoalComplete: 0.2}, true},
+		{"done refused with neither head at threshold", &decision{Operation: "DONE", Confidence: 0.4, GoalComplete: 0.5}, false},
 		{"blocked at threshold", &decision{Operation: "BLOCKED", Confidence: 0.7}, true},
 		{"blocked shrug refuses", &decision{Operation: "BLOCKED", Confidence: 0.2}, false},
 		{"non-terminal never", &decision{Operation: "CLICK", Confidence: 0.99}, false},
@@ -65,8 +67,8 @@ func TestJudgmentKinds(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AGENT_WEBMCP_HOME", dir)
 	d := &decision{Operation: "CLICK", Target: "a1", Confidence: 0.9}
-	saveDecision("s1", d, &snapshot{URL: "https://x.com/"}, nil, "goal")
-	appendExecuted("s1", map[string]any{"operation": "CLICK", "target": "a1"})
+	saveDecision("s1", d, &snapshot{URL: "https://x.com/"}, nil, "goal", "")
+	appendExecuted("s1", "", map[string]any{"operation": "CLICK", "target": "a1"})
 	b, err := os.ReadFile(filepath.Join(dir, "sessions", "s1", "decisions.jsonl"))
 	if err != nil {
 		t.Fatal(err)
@@ -130,6 +132,28 @@ func TestBuildStateRedacted(t *testing.T) {
 	s := string(b)
 	if strings.Contains(s, "s3cret-pw") || strings.Contains(s, "user@email.com") {
 		t.Errorf("secret material present in serialized state")
+	}
+}
+
+func TestHistoryRunScoping(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AGENT_WEBMCP_HOME", dir)
+	d := &decision{Operation: "CLICK", Target: "a1", Confidence: 0.9}
+	saveDecision("s1", d, &snapshot{URL: "https://x.com/"}, nil, "goal", "run-A")
+	appendExecuted("s1", "run-A", map[string]any{"operation": "CLICK", "target": "a1"})
+	saveDecision("s1", d, &snapshot{URL: "https://x.com/"}, nil, "goal", "run-B")
+	appendExecuted("s1", "run-B", map[string]any{"operation": "CLICK", "target": "a1"})
+	if h := readHistory("s1", 10, "run-B"); len(h) != 2 {
+		t.Errorf("run-scoped history = %d records, want 2 from run-B only", len(h))
+	} else {
+		for _, m := range h {
+			if r, _ := m["run"].(string); r != "run-B" {
+				t.Errorf("run-A record leaked into run-B history: %v", m["kind"])
+			}
+		}
+	}
+	if h := readHistory("s1", 10, ""); len(h) != 4 {
+		t.Errorf("unscoped history = %d records, want all 4", len(h))
 	}
 }
 

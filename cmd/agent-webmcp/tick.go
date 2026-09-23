@@ -24,7 +24,7 @@ func tickCmd(ctx context.Context, g *globals, rest []string) int {
 	timeout := time.Duration(g.timeoutMs) * time.Millisecond
 	started := time.Now()
 	reuse := map[string]string{}
-	receipt, d, code, err := tickOnce(ctx, g.session, goal, timeout, g.text, g.params, reuse, nil)
+	receipt, d, code, err := tickOnce(ctx, g.session, goal, timeout, g.text, g.params, reuse, nil, "")
 	if err != nil {
 		return failErr(code, err)
 	}
@@ -39,7 +39,7 @@ func tickCmd(ctx context.Context, g *globals, rest []string) int {
 	return 0
 }
 
-func tickOnce(ctx context.Context, session, goal string, timeout time.Duration, text, params string, reuse map[string]string, visited []string) (map[string]any, *decision, string, error) {
+func tickOnce(ctx context.Context, session, goal string, timeout time.Duration, text, params string, reuse map[string]string, visited []string, run string) (map[string]any, *decision, string, error) {
 	fail := func(code string, err error) (map[string]any, *decision, string, error) {
 		return nil, nil, code, err
 	}
@@ -49,14 +49,14 @@ func tickOnce(ctx context.Context, session, goal string, timeout time.Duration, 
 	for attempt := 0; attempt < 2; attempt++ {
 		var code string
 		var err error
-		d, snap, tools, code, err = decideOnce(ctx, session, goal, timeout, visited, false)
+		d, snap, tools, code, err = decideOnce(ctx, session, goal, timeout, visited, false, run)
 		if err != nil {
 			return fail(code, err)
 		}
 		// Fresh eyes once on low-margin actionable calls.
 		if d.Margin < marginRetryFloor && attempt == 0 &&
 			d.Operation != "DONE" && d.Operation != "BLOCKED" && d.Operation != "WAIT" {
-			d2, snap2, tools2, code2, err2 := decideOnce(ctx, session, goal, timeout, visited, false)
+			d2, snap2, tools2, code2, err2 := decideOnce(ctx, session, goal, timeout, visited, false, run)
 			if err2 == nil && d2.Confidence > d.Confidence {
 				d, snap, tools = d2, snap2, tools2
 			} else if err2 != nil {
@@ -65,9 +65,9 @@ func tickOnce(ctx context.Context, session, goal string, timeout time.Duration, 
 		}
 		// A low-confidence stop is uncertainty, not impossibility:
 		// one retry with BLOCKED unoffered and mandatory-explore rules.
-		d, snap, tools = retryUncertainStop(ctx, session, goal, timeout, visited, d, snap, tools)
-		saveDecision(session, d, snap, tools, goal)
-		receipt, code, err := actExecute(ctx, session, goal, d, snap, tools, timeout, text, params, reuse)
+		d, snap, tools = retryUncertainStop(ctx, session, goal, timeout, visited, d, snap, tools, run)
+		saveDecision(session, d, snap, tools, goal, run)
+		receipt, code, err := actExecute(ctx, session, goal, d, snap, tools, timeout, text, params, reuse, run)
 		if err == nil {
 			after, _, capErr := captureSnapshot(ctx, session, timeout)
 			changed := false
@@ -79,7 +79,7 @@ func tickOnce(ctx context.Context, session, goal string, timeout time.Duration, 
 			receipt["page_changed"] = changed
 			receipt["confidence"] = d.Confidence
 			receipt["margin"] = d.Margin
-			appendExecuted(session, map[string]any{
+			appendExecuted(session, run, map[string]any{
 				"operation": d.Operation, "target": d.Target,
 				"page_changed": changed, "confidence": d.Confidence,
 			})

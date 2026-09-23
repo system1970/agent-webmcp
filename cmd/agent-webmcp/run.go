@@ -28,8 +28,9 @@ func runCmd(ctx context.Context, g *globals, rest []string) int {
 	visited := []string{}
 	stuck := 0
 	steps := 0
+	runID := fmt.Sprintf("run-%d", time.Now().UnixNano())
 	for steps = 0; steps < maxSteps; steps++ {
-		receipt, d, code, err := tickOnce(ctx, g.session, goal, timeout, "", "", reuse, visited)
+		receipt, d, code, err := tickOnce(ctx, g.session, goal, timeout, "", "", reuse, visited, runID)
 		if err != nil {
 			// Agent-supplied values needed: hand back to the calling
 			// agent with exactly what's missing. The agent is the
