@@ -48,6 +48,19 @@ func retryUncertainStop(ctx context.Context, session, goal string, timeout time.
 				return d2, snap2, tools2
 			}
 		}
+		return d, snap, tools
+	}
+	// A refused DONE (terminal claim neither head supports) gets one
+	// forced-exploration second look before being recorded: the model
+	// may have missed an obvious control (observed live: preview-state
+	// Continue ignored for DONE@0.40/gc0.26). Still terminates honestly
+	// when nothing actionable surfaces.
+	if d.Operation == "DONE" && !acceptTerminal(d) {
+		if d2, snap2, tools2, _, err := decideOnce(ctx, session, goal, timeout, visited, true, run); err == nil {
+			if d2.Operation != "DONE" || acceptTerminal(d2) {
+				return d2, snap2, tools2
+			}
+		}
 	}
 	return d, snap, tools
 }

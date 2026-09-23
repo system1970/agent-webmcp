@@ -155,7 +155,8 @@ type snapAction struct {
 	CurrentValue string `json:"current_value"`
 	// Stable keys for act-time re-resolution when the observed node is
 	// gone (hydrating widgets replace nodes mid-loop). Resolution order:
-	// node identity -> id -> href -> placeholder -> name -> snapshot index.
+	// node identity -> id -> href -> placeholder -> name -> label text
+	// -> snapshot index.
 	FID  string `json:"fid"`
 	PH   string `json:"ph"`
 	NM   string `json:"nm"`

@@ -46,7 +46,9 @@ const resolveJS = `(node => {
 
 // resolveKeyJS re-registers a replaced node under a fresh identity.
 // Hydrating widgets swap nodes mid-loop; stable keys (id -> href ->
-// placeholder -> name) survive the swap. Returns the node id, or 0.
+// placeholder -> name -> label text) survive the swap. Label text is
+// the last resort (buttons rarely carry the other keys) and matches
+// normalized visible text. Returns the node id, or 0.
 const resolveKeyJS = `((node, key) => {
   const cache = window.__jevFast;
   if (!cache) return 0;
@@ -54,6 +56,7 @@ const resolveKeyJS = `((node, key) => {
   if (e && e.isConnected) return node;
   const vis = x => { try { return x.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}); } catch(err){ return false; } };
   const ok = x => x && x.isConnected && vis(x);
+  const norm = x => ((x.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 60));
   if (key.fid) { const c = document.getElementById(key.fid); if (ok(c)) e = c; }
   if (!e && key.href) {
     try {
@@ -63,6 +66,7 @@ const resolveKeyJS = `((node, key) => {
   }
   if (!e && key.ph) e = [...document.querySelectorAll('input,textarea')].find(x => (x.placeholder||'') === key.ph && ok(x));
   if (!e && key.nm) e = [...document.querySelectorAll('input,textarea,select')].find(x => (x.name||'') === key.nm && ok(x));
+  if (!e && key.lbl) e = [...document.querySelectorAll('button,a,[role="button"]')].find(x => norm(x) === key.lbl && ok(x));
   if (!e) return 0;
   if (!cache.ids.has(e)) cache.ids.set(e, cache.next++);
   const id = cache.ids.get(e); cache.nodes.set(id, e); return id;
@@ -167,10 +171,10 @@ func toolSchema(tools []WebMCPTool, name string) map[string]any {
 // resolveNodeByKey re-registers a replaced node under a fresh identity.
 // Returns the new node id, or an error when no stable key matches.
 func resolveNodeByKey(ctx context.Context, wsURL string, node int, a *snapAction, timeout time.Duration) (int, error) {
-	if a.FID == "" && a.Href == "" && a.PH == "" && a.NM == "" {
+	if a.FID == "" && a.Href == "" && a.PH == "" && a.NM == "" && a.Label == "" {
 		return 0, fmt.Errorf("no stable key for target %s", a.ID)
 	}
-	kb, _ := json.Marshal(map[string]string{"fid": a.FID, "href": a.Href, "ph": a.PH, "nm": a.NM})
+	kb, _ := json.Marshal(map[string]string{"fid": a.FID, "href": a.Href, "ph": a.PH, "nm": a.NM, "lbl": a.Label})
 	expr := strings.ReplaceAll(resolveKeyJS, "__NODE__", fmt.Sprintf("%d", node))
 	expr = strings.ReplaceAll(expr, "__KEY__", string(kb))
 	out, err := evalScript(ctx, wsURL, expr, timeout)
@@ -208,7 +212,7 @@ func verifyFieldValue(ctx context.Context, wsURL string, node int, text string, 
 	if err := json.Unmarshal([]byte(out), &r); err != nil {
 		return err
 	}
-	if r.Value == nil || *r.Value != text {
+	if r.Value == nil || !valuesEquivalent(text, *r.Value) {
 		got := "<unreadable>"
 		if r.Value != nil {
 			got = *r.Value
@@ -216,6 +220,29 @@ func verifyFieldValue(ctx context.Context, wsURL string, node int, text string, 
 		return fmt.Errorf("insertText mismatch (want %q, live %q)", text, got)
 	}
 	return nil
+}
+
+// valuesEquivalent compares requested vs live field values through the
+// normalizations sites routinely apply on input (strip scheme, trailing
+// slash, case, surrounding space). Byte-identity would fail every
+// normalizing field forever — the site accepting and transforming the
+// input IS success. Intent, not bytes.
+func valuesEquivalent(want, got string) bool {
+	if want == got {
+		return true
+	}
+	norm := func(s string) string {
+		s = strings.TrimSpace(s)
+		l := strings.ToLower(s)
+		for _, p := range []string{"https://", "http://"} {
+			if strings.HasPrefix(l, p) {
+				s = s[len(p):]
+				break
+			}
+		}
+		return strings.ToLower(strings.TrimRight(s, "/"))
+	}
+	return norm(want) == norm(got)
 }
 
 // domSetText sets a field value in-page (native setter + input event).
@@ -239,7 +266,7 @@ func domSetText(ctx context.Context, wsURL string, node int, text string, timeou
 	if !r.OK {
 		return fmt.Errorf("domset: %s", r.Error)
 	}
-	if r.Value != text {
+	if !valuesEquivalent(text, r.Value) {
 		return fmt.Errorf("domset mismatch (re-decide)")
 	}
 	return nil
