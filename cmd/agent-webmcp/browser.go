@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -15,15 +16,19 @@ type OpenResult struct {
 }
 
 // openURL binds the session to a tab in the shared profile browser and
-// navigates it. Headed is a launch property: when the live browser's
-// headedness differs, the profile browser relaunches (tabs reset, the
-// profile/cookies persist) and says so.
+// navigates it. Headed is a launch property: a live browser is reused
+// whatever its headedness (OpenResult reports actual); only handoff
+// relaunches headed, explicitly.
 func openURL(ctx context.Context, session, rawURL, chromeBin string, headed bool, timeout time.Duration) (*OpenResult, error) {
 	p := sessionProfile
 	if port, err := profilePort(p); err == nil {
 		var v map[string]any
-		if cerr := cdpGet(port, "/json/version", &v); cerr == nil && profileHeaded(p) != headed {
-			killProfileBrowser(p)
+		if cerr := cdpGet(port, "/json/version", &v); cerr == nil && headed && !profileHeaded(p) {
+			// Headed was explicitly requested but the live browser is
+			// headless. Never auto-relaunch: killing the shared
+			// browser destroys other sessions' tabs. Say how instead.
+			// (handoff is the one caller allowed to relaunch.)
+			return nil, fmt.Errorf("headed_mismatch: profile %s browser is headless (run: close --all, then open --headed, or isolate with --profile NAME)", p)
 		}
 	}
 	t, created, err := bindSessionTab(ctx, session, rawURL, chromeBin, headed, timeout)
