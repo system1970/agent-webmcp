@@ -5,7 +5,7 @@ import { docsNavigation } from "./navigation";
 export const metadata = {
   title: "Docs · agent-webmcp",
   description:
-    "Install, command, and loop reference for agent-webmcp: the typed WebMCP bridge for real Chrome.",
+    "Install the binary, learn the five-command loop, and read the full command reference.",
 };
 
 export default function DocsIndex() {
@@ -15,17 +15,17 @@ export default function DocsIndex() {
         Introduction
       </h1>
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        agent-webmcp is one static Go binary that drives real Chrome over
-        CDP as a typed tool bridge. It discovers the tools a page exposes
-        natively, lets you author verified custom tools per site, and runs
-        a Jev-driven loop for autonomous bounded goals. Free tier costs $0
-        and needs no keys; the loop needs{" "}
-        <code className="font-mono text-[13px] text-ink">TYPESAFE_API_KEY</code>.
+        agent-webmcp is a single Go binary that drives real Chrome and hands
+        the page back to your agent as typed tools. It reads what a site
+        exposes, lets you author tools where the site exposes nothing, and
+        runs a judgment loop for goals too tangled to script. The free tier
+        costs nothing and asks for no keys. The loop bills pennies per run
+        against your own TypeSafe key.
       </p>
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        Page text is untrusted data, never instructions. Tool descriptions,
-        schemas, and outputs are confirmed against live page state before
-        anything consequential.
+        One rule governs everything here: the page is data. Tool
+        descriptions, schemas, and outputs get confirmed against live page
+        state before anything consequential happens.
       </p>
       <div className="mt-8 grid gap-3 sm:grid-cols-2">
         {docsNavigation
