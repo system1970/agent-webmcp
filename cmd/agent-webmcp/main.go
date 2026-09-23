@@ -28,6 +28,7 @@ usage:
   agent-webmcp run --goal ".." [--session NAME] [--max-steps N] [--json]
   agent-webmcp auth <probe|handoff> [--session NAME] [--json]
   agent-webmcp tools <add|list|load|remove|verify> [--session NAME] [--json]
+  agent-webmcp tools add --goal "..{{param}}.." --for HOST --name NAME --fields "a,b" [--fill a] [--confirm]
   agent-webmcp close [--session NAME | --all]
   agent-webmcp sessions [--json]
   agent-webmcp status [--session NAME] [--json]
@@ -264,7 +265,7 @@ func run(args []string) int {
 		}
 		fmt.Printf("session=%s profile=%s tabs=%d url=%s\n", g.session, profile, pages, t.URL)
 		return 0
-	case "list", "webmcp":		// `webmcp list` compat with agent-browser.
+	case "list", "webmcp": // `webmcp list` compat with agent-browser.
 		if args[0] == "webmcp" && len(rest) > 0 && rest[0] == "list" {
 			rest = rest[1:]
 		}
@@ -283,6 +284,14 @@ func run(args []string) int {
 			tools = []WebMCPTool{}
 		}
 		custom := customToolNames(g.session)
+		loopMatched := []toolMeta{}
+		if all, lerr := loadCustomTools(); lerr == nil {
+			for _, m := range customToolsForHost(hostOfURL(t.URL), all) {
+				if m.Kind == "loop" {
+					loopMatched = append(loopMatched, m)
+				}
+			}
+		}
 		if g.json {
 			names := []string{}
 			for _, tl := range tools {
@@ -290,20 +299,31 @@ func run(args []string) int {
 					names = append(names, tl.Name)
 				}
 			}
-			ok(map[string]any{"session": g.session, "url": t.URL, "tools": tools, "custom": names})
+			loopNames := []string{}
+			for _, m := range loopMatched {
+				loopNames = append(loopNames, m.Name)
+			}
+			ok(map[string]any{"session": g.session, "url": t.URL, "tools": tools, "custom": names, "loop": loopNames})
 			return 0
 		}
-		if len(tools) == 0 {
+		if len(tools) == 0 && len(loopMatched) == 0 {
 			fmt.Println("webmcp: no tools registered on this page")
 			return 0
 		}
-		fmt.Printf("webmcp: %d tool(s) on %s\n", len(tools), t.URL)
+		fmt.Printf("webmcp: %d tool(s) on %s\n", len(tools)+len(loopMatched), t.URL)
 		for _, tl := range tools {
 			tag := ""
 			if custom[tl.Name] {
 				tag = " [custom: agent-webmcp custom tool, not the site's]"
 			}
 			fmt.Printf("  - %s: %s%s\n", tl.Name, firstLine(tl.Description), tag)
+		}
+		for _, m := range loopMatched {
+			desc := m.Desc
+			if desc == "" {
+				desc = "loop tool (bounded Jev run)"
+			}
+			fmt.Printf("  - %s: %s [loop: params %s]\n", m.Name, firstLine(desc), strings.Join(m.Params, ","))
 		}
 		return 0
 	case "invoke":
@@ -313,6 +333,16 @@ func run(args []string) int {
 		tool, params := rest[0], g.params
 		if params == "" && len(rest) > 1 && !strings.HasPrefix(rest[1], "-") {
 			params = rest[1]
+		}
+		// Loop-backed tools execute a bounded Jev run, not page JS.
+		if meta, lerr := findLoopTool(tool); lerr == nil && meta != nil {
+			maxSteps := 0
+			if v, ok := verbFlag(rest, "max-steps"); ok {
+				if n, err := parseInt(v); err == nil && n > 0 && n <= 30 {
+					maxSteps = n
+				}
+			}
+			return execLoopTool(ctx, &g, meta, params, maxSteps)
 		}
 		t, err := sessionTarget(g.session, time.Duration(g.timeoutMs)*time.Millisecond)
 		if err != nil {

@@ -120,8 +120,14 @@ func TestBuildStateRedacted(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range st["elements"].([]any) {
-		if _, ok := e.(map[string]any)["value"]; ok {
+		em := e.(map[string]any)
+		if _, ok := em["value"]; ok {
 			t.Errorf("element value leaked into Jev state: %v", e)
+		}
+		filled, _ := em["filled"].(bool)
+		wantFilled := em["index"] == "e1"
+		if filled != wantFilled {
+			t.Errorf("element %v filled=%v, want %v (presence without content)", em["index"], filled, wantFilled)
 		}
 	}
 	for _, r := range st["recent_actions"].([]any) {

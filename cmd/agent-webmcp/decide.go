@@ -109,7 +109,12 @@ func buildState(goal string, snap *snapshot, tools []WebMCPTool, history []map[s
 		if a.Kind == "wait" {
 			continue
 		}
-		els = append(els, map[string]any{"index": a.ID, "kind": a.Kind, "role": a.Role, "label": a.Label})
+		// filled is presence-without-content: the judge must know a
+		// field already holds text (else it refills forever — observed
+		// live: 3× TYPE_TEXT, 0 changes), but the value itself is a
+		// secret and stays out (Stagehand placeholder discipline).
+		filled := a.Kind == "fill" && a.Value != ""
+		els = append(els, map[string]any{"index": a.ID, "kind": a.Kind, "role": a.Role, "label": a.Label, "filled": filled})
 	}
 	toolBrief := make([]map[string]any, 0, len(tools))
 	for _, tl := range tools {
@@ -189,6 +194,10 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 		targets[op][a.ID] = true
 		targetCriteria[op][a.ID] = fmt.Sprintf("[%s] %s %s", a.ID, a.Role, a.Label)
 	}
+	// decide's INVOKE head covers page-registered tools only (native +
+	// injected custom). Loop-backed tools live in the CLI registry and
+	// are invoked by name; loop-in-loop reentrancy is deferred, so they
+	// are deliberately not offered here.
 	if len(tools) > 0 {
 		opIDs["INVOKE"] = true
 		targets["INVOKE"] = map[string]bool{}

@@ -31,6 +31,20 @@ type toolMeta struct {
 	Verified   bool     `json:"verified,omitempty"`
 	VerifiedAt string   `json:"verifiedAt,omitempty"`
 	TestURL    string   `json:"testUrl,omitempty"`
+	// Loop-backed tools (kind "loop") run a bounded Jev run instead of
+	// page JS: no File, goal template with {{param}} holes, all Params
+	// required. FillParam (default: first param) feeds TYPE_TEXT.
+	Kind      string   `json:"kind,omitempty"`
+	Desc      string   `json:"desc,omitempty"`
+	Goal      string   `json:"goal,omitempty"`
+	Params    []string `json:"params,omitempty"`
+	FillParam string   `json:"fillParam,omitempty"`
+	MaxSteps  int      `json:"maxSteps,omitempty"`
+	Confirm   bool     `json:"confirm,omitempty"`
+	// Expect certifies outcomes in code after the run: the judge
+	// navigates, code asserts. Text markers match full body text
+	// (snapshot text is viewport-clipped); url substring optional.
+	Expect *loopExpect `json:"expect,omitempty"`
 }
 
 func toolsRoot() string {
@@ -76,7 +90,13 @@ func loadCustomTools() ([]toolMeta, error) {
 			continue
 		}
 		var m toolMeta
-		if json.Unmarshal(b, &m) != nil || m.Name == "" || m.File == "" {
+		if json.Unmarshal(b, &m) != nil || m.Name == "" {
+			continue
+		}
+		if m.Kind == "" {
+			m.Kind = "page"
+		}
+		if m.Kind != "loop" && m.File == "" {
 			continue
 		}
 		out = append(out, m)
@@ -113,6 +133,187 @@ func verifiedToolsForHost(host string, tools []toolMeta) []toolMeta {
 
 func customToolsPath(session string) string {
 	return filepath.Join(sessionDir(session), "tools.json")
+}
+
+// addLoopTool registers a loop-backed tool: no JS file, a goal template
+// with {{param}} holes executed by a bounded Jev run on invoke.
+// Usage: tools add --goal "..{{url}}.." --for HOST --name NAME
+//
+//	--fields "url,tagline" [--fill url] [--desc ..] [--max-steps N] [--confirm]
+func addLoopTool(g *globals, rest []string, goalTmpl string) int {
+	name, _ := verbFlag(rest, "name")
+	if strings.TrimSpace(name) == "" {
+		return fail("usage", "usage: agent-webmcp tools add --goal \"..{{param}}..\" --for <host>[,<host>] --name NAME --fields \"a,b\" [--fill a] [--desc ..] [--max-steps N] [--confirm]")
+	}
+	name = sanitizeToolName(name)
+	forHosts, _ := verbFlag(rest, "for")
+	var hosts []string
+	for _, h := range strings.Split(forHosts, ",") {
+		if h = normalizeHost(h); h != "" {
+			hosts = append(hosts, h)
+		}
+	}
+	if len(hosts) == 0 {
+		return fail("tools_failed", "no valid hosts in --for")
+	}
+	var params []string
+	if f, ok := verbFlag(rest, "fields"); ok {
+		for _, p := range strings.Split(f, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				params = append(params, p)
+			}
+		}
+	}
+	fill, _ := verbFlag(rest, "fill")
+	desc, _ := verbFlag(rest, "desc")
+	var expect *loopExpect
+	if e, ok := verbFlag(rest, "expect"); ok && strings.TrimSpace(e) != "" {
+		var markers []string
+		for _, m := range strings.Split(e, ",") {
+			if m = strings.TrimSpace(m); m != "" {
+				markers = append(markers, m)
+			}
+		}
+		expect = &loopExpect{TextContains: markers}
+	}
+	if u, ok := verbFlag(rest, "expect-url"); ok && strings.TrimSpace(u) != "" {
+		if expect == nil {
+			expect = &loopExpect{}
+		}
+		expect.URLContains = strings.TrimSpace(u)
+	}
+	maxSteps := 0
+	if v, ok := verbFlag(rest, "max-steps"); ok {
+		if n, err := parseInt(v); err == nil && n > 0 && n <= 30 {
+			maxSteps = n
+		}
+	}
+	meta := toolMeta{Name: name, Hosts: hosts, Added: time.Now().UTC().Format(time.RFC3339),
+		Kind: "loop", Desc: desc, Goal: goalTmpl, Params: params,
+		FillParam: fill, MaxSteps: maxSteps, Confirm: hasFlag(rest, "confirm"),
+		Expect: expect}
+	if err := os.MkdirAll(toolsRoot(), 0o755); err != nil {
+		return failErr("tools_failed", err)
+	}
+	mb, _ := json.MarshalIndent(meta, "", "  ")
+	if err := os.WriteFile(filepath.Join(toolsRoot(), name+".json"), mb, 0o644); err != nil {
+		return failErr("tools_failed", err)
+	}
+	if g.json {
+		ok(map[string]any{"custom tool": meta})
+		return 0
+	}
+	fmt.Printf("loop tool %s added for %s (params: %s)\n", name, strings.Join(hosts, ","), strings.Join(params, ","))
+	return 0
+}
+
+func stampToolVerified(meta *toolMeta, verified bool) {
+	meta.Verified = verified
+	if verified {
+		meta.VerifiedAt = time.Now().UTC().Format(time.RFC3339)
+	} else {
+		meta.VerifiedAt = ""
+	}
+	mb, _ := json.MarshalIndent(meta, "", "  ")
+	_ = os.WriteFile(filepath.Join(toolsRoot(), meta.Name+".json"), mb, 0o644)
+}
+
+type loopExpect struct {
+	TextContains []string `json:"text_contains,omitempty"`
+	URLContains  string   `json:"url_contains,omitempty"`
+}
+
+// checkExpect asserts outcome markers in code on the live page.
+func checkExpect(ctx context.Context, session string, timeout time.Duration, ex *loopExpect) (bool, string) {
+	if ex == nil {
+		return false, "no expect clause"
+	}
+	t, err := sessionTarget(session, timeout)
+	if err != nil {
+		return false, "no live tab"
+	}
+	if ex.URLContains != "" && !strings.Contains(t.URL, ex.URLContains) {
+		return false, fmt.Sprintf("url lacks %q", ex.URLContains)
+	}
+	if len(ex.TextContains) > 0 {
+		out, err := evalScript(ctx, t.WebSocketDebuggerURL, `document.body ? document.body.innerText : ""`, timeout)
+		if err != nil {
+			return false, "text unreadable"
+		}
+		for _, m := range ex.TextContains {
+			if !strings.Contains(out, m) {
+				return false, fmt.Sprintf("text lacks %q", m)
+			}
+		}
+	}
+	return true, "all markers present"
+}
+
+// verifyLoopTool runs a loop tool against caller-supplied test params
+// (explicit, author-initiated). Verified iff the outcome markers hold
+// on the live page after the run (code certifies, judge navigates).
+// Usage: tools verify NAME --params '{...}' [--session NAME] [--url URL]
+func verifyLoopTool(ctx context.Context, g *globals, rest []string, meta *toolMeta, timeout time.Duration) int {
+	if strings.TrimSpace(g.params) == "" {
+		return fail("usage", "usage: agent-webmcp tools verify "+meta.Name+" --params '{...}' [--session NAME] [--url URL]")
+	}
+	if u, ok := verbFlag(rest, "url"); ok && u != "" {
+		if !strings.Contains(u, "://") {
+			u = "https://" + u
+		}
+		if _, err := openURL(ctx, g.session, u, g.chrome, g.headed, timeout); err != nil {
+			return failErr("open_failed", err)
+		}
+	}
+	args, err := parseParams(g.params)
+	if err != nil {
+		return failPlain(g, "bad_params", err.Error())
+	}
+	if args == nil {
+		args = map[string]any{}
+	}
+	maxSteps := 0
+	if v, ok := verbFlag(rest, "max-steps"); ok {
+		if n, err := parseInt(v); err == nil && n > 0 && n <= 30 {
+			maxSteps = n
+		}
+	}
+	status, steps, reason, _, code, err := runLoopToolCore(ctx, g.session, meta, args, timeout, maxSteps)
+	verified := false
+	detail := reason
+	if err != nil {
+		detail = err.Error()
+		if code == "" {
+			code = "loop_failed"
+		}
+	} else if ok, why := checkExpect(ctx, g.session, timeout, meta.Expect); ok {
+		verified = true
+		detail = fmt.Sprintf("%s; expect: %s", reason, why)
+	} else {
+		detail = fmt.Sprintf("%s; expect FAILED: %s", reason, why)
+	}
+	stampToolVerified(meta, verified)
+	if g.json {
+		out := map[string]any{"tool": meta.Name, "verified": verified, "status": status, "steps": steps, "reason": detail, "code": code}
+		if err != nil {
+			out["error"] = err.Error()
+		}
+		ok(out)
+		if verified {
+			return 0
+		}
+		return 1
+	}
+	if verified {
+		fmt.Printf("loop tool %s verified in %d steps (%s)\n", meta.Name, steps, detail)
+		return 0
+	}
+	if err != nil {
+		fmt.Printf("loop tool %s NOT verified: [%s] %s\n", meta.Name, code, err)
+		return 1
+	}
+	fmt.Printf("loop tool %s NOT verified: %s after %d steps (%s)\n", meta.Name, status, steps, detail)
+	return 1
 }
 
 // recordCustomTools remembers which custom tool names a session injected,
@@ -303,6 +504,9 @@ func toolsCmd(ctx context.Context, g *globals, rest []string) int {
 		}
 		return 0
 	case "add":
+		if goalTmpl, ok := verbFlag(rest, "goal"); ok && strings.TrimSpace(goalTmpl) != "" {
+			return addLoopTool(g, rest, goalTmpl)
+		}
 		var file string
 		for _, a := range rest[1:] {
 			if !strings.HasPrefix(a, "-") && file == "" {
@@ -426,6 +630,9 @@ func toolsCmd(ctx context.Context, g *globals, rest []string) int {
 		if meta == nil {
 			return fail("tools_failed", "no such custom tool: "+name)
 		}
+		if meta.Kind == "loop" {
+			return verifyLoopTool(ctx, g, rest, meta, timeout)
+		}
 		if u, ok := verbFlag(rest, "url"); ok && u != "" {
 			if !strings.Contains(u, "://") {
 				u = "https://" + u
@@ -462,14 +669,7 @@ func toolsCmd(ctx context.Context, g *globals, rest []string) int {
 				}
 			}
 		}
-		meta.Verified = verified
-		if verified {
-			meta.VerifiedAt = time.Now().UTC().Format(time.RFC3339)
-		} else {
-			meta.VerifiedAt = ""
-		}
-		mb, _ := json.MarshalIndent(meta, "", "  ")
-		_ = os.WriteFile(filepath.Join(toolsRoot(), meta.Name+".json"), mb, 0o644)
+		stampToolVerified(meta, verified)
 		if g.json {
 			ok(map[string]any{"tool": meta.Name, "verified": verified, "injected": injected, "reports": reports})
 			return 0

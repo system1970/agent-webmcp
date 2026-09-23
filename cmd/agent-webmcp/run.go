@@ -24,63 +24,80 @@ func runCmd(ctx context.Context, g *globals, rest []string) int {
 		}
 	}
 	timeout := time.Duration(g.timeoutMs) * time.Millisecond
+	runID := fmt.Sprintf("run-%d", time.Now().UnixNano())
+	status, steps, reason, code, err := runLoop(ctx, g.session, goal, "", timeout, maxSteps, runID,
+		func(step int, receipt map[string]any, d *decision) {
+			if g.json {
+				fmt.Printf("%s\n", mustJSON(receipt))
+			} else {
+				fmt.Printf("[%d] %s %s changed=%v (conf %.2f)\n",
+					step+1, receipt["operation"], receipt["target"],
+					receipt["page_changed"], d.Confidence)
+			}
+		})
+	if err != nil {
+		// Agent-supplied values needed: hand back to the calling
+		// agent with exactly what's missing. The agent is the
+		// text model; it continues stepwise (decide/act).
+		if code == "text_needed" || code == "args_needed" {
+			return finishRun(g, goal, "BLOCKED", steps, "needs agent: "+err.Error())
+		}
+		// Login wall: a typed pause, not a failure. The remedy
+		// is a one-time human handoff, then the goal re-runs.
+		if code == "auth_required" {
+			return finishAuthRequired(g, goal, steps, currentPageURL(g.session))
+		}
+		if g.json {
+			fmt.Printf("%s\n", mustJSON(map[string]any{"ok": false, "code": code, "error": err.Error(), "steps": steps}))
+		} else {
+			fmt.Printf("run stopped: [%s] %s\n", code, err)
+		}
+		return 1
+	}
+	return finishRun(g, goal, status, steps, reason)
+}
+
+// runLoop ticks until terminal/budget/stuck. Shared by run and loop
+// tools so the two paths cannot drift apart.
+func runLoop(ctx context.Context, session, goal, text string, timeout time.Duration, maxSteps int, runID string, onStep func(step int, receipt map[string]any, d *decision)) (status string, steps int, reason string, code string, err error) {
 	reuse := map[string]string{}
 	visited := []string{}
 	stuck := 0
-	steps := 0
-	runID := fmt.Sprintf("run-%d", time.Now().UnixNano())
+	steps = 0
 	for steps = 0; steps < maxSteps; steps++ {
-		receipt, d, code, err := tickOnce(ctx, g.session, goal, timeout, "", "", reuse, visited, runID)
+		var receipt map[string]any
+		var d *decision
+		receipt, d, code, err = tickOnce(ctx, session, goal, timeout, text, "", reuse, visited, runID)
 		if err != nil {
-			// Agent-supplied values needed: hand back to the calling
-			// agent with exactly what's missing. The agent is the
-			// text model; it continues stepwise (decide/act).
-			if code == "text_needed" || code == "args_needed" {
-				return finishRun(g, goal, "BLOCKED", steps, "needs agent: "+err.Error())
-			}
-			// Login wall: a typed pause, not a failure. The remedy
-			// is a one-time human handoff, then the goal re-runs.
-			if code == "auth_required" {
-				return finishAuthRequired(g, goal, steps, currentPageURL(g.session))
-			}
-			if g.json {
-				fmt.Printf("%s\n", mustJSON(map[string]any{"ok": false, "code": code, "error": err.Error(), "steps": steps}))
-			} else {
-				fmt.Printf("run stopped: [%s] %s\n", code, err)
-			}
-			return 1
+			return "", steps, "", code, err
+		}
+		if onStep != nil {
+			onStep(steps, receipt, d)
 		}
 		if u, _ := receipt["url"].(string); u != "" {
 			visited = append(visited, u)
 		}
-		if g.json {
-			fmt.Printf("%s\n", mustJSON(receipt))
-		} else {
-			fmt.Printf("[%d] %s %s changed=%v (conf %.2f)\n",
-				steps+1, receipt["operation"], receipt["target"],
-				receipt["page_changed"], d.Confidence)
-		}
 		if d.Operation == "DONE" || d.Operation == "BLOCKED" {
 			if acceptTerminal(d) {
-				return finishRun(g, goal, d.Operation, steps+1, "terminal choice")
+				return d.Operation, steps + 1, "terminal choice", "", nil
 			}
 			// A shrug is not a result: the stop was already given
 			// its forced-exploration second look inside the tick,
 			// so record it as an unconfirmed BLOCKED, never success.
-			return finishRun(g, goal, "BLOCKED", steps+1,
+			return "BLOCKED", steps + 1,
 				fmt.Sprintf("unconfirmed stop: %s at conf %.2f < %.2f (goal_complete %.2f)",
-					d.Operation, d.Confidence, terminalConfidenceFloor, d.GoalComplete))
+					d.Operation, d.Confidence, terminalConfidenceFloor, d.GoalComplete), "", nil
 		}
 		if changed, _ := receipt["page_changed"].(bool); !changed && d.Operation != "WAIT" && d.Operation != "INVOKE" {
 			stuck++
 			if stuck >= 3 {
-				return finishRun(g, goal, "BLOCKED", steps+1, "stuck: 3 no-change steps")
+				return "BLOCKED", steps + 1, "stuck: 3 no-change steps", "", nil
 			}
 		} else {
 			stuck = 0
 		}
 	}
-	return finishRun(g, goal, "BLOCKED", steps, "step budget exhausted")
+	return "BLOCKED", steps, "step budget exhausted", "", nil
 }
 
 // Exit codes are the contract: 0 = DONE, 1 = blocked/failed, 2 =
