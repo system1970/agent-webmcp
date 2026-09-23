@@ -8,7 +8,7 @@ export default function Home() {
     <>
       <a
         href="#main"
-        className="absolute -left-[9999px] top-0 z-10 rounded-md border border-line bg-canvas px-3 py-2 text-sm text-ink no-underline focus:left-4 focus:top-4"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 rounded-md border border-line bg-canvas px-3 py-2 text-sm text-ink no-underline"
       >
         Skip to content
       </a>
@@ -25,7 +25,7 @@ export default function Home() {
             can work with your software, not just read about it.
           </p>
           <p className="mt-7 text-[13px] text-ink-2">
-            <a href={`${REPO}/releases/tag/v0.3.0`}>v0.3.0</a> · Chrome 149
+            <a href={`${REPO}/releases/tag/v0.4.0`}>v0.4.0</a> · Chrome 149
             or newer · Windows, macOS, Linux
           </p>
           <div className="mt-9 flex flex-wrap items-start justify-center gap-3">
