@@ -16,7 +16,7 @@ One static Go binary that drives real Chrome over CDP as a typed tool bridge.
 
 - **WebMCP bridge**: `open` -> `list` -> `invoke` — discover and call tools a
   page exposes natively.
-- **CDP control**: `close`, `sessions`, `status`, `eval`, `observe`, `recon`.
+- **CDP control**: `close`, `sessions`, `status`, `eval`, `observe`, `crawl`.
 - **Custom tool authoring**: `tools add/list/remove/load/verify` — write your
   own JS tools, inject them per host, verify against the live page.
 - **Jev ultrafast loop** (needs `TYPESAFE_API_KEY`): `decide`, `act`, `tick`,
