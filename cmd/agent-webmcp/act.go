@@ -227,8 +227,8 @@ func verifyFieldValue(ctx context.Context, wsURL string, node int, text string, 
 // slash, case, surrounding space). Byte-identity would fail every
 // normalizing field forever — the site accepting and transforming the
 // input IS success. Intent, not bytes.
-func valuesEquivalent(want, got string) bool {
-	if want == got {
+func valuesEquivalent(expected, actual string) bool {
+	if expected == actual {
 		return true
 	}
 	norm := func(s string) string {
@@ -242,7 +242,7 @@ func valuesEquivalent(want, got string) bool {
 		}
 		return strings.ToLower(strings.TrimRight(s, "/"))
 	}
-	return norm(want) == norm(got)
+	return norm(expected) == norm(actual)
 }
 
 // domSetText sets a field value in-page (native setter + input event).

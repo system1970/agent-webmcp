@@ -8,6 +8,27 @@ import (
 	"testing"
 )
 
+func TestNeedsExploreRetry(t *testing.T) {
+	cases := []struct {
+		name string
+		d    *decision
+		want bool
+	}{
+		{"nil refuses", nil, false},
+		{"low-conf blocked retries", &decision{Operation: "BLOCKED", Confidence: 0.5}, true},
+		{"confident blocked stands", &decision{Operation: "BLOCKED", Confidence: 0.8}, false},
+		{"low-conf wait retries", &decision{Operation: "WAIT", Confidence: 0.2}, true},
+		{"accepted done stands", &decision{Operation: "DONE", Confidence: 0.9, GoalComplete: 0.9}, false},
+		{"refused done retries", &decision{Operation: "DONE", Confidence: 0.4, GoalComplete: 0.3}, true},
+		{"actionable never retries", &decision{Operation: "CLICK", Confidence: 0.1}, false},
+	}
+	for _, c := range cases {
+		if got := needsExploreRetry(c.d); got != c.want {
+			t.Errorf("%s: needsExploreRetry = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
 func TestAcceptTerminal(t *testing.T) {
 	cases := []struct {
 		name string

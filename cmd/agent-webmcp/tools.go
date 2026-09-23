@@ -34,6 +34,15 @@ func hostOfURL(u string) string {
 	return normalizeHost(u)
 }
 
+// withScheme prefixes https:// onto bare hosts. Callers with special
+// schemes (about:, data:) check those first and never reach here.
+func withScheme(u string) string {
+	if strings.Contains(u, "://") {
+		return u
+	}
+	return "https://" + u
+}
+
 func verbFlag(args []string, name string) (string, bool) {
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--"+name && i+1 < len(args) {

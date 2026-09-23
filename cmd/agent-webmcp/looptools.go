@@ -112,21 +112,12 @@ func runLoopToolCore(ctx context.Context, session string, meta *toolMeta, args m
 	return status, steps, reason, goal, code, err
 }
 
-func failPlain(g *globals, code, msg string) int {
-	if g.json {
-		fmt.Printf("%s\n", mustJSON(map[string]any{"ok": false, "code": code, "error": msg}))
-		return 1
-	}
-	fmt.Fprintf(os.Stderr, "error [%s]: %s\n", code, msg)
-	return 1
-}
-
 // execLoopTool runs a loop tool end to end with invoke-shaped receipts.
 func execLoopTool(ctx context.Context, g *globals, meta *toolMeta, paramsJSON string, maxSteps int) int {
 	timeout := time.Duration(g.timeoutMs) * time.Millisecond
 	args, err := parseParams(paramsJSON)
 	if err != nil {
-		return failPlain(g, "bad_params", err.Error())
+		return fail("bad_params", err.Error())
 	}
 	if args == nil {
 		args = map[string]any{}
@@ -139,7 +130,7 @@ func execLoopTool(ctx context.Context, g *globals, meta *toolMeta, paramsJSON st
 		if code == "" {
 			code = "loop_failed"
 		}
-		return failPlain(g, code, err.Error())
+		return fail(code, err.Error())
 	}
 	data := map[string]any{"tool": meta.Name, "status": status, "steps": steps, "reason": reason, "goal": goal}
 	if status == "DONE" {
@@ -165,4 +156,15 @@ func hasFlag(args []string, name string) bool {
 		}
 	}
 	return false
+}
+
+// flagMaxSteps reads --max-steps from verb flags, clamped to 1..30.
+// Absent or invalid reads as 0 (caller falls back to its default).
+func flagMaxSteps(rest []string) int {
+	if v, ok := verbFlag(rest, "max-steps"); ok {
+		if n, err := parseInt(v); err == nil && n > 0 && n <= 30 {
+			return n
+		}
+	}
+	return 0
 }

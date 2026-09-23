@@ -335,13 +335,7 @@ func run(args []string) int {
 		}
 		// Loop-backed tools execute a bounded Jev run, not page JS.
 		if meta, lerr := findLoopTool(tool); lerr == nil && meta != nil {
-			maxSteps := 0
-			if v, ok := verbFlag(rest, "max-steps"); ok {
-				if n, err := parseInt(v); err == nil && n > 0 && n <= 30 {
-					maxSteps = n
-				}
-			}
-			return execLoopTool(ctx, &g, meta, params, maxSteps)
+			return execLoopTool(ctx, &g, meta, params, flagMaxSteps(rest))
 		}
 		t, err := sessionTarget(g.session, time.Duration(g.timeoutMs)*time.Millisecond)
 		if err != nil {

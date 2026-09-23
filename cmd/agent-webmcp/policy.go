@@ -38,28 +38,39 @@ func acceptTerminal(d *decision) bool {
 	return false
 }
 
+// needsExploreRetry reports whether a stop deserves one forced-exploration
+// second look: a low-confidence BLOCKED/WAIT (uncertainty, not
+// impossibility), or a DONE neither head supports (a shrug, not a result).
+// Pure predicate so the policy is unit-testable without a browser.
+func needsExploreRetry(d *decision) bool {
+	if d == nil {
+		return false
+	}
+	if (d.Operation == "BLOCKED" || d.Operation == "WAIT") && d.Confidence < uncertainStopFloor {
+		return true
+	}
+	return d.Operation == "DONE" && !acceptTerminal(d)
+}
+
 // retryUncertainStop re-decides once with BLOCKED unoffered when a stop
 // looks like uncertainty rather than impossibility. Shared by the split
 // decide verb and the fused tick so the two paths cannot drift apart.
 func retryUncertainStop(ctx context.Context, session, goal string, timeout time.Duration, visited []string, d *decision, snap *snapshot, tools []WebMCPTool, run string) (*decision, *snapshot, []WebMCPTool) {
-	if (d.Operation == "BLOCKED" || d.Operation == "WAIT") && d.Confidence < uncertainStopFloor {
-		if d2, snap2, tools2, _, err := decideOnce(ctx, session, goal, timeout, visited, true, run); err == nil {
-			if d2.Operation != "BLOCKED" || d2.Confidence > d.Confidence {
-				return d2, snap2, tools2
-			}
-		}
+	if !needsExploreRetry(d) {
 		return d, snap, tools
 	}
-	// A refused DONE (terminal claim neither head supports) gets one
-	// forced-exploration second look before being recorded: the model
-	// may have missed an obvious control (observed live: preview-state
-	// Continue ignored for DONE@0.40/gc0.26). Still terminates honestly
-	// when nothing actionable surfaces.
-	if d.Operation == "DONE" && !acceptTerminal(d) {
-		if d2, snap2, tools2, _, err := decideOnce(ctx, session, goal, timeout, visited, true, run); err == nil {
+	// One re-decide with BLOCKED unoffered and mandatory-explore rules.
+	if d2, snap2, tools2, _, err := decideOnce(ctx, session, goal, timeout, visited, true, run); err == nil {
+		if d.Operation == "DONE" {
+			// A refused DONE upgrades only to an actionable op or an
+			// acceptable terminal; otherwise the shrug stands.
 			if d2.Operation != "DONE" || acceptTerminal(d2) {
 				return d2, snap2, tools2
 			}
+			return d, snap, tools
+		}
+		if d2.Operation != "BLOCKED" || d2.Confidence > d.Confidence {
+			return d2, snap2, tools2
 		}
 	}
 	return d, snap, tools
