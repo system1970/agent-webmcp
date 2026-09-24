@@ -20,12 +20,16 @@ export default function CodemodePage() {
       </p>
       <h2 className="mt-8 text-xl font-medium text-ink">1. Search the catalog</h2>
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        The catalog is partial by design. Query it with plain words and copy
-        the returned path and schema verbatim. Never guess a tool name.
+        The catalog is partial by design. Start global, no session needed —
+        every registered tool across all hosts. Then confirm the exact schema
+        against a live session before writing the program. Copy paths and
+        schemas verbatim. Never guess a tool name.
       </p>
       <CodeBlock
-        code={`agent-webmcp list --session work --query "page text" --json
-# → [{path: "tools.dummy_page_title", description, kind, required, schema}]`}
+        code={`agent-webmcp tools list --query "startup listing" --json
+# → [{path: "tools.tinystartups_search", kind, hosts, required, verified}]
+agent-webmcp list --session work --query "catalog" --json
+# → exact live schema for the session's tools`}
       />
       <h2 className="mt-8 text-xl font-medium text-ink">2. Write one program</h2>
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
