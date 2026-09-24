@@ -460,6 +460,64 @@ func injectVerifiedForURL(ctx context.Context, session, wsURL, pageURL string, t
 	return injectCustomTools(ctx, session, wsURL, matched, timeout)
 }
 
+// registrySearch matches terms (AND) against name + description +
+// hosts across the whole registry. Stored descriptors only: exact
+// live schemas still come from session list at use time.
+func registrySearch(g *globals, tools []toolMeta, q string) int {
+	terms := strings.Fields(strings.ToLower(strings.TrimSpace(q)))
+	type hit struct {
+		Path        string   `json:"path"`
+		Description string   `json:"description"`
+		Kind        string   `json:"kind"`
+		Hosts       []string `json:"hosts"`
+		Required    []string `json:"required"`
+		Verified    bool     `json:"verified"`
+	}
+	var hits []hit
+	for _, m := range tools {
+		kind := m.Kind
+		if kind == "" {
+			kind = "page"
+		}
+		desc := m.Desc
+		hay := strings.ToLower(m.Name + " " + desc + " " + strings.Join(m.Hosts, " "))
+		ok := true
+		for _, term := range terms {
+			if !strings.Contains(hay, term) {
+				ok = false
+				break
+			}
+		}
+		if !ok {
+			continue
+		}
+		req := m.Params
+		if req == nil {
+			req = []string{}
+		}
+		hits = append(hits, hit{Path: "tools." + m.Name, Description: desc, Kind: kind, Hosts: m.Hosts, Required: req, Verified: m.Verified})
+	}
+	if hits == nil {
+		hits = []hit{}
+	}
+	if g.json {
+		ok(map[string]any{"items": hits, "remaining": 0})
+		return 0
+	}
+	if len(hits) == 0 {
+		fmt.Println("no registered tools match")
+		return 0
+	}
+	for _, h := range hits {
+		mark := ""
+		if h.Verified {
+			mark = "  [verified]"
+		}
+		fmt.Printf("tools.%s (%s, %s)%s\n  %s\n", strings.TrimPrefix(h.Path, "tools."), h.Kind, strings.Join(h.Hosts, ","), mark, h.Description)
+	}
+	return 0
+}
+
 func toolsCmd(ctx context.Context, g *globals, rest []string) int {
 	if len(rest) == 0 {
 		return fail("usage", "usage: agent-webmcp tools <add|list|load|remove|verify> ...")
@@ -470,6 +528,13 @@ func toolsCmd(ctx context.Context, g *globals, rest []string) int {
 		tools, err := loadCustomTools()
 		if err != nil {
 			return failErr("tools_failed", err)
+		}
+		// --query is the global catalog search: every registered tool
+		// across all hosts, no session needed. Native site tools are
+		// per-page registrations and stay session-scoped (list --query).
+		if _, hasQ := verbFlag(rest, "query"); hasQ {
+			q, _ := verbFlag(rest, "query")
+			return registrySearch(g, tools, q)
 		}
 		if g.json {
 			if tools == nil {
@@ -537,6 +602,19 @@ func toolsCmd(ctx context.Context, g *globals, rest []string) int {
 			return failErr("tools_failed", err)
 		}
 		meta := toolMeta{Name: name, Hosts: hosts, File: jsName, Added: time.Now().UTC().Format(time.RFC3339)}
+		// Stored descriptors make page tools globally searchable
+		// (tools list --query) without a live page. Exact schemas
+		// still come from session list at use time.
+		if desc, ok := verbFlag(rest, "desc"); ok {
+			meta.Desc = strings.TrimSpace(desc)
+		}
+		if fields, ok := verbFlag(rest, "fields"); ok {
+			for _, f := range strings.Split(fields, ",") {
+				if f = strings.TrimSpace(f); f != "" {
+					meta.Params = append(meta.Params, f)
+				}
+			}
+		}
 		mb, _ := json.MarshalIndent(meta, "", "  ")
 		if err := os.WriteFile(filepath.Join(toolsRoot(), name+".json"), mb, 0o644); err != nil {
 			return failErr("tools_failed", err)

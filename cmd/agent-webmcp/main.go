@@ -28,6 +28,7 @@ usage:
   agent-webmcp run --goal ".." [--session NAME] [--max-steps N] [--json]
   agent-webmcp auth <probe|handoff> [--session NAME] [--json]
   agent-webmcp tools <add|list|load|remove|verify> [--session NAME] [--json]
+  agent-webmcp tools list --query <terms> [--json]
   agent-webmcp tools add --goal "..{{param}}.." --for HOST --name NAME --fields "a,b" [--fill a] [--confirm]
   agent-webmcp close [--session NAME | --all]
   agent-webmcp sessions [--json]
