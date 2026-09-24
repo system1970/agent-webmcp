@@ -20,6 +20,7 @@ usage:
   agent-webmcp list [--session NAME] [--json]
   agent-webmcp invoke <tool> [--params JSON|@file] [--frame ID] [--session NAME] [--json]
   agent-webmcp execute --program @file|<js> [--session NAME] [--max-calls N] [--json]
+  agent-webmcp search <terms> [--session NAME] [--namespace HOST] [--limit N] [--offset N] [--json]
   agent-webmcp eval <js|@file> [--session NAME] [--json]
   agent-webmcp observe [--session NAME] [--json]
   agent-webmcp decide --goal ".." [--session NAME] [--json]
@@ -38,22 +39,24 @@ usage:
 }
 
 type globals struct {
-	session   string
-	profile   string
-	json      bool
-	chrome    string
-	headed    bool
-	timeoutMs int
-	all       bool
-	params    string
-	frame     string
-	text      string
+	session    string
+	sessionSet bool
+	profile    string
+	json       bool
+	chrome     string
+	headed     bool
+	timeoutMs  int
+	all        bool
+	params     string
+	frame      string
+	text       string
 }
 
 func parseGlobals(args []string) (globals, []string) {
 	g := globals{session: "default", timeoutMs: 30000}
 	if v := os.Getenv("AGENT_WEBMCP_SESSION"); v != "" {
 		g.session = v
+		g.sessionSet = true
 	}
 	var rest []string
 	for i := 0; i < len(args); i++ {
@@ -63,9 +66,11 @@ func parseGlobals(args []string) (globals, []string) {
 			if i+1 < len(args) {
 				i++
 				g.session = args[i]
+				g.sessionSet = true
 			}
 		case strings.HasPrefix(a, "--session="):
 			g.session = strings.TrimPrefix(a, "--session=")
+			g.sessionSet = true
 		case a == "--profile":
 			if i+1 < len(args) {
 				i++
@@ -413,6 +418,8 @@ func run(args []string) int {
 		return 0
 	case "execute":
 		return executeCmd(ctx, &g, rest)
+	case "search":
+		return searchCmd(ctx, &g, rest)
 	case "eval":
 		return evalCmd(ctx, &g, rest)
 	case "observe":
