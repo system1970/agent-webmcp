@@ -19,6 +19,7 @@ usage:
   agent-webmcp crawl <url> [--session NAME] [--json]
   agent-webmcp list [--session NAME] [--json]
   agent-webmcp invoke <tool> [--params JSON|@file] [--frame ID] [--session NAME] [--json]
+  agent-webmcp execute --program @file|<js> [--session NAME] [--max-calls N] [--json]
   agent-webmcp eval <js|@file> [--session NAME] [--json]
   agent-webmcp observe [--session NAME] [--json]
   agent-webmcp decide --goal ".." [--session NAME] [--json]
@@ -302,6 +303,53 @@ func run(args []string) int {
 			for _, m := range loopMatched {
 				loopNames = append(loopNames, m.Name)
 			}
+			// --query is the catalog search primitive: space-separated
+			// terms, ANDed, matched as substrings over name +
+			// description. Exact callable signatures back.
+			// Search first, copy path + schema verbatim, never guess.
+			if q, hasQ := verbFlag(rest, "query"); hasQ {
+				terms := strings.Fields(strings.ToLower(strings.TrimSpace(q)))
+				matches := func(hay string) bool {
+					hay = strings.ToLower(hay)
+					for _, term := range terms {
+						if !strings.Contains(hay, term) {
+							return false
+						}
+					}
+					return true
+				}
+				type sig struct {
+					Path        string         `json:"path"`
+					Description string         `json:"description"`
+					Kind        string         `json:"kind"`
+					Required    []string       `json:"required"`
+					Schema      map[string]any `json:"schema,omitempty"`
+				}
+				var hits []sig
+				for _, tl := range tools {
+					if matches(tl.Name + " " + tl.Description) {
+						kind := "native"
+						if custom[tl.Name] {
+							kind = "custom"
+						}
+						hits = append(hits, sig{Path: "tools." + tl.Name, Description: firstLine(tl.Description), Kind: kind, Required: webmcpRequired(tl.InputSchema), Schema: tl.InputSchema})
+					}
+				}
+				for _, m := range loopMatched {
+					desc := m.Desc
+					if desc == "" {
+						desc = "loop tool (bounded Jev run)"
+					}
+					if matches(m.Name + " " + desc) {
+						hits = append(hits, sig{Path: "tools." + m.Name, Description: firstLine(desc), Kind: "loop", Required: m.Params})
+					}
+				}
+				if hits == nil {
+					hits = []sig{}
+				}
+				ok(map[string]any{"session": g.session, "url": t.URL, "items": hits, "remaining": 0})
+				return 0
+			}
 			ok(map[string]any{"session": g.session, "url": t.URL, "tools": tools, "custom": names, "loop": loopNames})
 			return 0
 		}
@@ -362,6 +410,8 @@ func run(args []string) int {
 		}
 		fmt.Println(string(raw))
 		return 0
+	case "execute":
+		return executeCmd(ctx, &g, rest)
 	case "eval":
 		return evalCmd(ctx, &g, rest)
 	case "observe":
