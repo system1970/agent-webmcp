@@ -25,6 +25,7 @@ export const docsNavigation: DocsNavSection[] = [
       { name: "Commands", href: "/docs/commands" },
       { name: "Custom tools", href: "/docs/custom-tools" },
       { name: "Jev loop", href: "/docs/jev-loop" },
+      { name: "Codemode", href: "/docs/codemode" },
       { name: "Troubleshooting", href: "/docs/troubleshooting" },
     ],
   },

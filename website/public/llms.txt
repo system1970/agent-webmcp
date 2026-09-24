@@ -27,6 +27,11 @@ One static Go binary that drives real Chrome over CDP as a typed tool bridge.
   judge navigates, code certifies. Unverified tools never auto-inject.
 - **Jev ultrafast loop** (needs `TYPESAFE_API_KEY`): `decide`, `act`, `tick`,
   `run` — autonomous bounded goals at machine speed.
+- **Codemode**: `list --query` searches the session catalog (exact
+  signatures back, search first, never guess), `execute --program @file`
+  runs one JS program over those tools with `batch()` fan-out and one
+  compact envelope back. Tools only, no fetch/fs/timers; explicit
+  `return` required.
 
 ## Operating rules
 
