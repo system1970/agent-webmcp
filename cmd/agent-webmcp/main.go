@@ -21,6 +21,7 @@ usage:
   agent-webmcp invoke <tool> [--params JSON|@file] [--frame ID] [--session NAME] [--json]
   agent-webmcp execute --program @file|<js> [--session NAME] [--max-calls N] [--json]
   agent-webmcp search <terms> [--session NAME] [--namespace HOST] [--limit N] [--offset N] [--json]
+  agent-webmcp mcp [--tools core|all]
   agent-webmcp eval <js|@file> [--session NAME] [--json]
   agent-webmcp observe [--session NAME] [--json]
   agent-webmcp decide --goal ".." [--session NAME] [--json]
@@ -438,6 +439,8 @@ func run(args []string) int {
 		return authCmd(ctx, &g, rest)
 	case "tools":
 		return toolsCmd(ctx, &g, rest)
+	case "mcp":
+		return mcpCmd(ctx, &g, rest)
 	default:
 		usage()
 		return 2
