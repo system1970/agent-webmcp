@@ -11,6 +11,8 @@ list [--session NAME] [--json]
 invoke <tool> [--params JSON|@file] [--frame ID] [--session NAME] [--json]
 eval <js|@file> [--session NAME] [--json]
 observe [--session NAME] [--json]
+search <terms> [--session NAME] [--namespace HOST] [--limit N] [--offset N] [--json]
+execute --program @file|<js> [--session NAME] [--max-calls N] [--json]
 tools <add|list|load|remove|verify> [--session NAME] [--json]
 close [--session NAME | --all]
 sessions [--json]
@@ -57,6 +59,13 @@ export default function CommandsPage() {
           <code className="font-mono text-[13px] text-ink">[custom]</code>, or{" "}
           <code className="font-mono text-[13px] text-ink">[loop]</code>. Ours
           never masquerade as the site&apos;s.
+        </li>
+        <li>
+          <code className="font-mono text-[13px] text-ink">search</code>{" "}
+          ranks the tool catalog (global without a session, live tools with
+          one);{" "}
+          <code className="font-mono text-[13px] text-ink">execute</code> runs
+          sandboxed programs that compose them. See Codemode.
         </li>
         <li>
           <code className="font-mono text-[13px] text-ink">close --all</code>{" "}
