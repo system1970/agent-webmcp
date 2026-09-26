@@ -17,14 +17,8 @@ export default function InstallationPage() {
       </p>
       <h2 className="mt-8 text-xl font-medium text-ink">Install the binary</h2>
       <CodeBlock
-        code={`# Windows PowerShell
-irm https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.ps1 | iex
-
-# macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.sh | sh
-
-# Or with Go (no installer needed)
-go install github.com/system1970/agent-webmcp@v0.4.0`}
+        code={`# With Go
+go install github.com/system1970/agent-webmcp/cmd/agent-webmcp@latest`}
       />
       <h2 className="mt-8 text-xl font-medium text-ink">Confirm the version</h2>
       <CodeBlock code={`agent-webmcp version\n# expect: agent-webmcp 0.4.0`} />

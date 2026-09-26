@@ -54,8 +54,13 @@ export default function JevLoopPage() {
         the calling agent&apos;s flags or a small text model under strict
         contract; a missing value returns{" "}
         <code className="font-mono text-[13px] text-ink">text_needed</code>{" "}
-        instead of a guess.
+        instead of a guess. Tool arguments work the same way: page-tool
+        invocations with required schema fields and no{" "}
+        <code className="font-mono text-[13px] text-ink">--params</code> stop
+        with <code className="font-mono text-[13px] text-ink">args_needed</code>.
       </p>
+      <CodeBlock code={`agent-webmcp tick --goal "Search for AI startups" --session work --text "AI" --json
+agent-webmcp act --session work --params '{"query":"AI"}' --json   # after a decide that picked INVOKE`} />
       <CodeBlock code={`export TYPESAFE_API_KEY="..."   # BYOK: never bundled, never logged\nagent-webmcp run --goal "Open the revenue board" --session work --max-steps 8 --json`} />
     </article>
   );
