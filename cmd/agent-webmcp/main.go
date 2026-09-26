@@ -211,21 +211,28 @@ func run(args []string) int {
 		return 0
 	case "sessions", "session":
 		type row struct {
-			Name string `json:"name"`
-			Live bool   `json:"live"`
-			Port int    `json:"port,omitempty"`
-			URL  string `json:"url,omitempty"`
+			Name     string `json:"name"`
+			Live     bool   `json:"live"`
+			Port     int    `json:"port,omitempty"`
+			URL      string `json:"url,omitempty"`
+			Profile  string `json:"profile,omitempty"`
+			Headed   bool   `json:"headed,omitempty"`
+			DeadBind bool   `json:"dead_binding,omitempty"`
 		}
 		var rows []row
 		for _, name := range mustSessionNames() {
 			r := row{Name: name}
 			if prof, _, berr := readTargetBinding(name); berr == nil {
+				r.Profile = prof
+				r.Headed = profileHeaded(prof)
 				if port, perr := profilePort(prof); perr == nil {
 					r.Port = port
 				}
 			}
 			if t, err := sessionTarget(name, 10*time.Second); err == nil {
 				r.Live, r.URL = true, t.URL
+			} else if r.Profile != "" {
+				r.DeadBind = true
 			}
 			rows = append(rows, r)
 		}
@@ -244,6 +251,8 @@ func run(args []string) int {
 			state := "dead"
 			if r.Live {
 				state = "live"
+			} else if r.DeadBind {
+				state = "dead (re-open to rebind)"
 			}
 			fmt.Printf("%s  %s  %s\n", r.Name, state, r.URL)
 		}
@@ -267,7 +276,8 @@ func run(args []string) int {
 			}
 		}
 		if g.json {
-			ok(map[string]any{"session": g.session, "profile": profile, "tabs": pages, "url": t.URL})
+			ok(map[string]any{"session": g.session, "profile": profile, "tabs": pages, "url": t.URL,
+				"headed": profileHeaded(profile), "customTools": len(customToolNames(g.session))})
 			return 0
 		}
 		fmt.Printf("session=%s profile=%s tabs=%d url=%s\n", g.session, profile, pages, t.URL)
