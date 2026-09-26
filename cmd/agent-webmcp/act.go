@@ -340,6 +340,9 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 	if err != nil {
 		return fail("no_page", err)
 	}
+	// Human display prefixes ids with @ (observe prints @e1); the wire
+	// format is bare (e1). Accept both here so pasted targets work.
+	d.Target = normalizeTarget(d.Target)
 	switch d.Operation {
 	case "DONE", "BLOCKED":
 		// Terminal claims need a fresh page: a DONE decided on stale
@@ -548,6 +551,12 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 
 // actSelect sets a native dropdown by observed option value. Uncertain
 // mutation results stop instead of retrying as stale reads.
+// normalizeTarget strips the human-display @ prefix (observe prints
+// @e1); the wire format stays bare (e1). Tool names pass through.
+func normalizeTarget(t string) string {
+	return strings.TrimPrefix(t, "@")
+}
+
 func actSelect(ctx context.Context, session, wsURL string, action *snapAction, timeout time.Duration, run string) (map[string]any, string, error) {
 	expr := `(node => {
   const e = window.__jevFast && window.__jevFast.nodes.get(node);
