@@ -17,6 +17,8 @@ tools <add|list|load|remove|verify> [--session NAME] [--json]
 close [--session NAME | --all]
 sessions [--json]
 status [--session NAME] [--json]
+mcp [--tools core|all]
+doctor [--json]
 version`;
 
 const PAID = `decide --goal ".." [--session NAME] [--json]
@@ -105,9 +107,45 @@ export default function CommandsPage() {
           senses the gate without touching it.{" "}
           <code className="font-mono text-[13px] text-ink">auth handoff</code>{" "}
           opens a headed window where you type the password yourself; the
-          secret never enters model context, logs, or tool state.
+          secret never enters model context, logs, or tool state.{" "}
+          <code className="font-mono text-[13px] text-ink">auth save/login</code>{" "}
+          keeps sealed logins machine-local instead.
         </li>
       </ul>
+      <h2 className="mt-8 text-xl font-medium text-ink">
+        Machine surfaces
+      </h2>
+      <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
+        <li>
+          <code className="font-mono text-[13px] text-ink">mcp</code> serves
+          the bridge over stdio JSON-RPC (core profile: open, list, invoke,
+          observe, close). Same internals as the CLI, so the surfaces cannot
+          drift.
+        </li>
+        <li>
+          <code className="font-mono text-[13px] text-ink">doctor</code>{" "}
+          checks version, Chrome, sessions, key presence, registry, vault,
+          and one live open. Exit 0 all-pass, 1 any fail.
+        </li>
+      </ul>
+      <h2 className="mt-8 text-xl font-medium text-ink">
+        Output contracts
+      </h2>
+      <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        With <code className="font-mono text-[13px] text-ink">--json</code>{" "}
+        every verb returns{" "}
+        <code className="font-mono text-[13px] text-ink">{"{ok, data}"}</code>{" "}
+        or{" "}
+        <code className="font-mono text-[13px] text-ink">{"{ok: false, code, error}"}</code>.
+        The data keys: open (session, url, port, headed, reused, customTools,
+        nativeTools), list (tools with provenance), observe (url, title,
+        text, count, elements, fingerprint), search (items, remaining, next),
+        execute (result, tool_calls), tick (operation, target, executed,
+        page_changed, confidence, url), run (status, steps, reason, goal),
+        sessions (name, live, url, profile, headed, dead_binding), doctor
+        (checks, pass). Text output is the compact human rendering of the
+        same data.
+      </p>
     </article>
   );
 }

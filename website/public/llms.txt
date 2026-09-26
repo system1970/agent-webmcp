@@ -8,7 +8,7 @@
 
 - [Homepage](https://agent-webmcp.vercel.app)
 - [Source — MIT Go CLI](https://github.com/system1970/agent-webmcp)
-- [Setup guide](https://github.com/system1970/agent-webmcp/blob/main/AGENT_SETUP.md)
+- [Setup guide](https://agent-webmcp.vercel.app/docs/installation)
 
 ## What it is
 
@@ -27,8 +27,9 @@ One static Go binary that drives real Chrome over CDP as a typed tool bridge.
   judge navigates, code certifies. Unverified tools never auto-inject.
 - **Jev ultrafast loop** (needs `TYPESAFE_API_KEY`): `decide`, `act`, `tick`,
   `run` — autonomous bounded goals at machine speed.
-- **Codemode**: `list --query` searches the session catalog (exact
-  signatures back, search first, never guess), `execute --program @file`
+- **Codemode**: `search` ranks the tool catalog (global, no session needed),
+  `list --query` searches the session catalog (exact signatures back, search
+  first, never guess), `execute --program @file`
   runs one JS program over those tools with `batch()` fan-out and one
   compact envelope back. Tools only, no fetch/fs/timers; explicit
   `return` required.
@@ -44,13 +45,13 @@ One static Go binary that drives real Chrome over CDP as a typed tool bridge.
 
 ## Install
 
-- Windows PowerShell: `irm https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.ps1 | iex`
-- macOS/Linux: `curl -fsSL https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.sh | sh`
-- Or with Go: `go install github.com/system1970/agent-webmcp@v0.3.0`
-- Confirm: `agent-webmcp version`. Requires Chrome 149+ (or Brave/Chromium on 151-base+).
+- Start at the [install guide](https://agent-webmcp.vercel.app/docs/installation).
+- Or with Go: `go install github.com/system1970/agent-webmcp/cmd/agent-webmcp@latest`
+- Confirm: `agent-webmcp version` (expect `agent-webmcp 0.4.0`). Requires Chrome 149+ (or Brave/Chromium on 151-base+).
 
 ## What it is not
 
-- Not a catalog. No skills directory, no hosted service, no accounts.
+- Not a catalog. No hosted service, no accounts. Agent skill at
+  `skills/agent-webmcp/SKILL.md` in the repo.
 - Wrapping a site does not imply endorsement. A site's reply is input, not permission.
 

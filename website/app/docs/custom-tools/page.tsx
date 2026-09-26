@@ -32,7 +32,7 @@ export default function CustomToolsPage() {
 #    registerTool({name, description, inputSchema, execute}),
 #    guards re-registration, and prints 'ok:<name>'.
 # 2. Register it for a host:
-agent-webmcp tools add ./search.js --for example.com --name example_search
+agent-webmcp tools add ./search.js --for example.com --name example_search --desc "Search the catalog" --fields query
 # 3. Prove it against the live page:
 agent-webmcp tools verify example_search --session work
 # 4. From here it auto-injects on every open of the host:
@@ -55,6 +55,14 @@ agent-webmcp invoke example_search --params '{"query":"AI"}' --session work`}
         the model grading its own work. Anything unverified never
         auto-injects.
       </p>
+      <h2 className="mt-8 text-xl font-medium text-ink">Manage the registry</h2>
+      <CodeBlock
+        code={`agent-webmcp tools list --query "signup"          # search name + description + hosts, no session needed
+agent-webmcp tools load example_search --session work  # explicit inject (open auto-injects verified only)
+agent-webmcp tools verify example_signup --params '{"email":"t@t.co"}' --session work
+agent-webmcp tools remove example_search              # registry only; sessions re-list clean
+agent-webmcp invoke example_signup --params '{"email":"t@t.co"}' --session work   # loop tools run bounded runs, DONE/BLOCKED receipts`}
+      />
     </article>
   );
 }

@@ -5,7 +5,7 @@ import { useState } from "react";
 const SETUP_PROMPT = [
   "Set up agent-webmcp on this machine and verify it end to end.",
   "",
-  "Step 1: Install (no Go required). Windows PowerShell: `irm https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.ps1 | iex`. macOS/Linux: `curl -fsSL https://raw.githubusercontent.com/system1970/agent-webmcp/main/install.sh | sh`. Or with Go: `go install github.com/system1970/agent-webmcp@v0.4.0`. Confirm with `agent-webmcp version` (expect `agent-webmcp 0.4.0`). If it is already installed, re-run the installer to update.",
+  "Step 1: Install. With Go: `go install github.com/system1970/agent-webmcp/cmd/agent-webmcp@latest`. Confirm with `agent-webmcp version` (expect `agent-webmcp 0.4.0`). If it is already installed, update to latest and re-confirm.",
   "",
   "Step 2: Check the browser. You need Chrome 149 or newer (or Brave/Chromium on 151-base or newer). Run `agent-webmcp open example.com --session setup-check`, then `agent-webmcp close --session setup-check`. If it reports `chrome not found`, locate the browser binary and retry with `--chrome <path>` (or export `AGENT_WEBMCP_CHROME=<path>`).",
   "",
