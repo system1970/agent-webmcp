@@ -22,6 +22,7 @@ usage:
   agent-webmcp execute --program @file|<js> [--session NAME] [--max-calls N] [--json]
   agent-webmcp search <terms> [--session NAME] [--namespace HOST] [--limit N] [--offset N] [--json]
   agent-webmcp mcp [--tools core|all]
+  agent-webmcp doctor [--json]
   agent-webmcp eval <js|@file> [--session NAME] [--json]
   agent-webmcp observe [--session NAME] [--json]
   agent-webmcp decide --goal ".." [--session NAME] [--json]
@@ -174,16 +175,30 @@ func run(args []string) int {
 		// Auto-inject verified custom tools for the mapped site.
 		// Best-effort: an injection failure never fails the open.
 		var injected []string
+		var natives []string
 		if t, terr := sessionTarget(g.session, 15*time.Second); terr == nil {
 			injected, _ = injectVerifiedForURL(ctx, g.session, t.WebSocketDebuggerURL, t.URL, 15*time.Second)
+			// Announce native page tools by name only (cap 16, descriptions
+			// stay on `list`): the catalog changing under you is signal.
+			if listed, _, lerr := listWebMCP(ctx, t.WebSocketDebuggerURL, 15*time.Second); lerr == nil {
+				for i, tl := range listed {
+					if i >= 16 {
+						break
+					}
+					natives = append(natives, tl.Name)
+				}
+			}
 		}
 		if g.json {
-			ok(map[string]any{"session": r.Session, "profile": r.Profile, "url": r.URL, "port": r.Port, "headed": r.Headed, "reused": r.Reused, "customTools": injected})
+			ok(map[string]any{"session": r.Session, "profile": r.Profile, "url": r.URL, "port": r.Port, "headed": r.Headed, "reused": r.Reused, "customTools": injected, "nativeTools": natives})
 			return 0
 		}
 		fmt.Printf("session=%s port=%d url=%s\n", r.Session, r.Port, r.URL)
 		if len(injected) > 0 {
 			fmt.Printf("custom tools: injected %d tool(s)\n", len(injected))
+		}
+		if len(natives) > 0 {
+			fmt.Printf("page tools: %s\n", strings.Join(natives, ", "))
 		}
 		return 0
 	case "close", "quit", "exit":
@@ -451,6 +466,8 @@ func run(args []string) int {
 		return toolsCmd(ctx, &g, rest)
 	case "mcp":
 		return mcpCmd(ctx, &g, rest)
+	case "doctor":
+		return doctorCmd(ctx, &g, rest)
 	default:
 		usage()
 		return 2
