@@ -134,15 +134,24 @@ func finishAuthRequired(g *globals, goal string, steps int, pageURL string) int 
 
 func authCmd(ctx context.Context, g *globals, rest []string) int {
 	if len(rest) == 0 {
-		return fail("usage", "usage: agent-webmcp auth <probe|handoff> [--session NAME] [--json]")
+		return fail("usage", "usage: agent-webmcp auth <probe|handoff|save|login|list|show|delete> [--session NAME] [--json]")
 	}
 	switch rest[0] {
 	case "probe":
 		return authProbeCmd(ctx, g, rest[1:])
-	case "handoff", "login":
+	case "handoff":
 		return authHandoffCmd(ctx, g, rest[1:])
+	case "login":
+		// Bare `auth login` is the headed handoff alias; `auth login
+		// <name>` is the vault login (profile name, not a flag).
+		if len(rest) > 1 && !strings.HasPrefix(rest[1], "-") {
+			return authVaultLoginCmd(ctx, g, rest[1:])
+		}
+		return authHandoffCmd(ctx, g, rest[1:])
+	case "save", "list", "show", "delete":
+		return authVaultCmd(g, rest)
 	default:
-		return fail("usage", "usage: agent-webmcp auth <probe|handoff> [--session NAME] [--json]")
+		return fail("usage", "usage: agent-webmcp auth <probe|handoff|save|login|list|show|delete> [--session NAME] [--json]")
 	}
 }
 
