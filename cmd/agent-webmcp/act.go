@@ -151,7 +151,7 @@ func appendExecuted(session, run string, entry map[string]any) {
 		entry["run"] = run
 	}
 	b, _ := json.Marshal(entry)
-	f, err := os.OpenFile(decisionsPath(session), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(decisionsPath(session), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}
@@ -389,8 +389,8 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 		if json.Unmarshal(raw, &js) == nil {
 			val = js
 		}
-		appendExecuted(session, run, map[string]any{"operation": "INVOKE", "target": d.Target})
-		return map[string]any{"operation": "INVOKE", "target": d.Target, "executed": true, "result": val}, "", nil
+		appendExecuted(session, run, map[string]any{"operation": "INVOKE", "target": d.Target, "untrusted": true})
+		return map[string]any{"operation": "INVOKE", "target": d.Target, "executed": true, "result": val, "untrusted": true}, "", nil
 	}
 	var action *snapAction
 	for i := range saved.Actions {

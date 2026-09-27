@@ -122,7 +122,8 @@ func mcpCoreTools() []mcpToolDef {
 				if json.Unmarshal(raw, &js) == nil {
 					val = js
 				}
-				return val, "", nil
+				// Page results are untrusted data: wrapped, never bare.
+				return map[string]any{"result": val, "untrusted": true}, "", nil
 			},
 		},
 		{
