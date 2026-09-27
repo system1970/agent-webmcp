@@ -36,19 +36,20 @@ func snapshotPath(session string) string {
 }
 
 func saveDecision(session string, d *decision, snap *snapshot, tools []WebMCPTool, goal, run string) {
-	_ = os.MkdirAll(sessionDir(session), 0o755)
+	// Evidence holds field values: locked to owner-only on write.
+	_ = os.MkdirAll(sessionDir(session), 0o700)
 	rec := map[string]any{"kind": "decision", "goal": goal, "decision": d}
 	if run != "" {
 		rec["run"] = run
 	}
 	b, _ := json.Marshal(rec)
-	f, err := os.OpenFile(decisionsPath(session), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(decisionsPath(session), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err == nil {
 		_, _ = f.Write(append(b, '\n'))
 		f.Close()
 	}
 	sb, _ := json.Marshal(map[string]any{"goal": goal, "decision": d, "snapshot": snap, "tools": tools})
-	_ = os.WriteFile(snapshotPath(session), sb, 0o644)
+	_ = os.WriteFile(snapshotPath(session), sb, 0o600)
 }
 
 func opsForKind(kind string) string {

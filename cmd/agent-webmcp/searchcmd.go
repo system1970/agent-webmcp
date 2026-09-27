@@ -275,6 +275,8 @@ func searchCmd(ctx context.Context, g *globals, rest []string) int {
 		data := map[string]any{"items": items, "remaining": remaining, "next": next}
 		if pageURL != "" {
 			data["url"] = pageURL
+			// Live session tools carry page-authored descriptions.
+			data["untrusted"] = true
 		}
 		ok(data)
 		return 0

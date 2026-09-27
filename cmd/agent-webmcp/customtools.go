@@ -317,9 +317,9 @@ func recordCustomTools(session string, names []string) {
 	for n := range seen {
 		merged = append(merged, n)
 	}
-	_ = os.MkdirAll(sessionDir(session), 0o755)
+	_ = os.MkdirAll(sessionDir(session), 0o700)
 	b, _ := json.Marshal(merged)
-	_ = os.WriteFile(customToolsPath(session), b, 0o644)
+	_ = os.WriteFile(customToolsPath(session), b, 0o600)
 }
 
 func customToolNames(session string) map[string]bool {

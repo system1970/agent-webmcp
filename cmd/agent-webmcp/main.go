@@ -379,10 +379,10 @@ func run(args []string) int {
 				if hits == nil {
 					hits = []sig{}
 				}
-				ok(map[string]any{"session": g.session, "url": t.URL, "items": hits, "remaining": 0})
+				ok(map[string]any{"session": g.session, "url": t.URL, "items": hits, "remaining": 0, "untrusted": true})
 				return 0
 			}
-			ok(map[string]any{"session": g.session, "url": t.URL, "tools": tools, "custom": names, "loop": loopNames})
+			ok(map[string]any{"session": g.session, "url": t.URL, "tools": tools, "custom": names, "loop": loopNames, "untrusted": true})
 			return 0
 		}
 		if len(tools) == 0 && len(loopMatched) == 0 {
@@ -437,7 +437,7 @@ func run(args []string) int {
 			val = js
 		}
 		if g.json {
-			ok(map[string]any{"tool": tool, "result": val})
+			ok(map[string]any{"tool": tool, "result": val, "untrusted": true})
 			return 0
 		}
 		fmt.Println(string(raw))

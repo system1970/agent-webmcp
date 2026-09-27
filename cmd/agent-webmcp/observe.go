@@ -200,8 +200,8 @@ func scanCacheSave(session, url string, snap *snapshot) {
 			"fid": a.FID, "ph": a.PH, "nm": a.NM, "href": a.Href})
 	}
 	b, _ := json.Marshal(map[string]any{"url": url, "items": items})
-	_ = os.MkdirAll(sessionDir(session), 0o755)
-	_ = os.WriteFile(scanCachePath(session), b, 0o644)
+	_ = os.MkdirAll(sessionDir(session), 0o700)
+	_ = os.WriteFile(scanCachePath(session), b, 0o600)
 }
 
 func captureSnapshot(ctx context.Context, session string, timeout time.Duration) (*snapshot, string, error) {
@@ -235,7 +235,7 @@ func observeCmd(ctx context.Context, g *globals, rest []string) int {
 		ok(map[string]any{
 			"session": g.session, "url": snap.URL, "title": snap.Title,
 			"text": snap.Text, "count": len(snap.Actions),
-			"elements": els, "fingerprint": fp,
+			"elements": els, "fingerprint": fp, "untrusted": true,
 		})
 		return 0
 	}
