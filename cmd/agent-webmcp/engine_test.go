@@ -316,6 +316,38 @@ func TestHostAllowed(t *testing.T) {
 	}
 }
 
+// A page mid-navigation returns no document. That must read as what it is, not
+// as a JSON parse error: the loop re-observes right after a click, so this is
+// the normal state of a navigating page and the run is about to succeed.
+func TestSnapshotFromOutputNamesTheRealFailure(t *testing.T) {
+	for _, empty := range []string{"", "   ", "\n\t "} {
+		_, err := snapshotFromOutput(empty)
+		if err == nil {
+			t.Fatalf("empty output %q must be an error", empty)
+		}
+		if !strings.Contains(err.Error(), "page_navigating") {
+			t.Errorf("empty output must report page_navigating, got %v", err)
+		}
+		if strings.Contains(err.Error(), "unexpected end of JSON") {
+			t.Errorf("a navigating page must not surface a JSON parse error: %v", err)
+		}
+	}
+	// Real output must still parse.
+	snap, err := snapshotFromOutput(`{"url":"https://x.test","title":"T","actions":[{"id":"e1","kind":"click","label":"Go"}]}`)
+	if err != nil {
+		t.Fatalf("valid output must parse: %v", err)
+	}
+	if snap.URL != "https://x.test" || len(snap.Actions) != 1 {
+		t.Errorf("parsed snapshot is wrong: %+v", snap)
+	}
+	// Malformed output is still an error, and says which side is wrong.
+	if _, err := snapshotFromOutput("{not json"); err == nil {
+		t.Error("malformed output must be an error")
+	} else if !strings.Contains(err.Error(), "observe output") {
+		t.Errorf("malformed output must say so, got %v", err)
+	}
+}
+
 func TestCheckURLPolicy(t *testing.T) {
 	if err := checkURLPolicy("", "https://anything.test"); err != nil {
 		t.Errorf("empty allowlist must permit: %v", err)

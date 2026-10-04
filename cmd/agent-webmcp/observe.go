@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -204,6 +205,21 @@ func scanCacheSave(session, url string, snap *snapshot) {
 	_ = os.WriteFile(scanCachePath(session), b, 0o600)
 }
 
+// snapshotFromOutput parses an observeJS result. An empty string is its own
+// case with its own name: it means there was no document to read, which is
+// what a page looks like while it navigates. Letting json report "unexpected
+// end of JSON input" for that hides a transient state behind a parse error.
+func snapshotFromOutput(out string) (*snapshot, error) {
+	if strings.TrimSpace(out) == "" {
+		return nil, fmt.Errorf("page_navigating: no document to read yet")
+	}
+	var snap snapshot
+	if err := json.Unmarshal([]byte(out), &snap); err != nil {
+		return nil, fmt.Errorf("observe output is not a snapshot: %w", err)
+	}
+	return &snap, nil
+}
+
 func captureSnapshot(ctx context.Context, session string, timeout time.Duration) (*snapshot, string, error) {
 	// The run loop carries a live Lightpanda page (lploop.go). Reading it here
 	// is what lets decideOnce, actExecute and runLoop stay engine-agnostic.
@@ -218,15 +234,25 @@ func captureSnapshot(ctx context.Context, session string, timeout time.Duration)
 	if err != nil {
 		return nil, "", err
 	}
+	// An empty evaluate result means the document is being replaced. The loop
+	// re-observes immediately after a click, so this is the normal state of a
+	// page mid-navigation, not a failure. Wait for it to settle; reporting a
+	// JSON parse error here would fail a run that was about to succeed.
 	out, err := evalScript(ctx, t.WebSocketDebuggerURL, observeJS, timeout)
 	if err != nil {
 		return nil, "", err
 	}
-	var snap snapshot
-	if err := json.Unmarshal([]byte(out), &snap); err != nil {
+	for attempt := 0; attempt < 4 && strings.TrimSpace(out) == ""; attempt++ {
+		time.Sleep(250 * time.Millisecond)
+		if out, err = evalScript(ctx, t.WebSocketDebuggerURL, observeJS, timeout); err != nil {
+			return nil, "", err
+		}
+	}
+	snap, err := snapshotFromOutput(out)
+	if err != nil {
 		return nil, "", err
 	}
-	return &snap, fingerprintSnap(&snap), nil
+	return snap, fingerprintSnap(snap), nil
 }
 
 func observeCmd(ctx context.Context, g *globals, rest []string) int {
