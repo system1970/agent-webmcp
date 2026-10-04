@@ -348,6 +348,45 @@ func TestSnapshotFromOutputNamesTheRealFailure(t *testing.T) {
 	}
 }
 
+// The handoff must never report "logged in" for a page that has not rendered.
+// dash.cloudflare.com is a redirector: its own URL is not a login wall, so the
+// instant the window opens on it — before the redirect to the real sign-in page
+// lands — a wall check says "clear" and the handoff claims success on a session
+// that is anonymous. Observed live: "auth ok: dash.cloudflare.com logged in"
+// while the browser sat on accounts.google.com with login_wall true.
+func TestAuthPageSettled(t *testing.T) {
+	notSettled := map[string]*snapshot{
+		"nil":         nil,
+		"empty url":   {URL: "", Text: "Sign in"},
+		"about blank": {URL: "about:blank", Text: ""},
+		"data uri":    {URL: "data:text/html,<b>hi", Text: "Sign in"},
+		"no text":     {URL: "https://dash.cloudflare.com/", Text: ""},
+		"blank text":  {URL: "https://dash.cloudflare.com/", Text: "   \n\t "},
+	}
+	for name, snap := range notSettled {
+		if authPageSettled(snap) {
+			t.Errorf("%s must not count as settled: %+v", name, snap)
+		}
+	}
+	settled := []*snapshot{
+		{URL: "https://dash.cloudflare.com/", Text: "Cloudflare dashboard"},
+		{URL: "https://accounts.google.com/v3/signin/identifier", Text: "Choose an account"},
+	}
+	for _, snap := range settled {
+		if !authPageSettled(snap) {
+			t.Errorf("a rendered page must count as settled: %+v", snap)
+		}
+	}
+	// The two facts are independent: settled is not the same as logged in.
+	wall := &snapshot{URL: "https://accounts.google.com/v3/signin/identifier", Text: "Choose an account"}
+	if !authPageSettled(wall) {
+		t.Fatal("a rendered sign-in page must be settled")
+	}
+	if !detectLoginWall(wall.URL, wall.Text) {
+		t.Error("a settled google sign-in page must still read as a login wall")
+	}
+}
+
 func TestCheckURLPolicy(t *testing.T) {
 	if err := checkURLPolicy("", "https://anything.test"); err != nil {
 		t.Errorf("empty allowlist must permit: %v", err)
