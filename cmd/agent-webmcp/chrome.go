@@ -69,8 +69,15 @@ func chromeArgs(port int, profile string, headed bool) []string {
 	if extra := strings.Fields(os.Getenv("AGENT_WEBMCP_CHROME_FLAGS")); len(extra) > 0 {
 		args = append(args, extra...)
 	}
+	// A headed window opens at a usable size, not maximized. Somebody watching
+	// a browser being driven wants a window they can move and use alongside
+	// their own; taking the whole screen is hostile and hides what is behind
+	// it. The size is deliberately modest so it fits a small laptop screen
+	// without the compositor shrinking it to something unusable. Override with
+	// AGENT_WEBMCP_CHROME_FLAGS, which is appended above, so a later
+	// --window-size wins.
 	if headed {
-		args = append(args, "--start-maximized")
+		args = append(args, "--window-size=1000,700")
 	} else {
 		args = append(args, "--headless=new", "--hide-scrollbars", "--window-size=1440,900")
 	}

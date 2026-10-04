@@ -90,7 +90,12 @@ AGENT_WEBMCP_ALLOWED_DOMAINS=example.com agent-webmcp mcp`}
       <h2 className="mt-8 text-xl font-medium text-ink">Defaults that matter</h2>
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
         Per-call timeout 30s (<code className="font-mono text-[13px] text-ink">--timeout-ms</code>).
-        Headless 1440×900; headed starts maximized. Loops:{" "}
+        Headless 1440×900; headed opens a 1000×700 window you can move. Override
+        either with{" "}
+        <code className="font-mono text-[13px] text-ink">
+          AGENT_WEBMCP_CHROME_FLAGS
+        </code>
+        . Loops:{" "}
         <code className="font-mono text-[13px] text-ink">run</code> 30 steps
         (cap 60), loop tools 8 (cap 30), search 10 hits (cap 50), execute 10
         calls (cap 50). State lives under{" "}
