@@ -51,9 +51,19 @@ agent-webmcp run example.com --goal ".." --text ".." --engine lightpanda --execu
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
         Refused on lightpanda: <code>decide</code>, <code>act</code>,{" "}
         <code>tick</code> (use <code>run</code>), <code>list</code>,{" "}
-        <code>invoke</code>, <code>execute</code> (WebMCP page tools are not
-        verified there), <code>auth</code> (needs headed), <code>close</code>{" "}
-        (no profiles).
+        <code>invoke</code>, <code>execute</code>, <code>auth</code> (needs
+        headed), <code>close</code> (no profiles).
+      </p>
+      <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        WebMCP is refused there for a hard reason, not an untested one.
+        Lightpanda advertises a WebMCP protocol domain and its binary carries
+        the page API, so it looks available. The page never sees{" "}
+        <code>document.modelContext</code>, so no page can register a tool and{" "}
+        <code>invokeTool</code> has nothing to call. Verified on 1.1.0-nightly:{" "}
+        <code>document.modelContext</code> is undefined over http and https,{" "}
+        <code>invokeTool</code> returns <code>MissingField</code> for every field
+        name, and no flag turns it on. An <code>enable</code> that returns{" "}
+        <code>{"{}"}</code> is a domain accepting calls, not one that works.
       </p>
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
         The two engines offer the judge the same operations. Both hide password,

@@ -45,6 +45,14 @@ button are indistinguishable. `LP.getNodeDetails` per element carries the real
 `inputType`, the live `value`, `checked`, and a `<select>`'s `options`. The
 snapshot reads both. Never switch on the `type` field.
 
+**WebMCP does not exist on Lightpanda.** Its protocol advertises a WebMCP
+domain and its binary carries `browser.webapi.ModelContext`, so the surface
+looks real. It is not: the page never sees `document.modelContext`, so no page
+can register a tool and `invokeTool` has nothing to call. Verified on
+1.1.0-nightly — undefined over http and https, `MissingField` for every field
+name, no flag enables it. An `enable` returning `{}` is a domain accepting
+calls, not one that works. Do not spend time retrying it.
+
 ## Vocabulary (these words mean exactly this)
 
 - **verb**: a user intent with a name (`tinystartups_search`). Boundaries are
