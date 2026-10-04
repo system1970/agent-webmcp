@@ -163,12 +163,19 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 	if detectLoginWall(snap.URL, snap.Text) {
 		return fail("auth_required", fmt.Errorf("login wall at %s — one-time handoff: auth handoff --session %s --url %s", snap.URL, session, snap.URL))
 	}
-	t, err := sessionTarget(session, timeout)
-	if err != nil {
-		return fail("no_page", err)
+	// Page tools live in the page, so they need a page to read them from.
+	// Lightpanda has none: it exposes WebMCP.invokeTool but this CLI has not
+	// driven a site through it, and the engine gate says so. An empty tool set
+	// is the honest answer, and actLP refuses INVOKE to match.
+	var tools []WebMCPTool
+	if lpLoopFrom(ctx) == nil {
+		t, err := sessionTarget(session, timeout)
+		if err != nil {
+			return fail("no_page", err)
+		}
+		tools, _, _ = listWebMCP(ctx, t.WebSocketDebuggerURL, timeout)
+		tools = ensureCustomTools(ctx, session, t.WebSocketDebuggerURL, snap.URL, timeout, tools)
 	}
-	tools, _, _ := listWebMCP(ctx, t.WebSocketDebuggerURL, timeout)
-	tools = ensureCustomTools(ctx, session, t.WebSocketDebuggerURL, snap.URL, timeout, tools)
 	opIDs := map[string]bool{}
 	opCriteria := map[string]any{}
 	targets := map[string]map[string]bool{}

@@ -145,6 +145,25 @@ func readHistory(session string, n int, run string) []map[string]any {
 	return out
 }
 
+// checkFresh is the freshness gate: refuse to act on a page that moved since
+// the decision was made. Both engines call it, so the rule is written once.
+//
+// A changed fingerprint means the page changed. A missing guard means the node
+// is gone from one of the two snapshots. A changed guard means the node is
+// still listed but is no longer the same thing.
+func checkFresh(saved, fresh *snapshot, node int) error {
+	if fingerprintSnap(saved) != fingerprintSnap(fresh) {
+		return fmt.Errorf("page changed since decision (re-decide)")
+	}
+	nodeKey := fmt.Sprintf("%d", node)
+	gsaved, okS := saved.Guards[nodeKey]
+	gfresh, okF := fresh.Guards[nodeKey]
+	if !okS || !okF || !guardsEqual(gsaved, gfresh) {
+		return fmt.Errorf("page changed since decision (re-decide)")
+	}
+	return nil
+}
+
 func appendExecuted(session, run string, entry map[string]any) {
 	entry["kind"] = "executed"
 	if run != "" {
@@ -336,6 +355,9 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 	fail := func(code string, err error) (map[string]any, string, error) {
 		return nil, code, err
 	}
+	if l := lpLoopFrom(ctx); l != nil {
+		return actLP(ctx, l, goal, d, saved, text, params, reuse, run)
+	}
 	t, err := sessionTarget(session, timeout)
 	if err != nil {
 		return fail("no_page", err)
@@ -438,13 +460,12 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 	if err != nil {
 		return fail("observe_failed", err)
 	}
-	fpSaved := fingerprintSnap(saved)
-	fpFresh := fingerprintSnap(freshSnap)
-	nodeKey := fmt.Sprintf("%d", action.Node)
-	gsaved, okS := saved.Guards[nodeKey]
-	gfresh, okF := freshSnap.Guards[nodeKey]
-	if action.Kind != "select" && (fpSaved != fpFresh || !okS || !okF || !guardsEqual(gsaved, gfresh)) {
-		return fail("stale", fmt.Errorf("page changed since decision (re-decide)"))
+	// A select is exempt on Chrome: its guard holds the value and selectedIndex,
+	// which choosing an option is about to change.
+	if action.Kind != "select" {
+		if err := checkFresh(saved, freshSnap, action.Node); err != nil {
+			return fail("stale", err)
+		}
 	}
 	if action.Kind == "select" {
 		return actSelect(ctx, session, t.WebSocketDebuggerURL, action, timeout, run)

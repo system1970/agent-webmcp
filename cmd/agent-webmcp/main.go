@@ -28,7 +28,7 @@ usage:
   agent-webmcp decide --goal ".." [--session NAME] [--json]
   agent-webmcp act [--session NAME] [--json]
   agent-webmcp tick --goal ".." [--session NAME] [--json]
-  agent-webmcp run --goal ".." [--session NAME] [--max-steps N] [--json]
+  agent-webmcp run --goal ".." [--session NAME] [--max-steps N] [--text ..] [--params ..] [--json]
   agent-webmcp auth <probe|handoff> [--session NAME] [--json]
   agent-webmcp tools <add|list|load|remove|verify> [--session NAME] [--json]
   agent-webmcp tools list --query <terms> [--json]
@@ -39,9 +39,15 @@ usage:
   agent-webmcp version
 
 global flags:
-  --engine chrome|lightpanda     browser engine (default chrome; lightpanda is read-only)
+  --engine chrome|lightpanda     browser engine (default chrome)
   --executable-path PATH         lightpanda binary (default: PATH, ~/.local/bin, ~/.lightpanda)
   --allowed-domains a.com,b.com  refuse navigation outside these hosts (also AGENT_WEBMCP_ALLOWED_DOMAINS)
+
+lightpanda:
+  Runs open, crawl, observe, eval and run. It forgets the page when its CDP
+  connection closes, so run holds one connection for the whole loop and takes
+  the page as an argument:  run example.com --goal ".." --engine lightpanda
+  Refused there: decide, act and tick (use run), list/invoke/execute, auth, close.
 `)
 }
 
@@ -61,6 +67,22 @@ type globals struct {
 	enginePath string
 	allowed    string
 	engineErr  error
+}
+
+// positionalURL takes the first bare argument as a URL and gives it a scheme
+// when it has none. Every verb that can start from a page reads it this way,
+// so `run example.com` means what `open example.com` means.
+func positionalURL(rest []string) string {
+	var url string
+	for _, a := range rest {
+		if !strings.HasPrefix(a, "-") && url == "" {
+			url = a
+		}
+	}
+	if url != "" && !strings.Contains(url, "://") && !strings.HasPrefix(url, "about:") && !strings.HasPrefix(url, "data:") {
+		url = "https://" + url
+	}
+	return url
 }
 
 func parseGlobals(args []string) (globals, []string) {
@@ -196,8 +218,8 @@ func run(args []string) int {
 	// it acted when it did not is worse than one that stopped.
 	if g.engine == EngineLightpanda {
 		switch args[0] {
-		case "act", "decide", "tick", "run":
-			return failErr("engine_unsupported", requireChrome(g.engine, FeatureAct))
+		case "act", "decide", "tick":
+			return failErr("engine_unsupported", requireChrome(g.engine, FeatureSplitVerbs))
 		case "invoke", "execute", "list", "webmcp":
 			return failErr("engine_unsupported", requireChrome(g.engine, FeatureWebMCP))
 		case "auth":
@@ -215,15 +237,7 @@ func run(args []string) int {
 		usage()
 		return 0
 	case "open", "navigate", "goto":
-		var url string
-		for _, a := range rest {
-			if !strings.HasPrefix(a, "-") && url == "" {
-				url = a
-			}
-		}
-		if url != "" && !strings.Contains(url, "://") && !strings.HasPrefix(url, "about:") && !strings.HasPrefix(url, "data:") {
-			url = "https://" + url
-		}
+		url := positionalURL(rest)
 		r, err := openURL(ctx, g.session, url, g.chrome, g.headed, g.allowed, 15*time.Second)
 		if err != nil {
 			return failErr("open_failed", err)

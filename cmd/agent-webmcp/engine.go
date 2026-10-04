@@ -1,15 +1,21 @@
 package main
 
-// Engine selection. Chrome is the default and the only engine that can act.
-// Lightpanda is read-only: it is fast and light, and it has no layout engine,
-// so element geometry is approximate and anything that hit-tests or drives
-// input must stay on Chrome.
+// Engine selection. Chrome is the default. Lightpanda is the fast engine and it
+// runs the fused run loop, but not the split verbs.
 //
-// Why Lightpanda is read-only here: LP.getInteractiveElements returns real,
-// well-shaped element data (see lightpanda.go), but getBoundingClientRect
-// reports approximate boxes and document.elementFromPoint resolves against
-// them. act's freshness guard (act.go) would therefore certify a decision
-// against the wrong element. A hard error is better than a wrong target.
+// What Lightpanda does well: LP.getInteractiveElements returns real,
+// well-shaped elements with accessible names (see lightpanda.go), and it
+// resolves a node by id, so no geometry is needed. LP.clickNode and
+// LP.fillNode both work against a backendNodeId.
+//
+// What it cannot do here: it drops all page state when the CDP connection
+// closes. decide observes in one process and act acts in the next, so on
+// Lightpanda the second process finds about:blank. run holds one connection
+// for every step, which is why run works and decide, act and tick do not.
+//
+// Geometry is still refused: getBoundingClientRect is approximate, so
+// elementFromPoint cannot be trusted to hit the right element. That rules out
+// the Chrome hit-test, not the Lightpanda node path.
 
 import (
 	"fmt"
@@ -39,7 +45,11 @@ func parseEngine(v string) (Engine, error) {
 type Feature string
 
 const (
-	FeatureAct       Feature = "act"
+	// FeatureSplitVerbs is decide/act as separate processes. FeatureAct,
+	// FeatureGeometry and FeatureHitTest were the earlier names for parts of
+	// this; the refusal is now one fact about the connection, not three
+	// facts about geometry.
+	FeatureSplitVerbs Feature = "the split verbs decide/act/tick"
 	FeatureWebMCP    Feature = "WebMCP page tools"
 	FeatureHeaded    Feature = "headed mode"
 	FeatureProfiles  Feature = "persistent profiles"
@@ -50,12 +60,15 @@ const (
 var engineSupport = map[Engine]map[Feature]string{
 	EngineChrome: {},
 	EngineLightpanda: {
-		FeatureAct:       "no layout engine: getBoundingClientRect is approximate, so act could hit the wrong element",
-		FeatureWebMCP:    "Chrome-only: window.modelContext does not exist",
-		FeatureHeaded:    "headless only",
-		FeatureProfiles:  "no --user-data-dir; cookies load read-only via --cookie and save on exit via --cookie-jar",
-		FeatureLayout:    "no layout engine",
-		FeatureLoginFlow: "needs headed mode",
+		// Lightpanda resolves a node directly and drops all page state when
+		// its CDP connection closes, so the fused run loop works and the split
+		// verbs cannot. See lploop.go.
+		FeatureSplitVerbs: "lightpanda forgets every page when its CDP connection closes, so decide and act cannot be separate processes; use run",
+		FeatureWebMCP:     "not verified on lightpanda: the LP domain exposes WebMCP.invokeTool, but no site has been driven through it here",
+		FeatureHeaded:     "headless only",
+		FeatureProfiles:   "no --user-data-dir; cookies load read-only via --cookie and save on exit via --cookie-jar",
+		FeatureLayout:     "no layout engine: getBoundingClientRect is approximate, so elementFromPoint cannot be trusted to hit the right element",
+		FeatureLoginFlow:  "needs headed mode",
 	},
 }
 
@@ -69,7 +82,8 @@ func requireEngine(e Engine, feat Feature) error {
 	return nil
 }
 
-// requireChrome is the common case: acting only happens on Chrome.
+// requireChrome refuses a feature that only Chrome has. Used where the caller
+// knows no other engine is in play.
 func requireChrome(e Engine, feat Feature) error {
 	if e != EngineChrome {
 		return fmt.Errorf("%s requires the chrome engine (running %s): %s", feat, e, engineSupport[e][feat])

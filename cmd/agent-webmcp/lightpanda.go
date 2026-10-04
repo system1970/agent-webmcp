@@ -234,8 +234,8 @@ type lpMarkdownResult struct {
 //
 // Caveat carried into every consumer: geometry is approximate on Lightpanda,
 // so Node holds a backendNodeId, not a window.__jevFast id. Nothing that
-// re-resolves by that cache may run against this snapshot; act is gated off
-// the engine for exactly that reason.
+// re-resolves through that window cache may run against this snapshot. The
+// run loop re-resolves through LP.getNodeDetails instead (lploop.go).
 func lpSnapshot(ctx context.Context, p *lpProcess, target string, timeout time.Duration) (*snapshot, error) {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -330,40 +330,61 @@ func lpSnapshot(ctx context.Context, p *lpProcess, target string, timeout time.D
 		}
 	}
 
-	snap := &snapshot{URL: snapURL, Title: snapTitle, Text: text, Guards: map[string][]any{}}
-	// Text is model input: mark it untrusted, same as every other surface
-	// that carries page-derived content.
+	return lpBuildSnapshot(snapURL, snapTitle, text, ir), nil
+}
+
+// lpBuildSnapshot turns a getInteractiveElements result into a snapshot. It is
+// the one place the element-to-action mapping lives, so observe, crawl and the
+// run loop cannot drift apart on what an element means.
+//
+// Two differences from observeJS are deliberate. A <select> is one action
+// carrying the whole dropdown, because Lightpanda reports elements and not
+// their options; the value comes from --params. There are no scroll actions,
+// because there is no layout to scroll.
+func lpBuildSnapshot(pageURL, title, text string, ir lpInteractiveResult) *snapshot {
+	snap := &snapshot{URL: pageURL, Title: title, Text: text, Guards: map[string][]any{}}
 	for _, e := range ir.Elements {
-		kind := "fill"
-		switch strings.ToLower(e.TagName) {
-		case "a":
-			kind = "click"
-		case "button", "input", "select", "textarea":
-			if strings.EqualFold(e.Type, "submit") || strings.EqualFold(e.TagName, "button") {
-				kind = "click"
-			} else {
-				kind = "fill"
-			}
-		}
 		label := e.Name
 		if label == "" {
 			label = e.Href
 		}
-		a := snapAction{
+		snap.Actions = append(snap.Actions, snapAction{
 			ID:    fmt.Sprintf("lp%d", e.BackendNodeID),
-			Kind:  kind,
+			Kind:  lpKind(e),
 			Node:  e.BackendNodeID,
 			Role:  e.Role,
 			Label: label,
 			Href:  e.Href,
-		}
-		snap.Actions = append(snap.Actions, a)
-		key := fmt.Sprintf("%d", e.BackendNodeID)
-		snap.Guards[key] = []any{e.TagName, e.Role, e.Href}
+		})
+		// The guard names the element, never its value: an act is allowed to
+		// change the value without tripping its own freshness check.
+		snap.Guards[fmt.Sprintf("%d", e.BackendNodeID)] = []any{e.TagName, e.Role, e.Href}
 	}
 	snap.Actions = append(snap.Actions,
 		snapAction{ID: "wait", Kind: "wait", Label: "Wait for the page to update"})
-	return snap, nil
+	return snap
+}
+
+// lpKind maps one interactive element onto the same operation vocabulary
+// observeJS uses, so the judge sees one set of operations on either engine.
+func lpKind(e lpInteractive) string {
+	switch strings.ToLower(e.TagName) {
+	case "select":
+		return "select"
+	case "textarea":
+		return "fill"
+	case "a", "button":
+		return "click"
+	case "input":
+		switch strings.ToLower(e.Type) {
+		case "submit", "button", "image", "reset", "checkbox", "radio":
+			return "click"
+		default:
+			return "fill"
+		}
+	default:
+		return "click"
+	}
 }
 
 // lpCall issues a CDP command on an attached Lightpanda session. dialCDP's
@@ -447,6 +468,23 @@ func lpEvalString(ctx context.Context, p *lpProcess, expr string, timeout time.D
 // lpPageURL reads location.href for the snapshot URL.
 func lpPageURL(ctx context.Context, p *lpProcess, timeout time.Duration) (string, error) {
 	return lpEvalString(ctx, p, "location.href", timeout)
+}
+
+// lpJSONValue returns the raw JSON of an evaluate result, whatever its type.
+// lpValueString is the string case and cannot read a list or an object.
+func lpJSONValue(res json.RawMessage) (json.RawMessage, error) {
+	var out struct {
+		Result struct {
+			Value json.RawMessage `json:"value"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(res, &out); err != nil {
+		return nil, err
+	}
+	if len(out.Result.Value) == 0 {
+		return nil, fmt.Errorf("lightpanda: evaluate returned no value")
+	}
+	return out.Result.Value, nil
 }
 
 // lpPageTitle reads document.title for the snapshot title.
