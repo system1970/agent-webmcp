@@ -54,6 +54,25 @@ func detectLoginWall(url, text string) bool {
 	return hits >= 2
 }
 
+// authPageSettled reports whether a snapshot is far enough along to judge a
+// login. A blank page, an about:blank, or a document with no text is a page
+// that has not rendered yet, and a page mid-redirect has usually not either.
+// Treating those as "not a login wall" is how a handoff reports success on a
+// session that never logged in.
+func authPageSettled(snap *snapshot) bool {
+	if snap == nil {
+		return false
+	}
+	u := strings.ToLower(strings.TrimSpace(snap.URL))
+	switch {
+	case u == "", u == "about:blank", u == "about:srcdoc":
+		return false
+	case strings.HasPrefix(u, "data:"):
+		return false
+	}
+	return strings.TrimSpace(snap.Text) != ""
+}
+
 func authRoot() string {
 	if v := os.Getenv("AGENT_WEBMCP_HOME"); v != "" {
 		return filepath.Join(v, "auth")
@@ -259,6 +278,19 @@ func authHandoffCmd(ctx context.Context, g *globals, rest []string) int {
 		snap, _, serr := captureSnapshot(ctx, g.session, timeout)
 		if serr != nil {
 			return fail("auth_cancelled", "browser session ended during handoff — re-run auth handoff")
+		}
+		// A page that has not finished navigating is not evidence of a login.
+		// The window opens on the app URL, which is not itself a login wall —
+		// dash.cloudflare.com is a redirector — and the redirect to the real
+		// sign-in page has not landed yet. Judging that moment reports
+		// "logged in" for a session that is still anonymous, which is the one
+		// answer this command must never get wrong.
+		if !authPageSettled(snap) {
+			if time.Now().After(deadline) {
+				return fail("auth_timeout", fmt.Sprintf("page never finished loading on %s within %ds — re-run auth handoff", host, waitSecs))
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
 		}
 		markerOK := marker == "" || strings.Contains(snap.Text, marker)
 		if !detectLoginWall(snap.URL, snap.Text) && markerOK {
