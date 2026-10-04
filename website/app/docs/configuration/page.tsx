@@ -27,6 +27,39 @@ AGENT_WEBMCP_CHROME_FLAGS   extra Chrome flags (appended)
 AGENT_WEBMCP_VAULT_KEY      64 hex chars (else generated machine-local key)`}
         lang="text"
       />
+      <h2 className="mt-8 text-xl font-medium text-ink">Engines</h2>
+      <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        Chrome is the default and the only engine that can act. Lightpanda is a
+        from-scratch headless engine: it starts instantly and uses far less
+        memory, which makes crawl and observe cheap, but it has no layout
+        engine. Element boxes are approximate, so anything that hit-tests input
+        is refused rather than approximated. Use <code>--engine lightpanda</code>{" "}
+        for read-only work and Chrome for anything that acts.
+      </p>
+      <CodeBlock
+        code={`agent-webmcp crawl <url> --engine lightpanda
+agent-webmcp observe --engine lightpanda --executable-path /path/to/lightpanda`}
+        lang="bash"
+      />
+      <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        Refused on lightpanda: <code>act</code>, <code>decide</code>,{" "}
+        <code>tick</code>, <code>run</code> (no layout), <code>list</code>,{" "}
+        <code>invoke</code>, <code>execute</code> (WebMCP is Chrome-only),{" "}
+        <code>auth</code> (needs headed), <code>close</code> (no profiles).
+      </p>
+      <h2 className="mt-8 text-xl font-medium text-ink">URL policy</h2>
+      <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        <code>--allowed-domains</code> refuses navigation to any host outside the
+        list. It is opt-in: an empty list means no restriction. The check runs
+        before navigation and again on the landed URL, so an allowed host cannot
+        redirect the tab somewhere else. <code>example.com</code> covers its
+        subdomains; <code>*.example.com</code> covers subdomains only.
+      </p>
+      <CodeBlock
+        code={`agent-webmcp open example.com --allowed-domains example.com
+AGENT_WEBMCP_ALLOWED_DOMAINS=example.com agent-webmcp mcp`}
+        lang="bash"
+      />
       <h2 className="mt-8 text-xl font-medium text-ink">Defaults that matter</h2>
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
         Per-call timeout 30s (<code className="font-mono text-[13px] text-ink">--timeout-ms</code>).

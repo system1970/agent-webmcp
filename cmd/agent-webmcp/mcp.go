@@ -49,6 +49,10 @@ func mcpSession(args map[string]any) string {
 
 func mcpTimeout() time.Duration { return 30 * time.Second }
 
+// mcpAllowedDomains is the same policy the CLI applies. The MCP server runs
+// inside the harness, so it reads the env var rather than CLI flags.
+func mcpAllowedDomains() string { return allowedDomainsFromEnv() }
+
 func mcpCoreTools() []mcpToolDef {
 	strProp := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 	return []mcpToolDef{
@@ -61,7 +65,7 @@ func mcpCoreTools() []mcpToolDef {
 				"headed":  map[string]any{"type": "boolean", "description": "Request a headed browser."},
 			}},
 			Call: func(ctx context.Context, args map[string]any) (any, string, error) {
-				r, err := openURL(ctx, mcpSession(args), mcpStr(args, "url"), "", args["headed"] == true, mcpTimeout())
+				r, err := openURL(ctx, mcpSession(args), mcpStr(args, "url"), "", args["headed"] == true, mcpAllowedDomains(), mcpTimeout())
 				if err != nil {
 					return nil, codeFor(err), err
 				}
@@ -86,7 +90,8 @@ func mcpCoreTools() []mcpToolDef {
 				tools = ensureCustomTools(ctx, mcpSession(args), t.WebSocketDebuggerURL, t.URL, mcpTimeout(), tools)
 				out := make([]map[string]any, 0, len(tools))
 				for _, tl := range tools {
-					out = append(out, map[string]any{"name": tl.Name, "description": tl.Description, "inputSchema": tl.InputSchema})
+					out = append(out, map[string]any{"name": tl.Name, "description": tl.Description,
+						"inputSchema": tl.InputSchema, "untrusted": true})
 				}
 				return out, "", nil
 			},
@@ -141,8 +146,11 @@ func mcpCoreTools() []mcpToolDef {
 				for _, a := range snap.Actions {
 					els = append(els, map[string]any{"id": a.ID, "kind": a.Kind, "role": a.Role, "label": a.Label})
 				}
+				// untrusted marks every field here as page-derived: the text,
+				// and the labels the page chose for the elements.
 				return map[string]any{"url": snap.URL, "title": snap.Title, "text": snap.Text,
-					"count": len(snap.Actions), "elements": els, "fingerprint": fp}, "", nil
+					"count": len(snap.Actions), "elements": els, "fingerprint": fp,
+					"untrusted": true}, "", nil
 			},
 		},
 		{

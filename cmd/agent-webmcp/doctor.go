@@ -73,7 +73,7 @@ func doctorCmd(ctx context.Context, g *globals, rest []string) int {
 		const probe = "doctor-check"
 		ctx2, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		if _, err := openURL(ctx2, probe, "https://example.com/", chromeBin, false, timeout); err != nil {
+		if _, err := openURL(ctx2, probe, "https://example.com/", chromeBin, false, allowedDomainsFromEnv(), timeout); err != nil {
 			add("live_open", false, err.Error())
 		} else {
 			_ = closeSession(probe)

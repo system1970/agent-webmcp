@@ -19,8 +19,12 @@ type OpenResult struct {
 // navigates it. Headed is a launch property: a live browser is reused
 // whatever its headedness (OpenResult reports actual); only handoff
 // relaunches headed, explicitly.
-func openURL(ctx context.Context, session, rawURL, chromeBin string, headed bool, timeout time.Duration) (*OpenResult, error) {
+func openURL(ctx context.Context, session, rawURL, chromeBin string, headed bool, allowed string, timeout time.Duration) (*OpenResult, error) {
 	p := sessionProfile
+	// Check the requested URL before we spend a navigation on it.
+	if err := checkURLPolicy(allowed, rawURL); err != nil {
+		return nil, err
+	}
 	if port, err := profilePort(p); err == nil {
 		var v map[string]any
 		if cerr := cdpGet(port, "/json/version", &v); cerr == nil && headed && !profileHeaded(p) {
@@ -93,6 +97,11 @@ func openURL(ctx context.Context, session, rawURL, chromeBin string, headed bool
 	final := rawURL
 	if nt, err := sessionTarget(session, timeout); err == nil {
 		final = nt.URL
+	}
+	// Check the final URL too. Page.navigate follows redirects, so an allowed
+	// host can land the tab anywhere; the requested host is not the landed host.
+	if err := checkURLPolicy(allowed, final); err != nil {
+		return nil, fmt.Errorf("%w (requested %s, landed on %s)", err, normalizeHost(rawURL), normalizeHost(final))
 	}
 	return &OpenResult{Session: session, URL: final, Port: port, Headed: profileHeaded(p), Reused: !created, Profile: p}, nil
 }

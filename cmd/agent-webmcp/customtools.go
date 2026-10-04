@@ -253,7 +253,7 @@ func verifyLoopTool(ctx context.Context, g *globals, rest []string, meta *toolMe
 		return fail("usage", "usage: agent-webmcp tools verify "+meta.Name+" --params '{...}' [--session NAME] [--url URL]")
 	}
 	if u, ok := verbFlag(rest, "url"); ok && u != "" {
-		if _, err := openURL(ctx, g.session, withScheme(u), g.chrome, g.headed, timeout); err != nil {
+		if _, err := openURL(ctx, g.session, withScheme(u), g.chrome, g.headed, g.allowed, timeout); err != nil {
 			return failErr("open_failed", err)
 		}
 	}
@@ -710,7 +710,7 @@ func toolsCmd(ctx context.Context, g *globals, rest []string) int {
 		}
 		// Fresh document: reload so earlier injections can't collide as
 		// "Duplicate tool name" and the check reflects a clean open.
-		if _, err := openURL(ctx, g.session, t.URL, g.chrome, g.headed, timeout); err != nil {
+		if _, err := openURL(ctx, g.session, t.URL, g.chrome, g.headed, g.allowed, timeout); err != nil {
 			return failErr("open_failed", err)
 		}
 		if nt, err := sessionTarget(g.session, timeout); err == nil {
