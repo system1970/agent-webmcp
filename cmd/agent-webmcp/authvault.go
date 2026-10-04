@@ -264,7 +264,7 @@ func authVaultLoginCmd(ctx context.Context, g *globals, rest []string) int {
 		return fail("usage", fmt.Sprintf("profile %q has no URL (re-save with --url, or pass --url)", name))
 	}
 	timeout := time.Duration(g.timeoutMs) * time.Millisecond
-	if _, err := openURL(ctx, g.session, targetURL, g.chrome, g.headed, timeout); err != nil {
+	if _, err := openURL(ctx, g.session, targetURL, g.chrome, g.headed, g.allowed, timeout); err != nil {
 		return failErr("open_failed", err)
 	}
 	t, err := sessionTarget(g.session, timeout)

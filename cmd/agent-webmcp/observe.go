@@ -221,7 +221,34 @@ func captureSnapshot(ctx context.Context, session string, timeout time.Duration)
 }
 
 func observeCmd(ctx context.Context, g *globals, rest []string) int {
-	snap, fp, err := captureSnapshot(ctx, g.session, time.Duration(g.timeoutMs)*time.Millisecond)
+	timeout := time.Duration(g.timeoutMs) * time.Millisecond
+	if g.engine == EngineLightpanda {
+		// Read-only on this engine. The snapshot comes from Lightpanda's LP
+		// domain instead of the injected observeJS walk.
+		snap, fp, err := captureSnapshotLP(ctx, g.enginePath, "", timeout)
+		if err != nil {
+			return failErr("observe_failed", err)
+		}
+		if g.json {
+			els := make([]map[string]any, 0, len(snap.Actions))
+			for _, a := range snap.Actions {
+				els = append(els, map[string]any{"id": a.ID, "kind": a.Kind, "role": a.Role,
+					"label": a.Label, "href": a.Href})
+			}
+			ok(map[string]any{
+				"engine": string(EngineLightpanda), "url": snap.URL, "title": snap.Title,
+				"text": snap.Text, "count": len(snap.Actions), "elements": els,
+				"fingerprint": fp, "untrusted": true,
+			})
+			return 0
+		}
+		fmt.Printf("%s  (%d actions, engine lightpanda)\n", snap.URL, len(snap.Actions))
+		for _, a := range snap.Actions {
+			fmt.Printf("  @%-8s [%s] %s\n", a.ID, a.Kind, a.Label)
+		}
+		return 0
+	}
+	snap, fp, err := captureSnapshot(ctx, g.session, timeout)
 	if err != nil {
 		return failErr("observe_failed", err)
 	}

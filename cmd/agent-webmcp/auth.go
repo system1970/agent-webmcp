@@ -238,7 +238,7 @@ func authHandoffCmd(ctx context.Context, g *globals, rest []string) int {
 	// profile: relaunch the profile browser headed on the login page.
 	// Tabs reset; the profile (and every login it holds) persists.
 	killProfileBrowser(sessionProfile)
-	r, err := openURL(ctx, g.session, url, g.chrome, true, 30*time.Second)
+	r, err := openURL(ctx, g.session, url, g.chrome, true, g.allowed, 30*time.Second)
 	if err != nil {
 		return failErr("handoff_failed", err)
 	}

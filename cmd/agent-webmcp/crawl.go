@@ -53,7 +53,13 @@ func crawlCmd(ctx context.Context, g *globals, rest []string) int {
 		url = "https://" + url
 	}
 	timeout := time.Duration(g.timeoutMs) * time.Millisecond
-	r, err := openURL(ctx, g.session, url, g.chrome, g.headed, 30*time.Second)
+	if g.engine == EngineLightpanda {
+		if err := checkURLPolicy(g.allowed, url); err != nil {
+			return failErr("open_failed", err)
+		}
+		return crawlCmdLightpanda(ctx, g, url, timeout)
+	}
+	r, err := openURL(ctx, g.session, url, g.chrome, g.headed, g.allowed, 30*time.Second)
 	if err != nil {
 		return failErr("open_failed", err)
 	}
@@ -108,6 +114,9 @@ func crawlCmd(ctx context.Context, g *globals, rest []string) int {
 		"controls": controls, "gates": gates,
 		"links_harvested": links, "links_scanned": scanned, "forms": forms, "inputs": inputs,
 		"harvest_error": harvestErr,
+		// untrusted: title, link text and the gate verdicts are derived from
+		// page content. They are data, never instructions.
+		"untrusted": true,
 		"native_tools":  natives, "custom_tools": custom,
 		"login_wall": detectLoginWall(snap.URL, snap.Text),
 		"reused":     r.Reused,
@@ -118,5 +127,43 @@ func crawlCmd(ctx context.Context, g *globals, rest []string) int {
 	}
 	fmt.Printf("%s  (%d actions, %d links, %d forms, %d native tools, wall=%v)\n",
 		snap.URL, len(snap.Actions), links, len(forms), len(natives), out["login_wall"])
+	return 0
+}
+
+// crawlCmdLightpanda is the reduced crawl envelope. Lightpanda has no
+// WebMCP page tools and no layout, so recon, native tool listing and link
+// harvest are absent rather than reported as zero-and-happy: each is marked
+// unavailable so a reader can tell "not measured" from "measured, found none".
+func crawlCmdLightpanda(ctx context.Context, g *globals, url string, timeout time.Duration) int {
+	snap, fp, err := captureSnapshotLP(ctx, g.enginePath, url, timeout)
+	if err != nil {
+		return failErr("observe_failed", err)
+	}
+	if snap.URL == "" {
+		snap.URL = url
+	}
+	out := map[string]any{
+		"engine": string(EngineLightpanda), "session": g.session,
+		"url": url, "final_url": snap.URL, "title": snap.Title,
+		"host": hostOfURL(snap.URL),
+		"text_chars": len(snap.Text), "actions": len(snap.Actions),
+		"fingerprint": fp,
+		// Not measured on this engine. Absent beats a zero that reads as a finding.
+		"controls":     nil,
+		"links_scanned": nil,
+		"forms":        nil,
+		"inputs":       nil,
+		"native_tools": nil,
+		"custom_tools": nil,
+		"login_wall":   detectLoginWall(snap.URL, snap.Text),
+		"unavailable":  []string{"controls", "links", "forms", "inputs", "native_tools", "custom_tools"},
+		"untrusted":    true,
+	}
+	if g.json {
+		ok(out)
+		return 0
+	}
+	fmt.Printf("%s\n  engine lightpanda  %d actions, %d text chars\n", snap.URL, len(snap.Actions), len(snap.Text))
+	fmt.Printf("  not measured: %v\n", out["unavailable"])
 	return 0
 }

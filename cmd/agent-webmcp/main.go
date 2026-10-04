@@ -37,6 +37,11 @@ usage:
   agent-webmcp sessions [--json]
   agent-webmcp status [--session NAME] [--json]
   agent-webmcp version
+
+global flags:
+  --engine chrome|lightpanda     browser engine (default chrome; lightpanda is read-only)
+  --executable-path PATH         lightpanda binary (default: PATH, ~/.local/bin, ~/.lightpanda)
+  --allowed-domains a.com,b.com  refuse navigation outside these hosts (also AGENT_WEBMCP_ALLOWED_DOMAINS)
 `)
 }
 
@@ -52,10 +57,14 @@ type globals struct {
 	params     string
 	frame      string
 	text       string
+	engine     Engine
+	enginePath string
+	allowed    string
+	engineErr  error
 }
 
 func parseGlobals(args []string) (globals, []string) {
-	g := globals{session: "default", timeoutMs: 30000}
+	g := globals{session: "default", timeoutMs: 30000, engine: EngineChrome, allowed: allowedDomainsFromEnv()}
 	if v := os.Getenv("AGENT_WEBMCP_SESSION"); v != "" {
 		g.session = v
 		g.sessionSet = true
@@ -109,6 +118,27 @@ func parseGlobals(args []string) (globals, []string) {
 			g.text = strings.TrimPrefix(a, "--text=")
 		case strings.HasPrefix(a, "--frame="):
 			g.frame = strings.TrimPrefix(a, "--frame=")
+		case a == "--engine":
+			if i+1 < len(args) {
+				i++
+				g.engine = Engine(args[i])
+			}
+		case strings.HasPrefix(a, "--engine="):
+			g.engine = Engine(strings.TrimPrefix(a, "--engine="))
+		case a == "--executable-path":
+			if i+1 < len(args) {
+				i++
+				g.enginePath = args[i]
+			}
+		case strings.HasPrefix(a, "--executable-path="):
+			g.enginePath = strings.TrimPrefix(a, "--executable-path=")
+		case a == "--allowed-domains":
+			if i+1 < len(args) {
+				i++
+				g.allowed = args[i]
+			}
+		case strings.HasPrefix(a, "--allowed-domains="):
+			g.allowed = strings.TrimPrefix(a, "--allowed-domains=")
 		case a == "--chrome":
 			if i+1 < len(args) {
 				i++
@@ -134,6 +164,14 @@ func parseGlobals(args []string) (globals, []string) {
 	if g.timeoutMs <= 0 {
 		g.timeoutMs = 30000
 	}
+	if v := os.Getenv("AGENT_WEBMCP_ENGINE"); v != "" && g.engine == EngineChrome {
+		g.engine = Engine(v)
+	}
+	if e, err := parseEngine(string(g.engine)); err != nil {
+		g.engineErr = err
+	} else {
+		g.engine = e
+	}
 	return g, rest
 }
 
@@ -147,9 +185,27 @@ func run(args []string) int {
 		return 2
 	}
 	g, rest := parseGlobals(args[1:])
+	if g.engineErr != nil {
+		return failErr("bad_engine", g.engineErr)
+	}
 	jsonOut = g.json
 	sessionProfile = resolveProfile(&g)
 	ctx := context.Background()
+
+	// Engine gates. Refuse loudly rather than degrade: an agent that believes
+	// it acted when it did not is worse than one that stopped.
+	if g.engine == EngineLightpanda {
+		switch args[0] {
+		case "act", "decide", "tick", "run":
+			return failErr("engine_unsupported", requireChrome(g.engine, FeatureAct))
+		case "invoke", "execute", "list", "webmcp":
+			return failErr("engine_unsupported", requireChrome(g.engine, FeatureWebMCP))
+		case "auth":
+			return failErr("engine_unsupported", requireChrome(g.engine, FeatureLoginFlow))
+		case "close":
+			return failErr("engine_unsupported", requireChrome(g.engine, FeatureProfiles))
+		}
+	}
 
 	switch args[0] {
 	case "version", "--version", "-V":
@@ -168,7 +224,7 @@ func run(args []string) int {
 		if url != "" && !strings.Contains(url, "://") && !strings.HasPrefix(url, "about:") && !strings.HasPrefix(url, "data:") {
 			url = "https://" + url
 		}
-		r, err := openURL(ctx, g.session, url, g.chrome, g.headed, 15*time.Second)
+		r, err := openURL(ctx, g.session, url, g.chrome, g.headed, g.allowed, 15*time.Second)
 		if err != nil {
 			return failErr("open_failed", err)
 		}
