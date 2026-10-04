@@ -102,6 +102,21 @@ func saveAuthStamp(s authStamp) {
 	_ = os.WriteFile(authStatePath(s.Host), b, 0o644)
 }
 
+// readAuthStamp returns the standing record for a host, or nil if there is
+// none. A probe needs it: "no login wall" is consistent with a confirmed
+// login, so a probe must not overwrite that confirmation with a weaker state.
+func readAuthStamp(host string) *authStamp {
+	b, err := os.ReadFile(authStatePath(host))
+	if err != nil {
+		return nil
+	}
+	var s authStamp
+	if json.Unmarshal(b, &s) != nil || s.Host == "" {
+		return nil
+	}
+	return &s
+}
+
 func stampNow() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
@@ -209,12 +224,21 @@ func authProbeCmd(ctx context.Context, g *globals, rest []string) int {
 	wall := detectLoginWall(snap.URL, snap.Text)
 	markerHit := marker != "" && strings.Contains(snap.Text, marker)
 	state := "unknown"
+	method := "probe"
 	if wall {
 		state = "anonymous"
 	} else if markerHit {
 		state = "logged_in"
+	} else if prev := readAuthStamp(host); prev != nil && prev.State == "logged_in" {
+		// No wall is consistent with a login somebody already confirmed, and
+		// says nothing against it. Without this, every probe after a handoff
+		// downgrades the handoff's record to "unknown" and the standing
+		// answer to "am I logged in?" becomes unknowable without --marker.
+		// Keep the state and the method that established it; refresh only the
+		// timestamp, because this observation is the current one.
+		state, method = "logged_in", prev.Method
 	}
-	st := authStamp{Host: host, State: state, CheckedAt: stampNow(), Session: g.session, Method: "probe", Marker: marker}
+	st := authStamp{Host: host, State: state, CheckedAt: stampNow(), Session: g.session, Method: method, Marker: marker}
 	saveAuthStamp(st)
 	return report(st, map[string]any{"url": snap.URL, "login_wall": wall, "marker_present": markerHit})
 }
