@@ -232,9 +232,18 @@ func captureSnapshot(ctx context.Context, session string, timeout time.Duration)
 func observeCmd(ctx context.Context, g *globals, rest []string) int {
 	timeout := time.Duration(g.timeoutMs) * time.Millisecond
 	if g.engine == EngineLightpanda {
-		// Read-only on this engine. The snapshot comes from Lightpanda's LP
-		// domain instead of the injected observeJS walk.
-		snap, fp, err := captureSnapshotLP(ctx, g.enginePath, "", timeout)
+		// The snapshot comes from Lightpanda's LP domain instead of the
+		// injected observeJS walk.
+		//
+		// There is no session to ask: a Lightpanda page exists only while a CDP
+		// connection holds it, and this process is about to open the only one
+		// there will be. So the page comes from the URL argument, or from where
+		// the session last was — which is what a crawl leaves behind.
+		target := positionalURL(rest)
+		if target == "" {
+			target = lastSeenURL(g.session)
+		}
+		snap, fp, err := captureSnapshotLP(ctx, g.enginePath, target, timeout)
 		if err != nil {
 			return failErr("observe_failed", err)
 		}

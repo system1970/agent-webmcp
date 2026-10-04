@@ -33,6 +33,18 @@ design, so the second process would find a blank page. `run` holds one
 connection for every step. The freshness gate is written once (`checkFresh`)
 and both engines call it. See `lploop.go`.
 
+**Engine parity is a contract, not a hope.** Both engines must offer the judge
+the same operations for the same page: hide password/file/hidden fields, name
+an unnamed control after its role, offer a dropdown one action per option, and
+make a filled field or a ticked box visible to `fingerprintSnap`. Three of
+those were violated and are now pinned by tests in `engine_test.go`.
+
+What `getInteractiveElements` alone cannot do: it reports `type` as `native`
+for every element, so a text field, a password field, a checkbox and a submit
+button are indistinguishable. `LP.getNodeDetails` per element carries the real
+`inputType`, the live `value`, `checked`, and a `<select>`'s `options`. The
+snapshot reads both. Never switch on the `type` field.
+
 ## Vocabulary (these words mean exactly this)
 
 - **verb**: a user intent with a name (`tinystartups_search`). Boundaries are
