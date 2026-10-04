@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -384,6 +385,39 @@ func TestAuthPageSettled(t *testing.T) {
 	}
 	if !detectLoginWall(wall.URL, wall.Text) {
 		t.Error("a settled google sign-in page must still read as a login wall")
+	}
+}
+
+// A probe must not erase a handoff. "No login wall" is consistent with a login
+// someone already confirmed and is no evidence against it, so writing the
+// weaker "unknown" over a handoff's "logged_in" leaves the standing answer to
+// "am I logged in?" unknowable without --marker. Observed live: a handoff
+// stamped logged_in, then the very next probe replaced it with unknown.
+func TestProbeKeepsAConfirmedLogin(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AGENT_WEBMCP_HOME", dir)
+
+	// A handoff confirms the login.
+	saveAuthStamp(authStamp{Host: "dash.cloudflare.com", State: "logged_in",
+		CheckedAt: stampNow(), Session: "cf", Method: "handoff"})
+
+	// The standing record survives a write/read round trip.
+	got := readAuthStamp("dash.cloudflare.com")
+	if got == nil {
+		t.Fatal("a saved stamp must be readable")
+	}
+	if got.State != "logged_in" || got.Method != "handoff" {
+		t.Fatalf("stamp round trip lost state: %+v", got)
+	}
+
+	// A host with no record reads as absent, not as a guess.
+	if readAuthStamp("never-seen.test") != nil {
+		t.Error("an unseen host must have no stamp")
+	}
+	// A corrupt stamp must not be mistaken for a confirmation.
+	_ = os.WriteFile(authStatePath("junk.test"), []byte("{not json"), 0o644)
+	if readAuthStamp("junk.test") != nil {
+		t.Error("a corrupt stamp must read as absent")
 	}
 }
 
