@@ -16,6 +16,15 @@ package main
 // Geometry is still refused: getBoundingClientRect is approximate, so
 // elementFromPoint cannot be trusted to hit the right element. That rules out
 // the Chrome hit-test, not the Lightpanda node path.
+//
+// WebMCP is refused for a different and harder reason. Lightpanda's protocol
+// advertises a WebMCP domain and its binary carries the page API
+// (browser.webapi.ModelContext), so this looks available. It is not: the page
+// never sees document.modelContext, so no page can register a tool, and
+// invokeTool has nothing to call. Verified on 1.1.0-nightly — document.modelContext
+// undefined on http and https, invokeTool returns MissingField for every field
+// name, and no flag turns it on. An empty enable returning {} is a domain that
+// accepts calls, not one that works.
 
 import (
 	"fmt"
@@ -64,11 +73,14 @@ var engineSupport = map[Engine]map[Feature]string{
 		// its CDP connection closes, so the fused run loop works and the split
 		// verbs cannot. See lploop.go.
 		FeatureSplitVerbs: "lightpanda forgets every page when its CDP connection closes, so decide and act cannot be separate processes; use run",
-		FeatureWebMCP:     "not verified on lightpanda: the LP domain exposes WebMCP.invokeTool, but no site has been driven through it here",
-		FeatureHeaded:     "headless only",
-		FeatureProfiles:   "no --user-data-dir; cookies load read-only via --cookie and save on exit via --cookie-jar",
-		FeatureLayout:     "no layout engine: getBoundingClientRect is approximate, so elementFromPoint cannot be trusted to hit the right element",
-		FeatureLoginFlow:  "needs headed mode",
+		// WebMCP on Lightpanda is not merely unverified, it cannot work: the
+		// page API a tool needs in order to exist is absent. The protocol
+		// surface is declared, which is what makes this look available.
+		FeatureWebMCP:    "lightpanda declares the WebMCP CDP domain but does not expose document.modelContext, so no page can register a tool and there is nothing for invokeTool to call (verified: document.modelContext undefined, invokeTool returns MissingField, no flag enables it)",
+		FeatureHeaded:    "headless only",
+		FeatureProfiles:  "no --user-data-dir; cookies load read-only via --cookie and save on exit via --cookie-jar",
+		FeatureLayout:    "no layout engine: getBoundingClientRect is approximate, so elementFromPoint cannot be trusted to hit the right element",
+		FeatureLoginFlow: "needs headed mode",
 	},
 }
 

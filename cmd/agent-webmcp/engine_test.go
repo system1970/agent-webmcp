@@ -381,3 +381,20 @@ func TestBuildStateRedactsOnBothEngines(t *testing.T) {
 		}
 	}
 }
+
+// The WebMCP refusal must state the structural reason, not "unverified". An
+// agent that hits it needs to know that no amount of retrying will help, and
+// that the domain existing is not the same as the feature working.
+func TestWebMCPRefusalIsStructural(t *testing.T) {
+	msg := requireChrome(EngineLightpanda, FeatureWebMCP).Error()
+	for _, want := range []string{"document.modelContext", "invokeTool"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("WebMCP refusal must mention %s, got %q", want, msg)
+		}
+	}
+	for _, never := range []string{"unverified", "not been driven"} {
+		if strings.Contains(msg, never) {
+			t.Errorf("the refusal must not imply it might work (%q): %q", never, msg)
+		}
+	}
+}
