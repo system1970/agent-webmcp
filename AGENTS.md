@@ -96,6 +96,15 @@ Lightpanda `run` is covered by `lploop_test.go` (needs the binary and network;
 skips otherwise). Not covered on Lightpanda: WebMCP page tools, headed,
 profiles, and the split verbs.
 
+**Where loop time goes** (measured, warm browser, httpbin form): `observe` 9ms,
+`eval` 7ms, `act` 19ms — the browser is never the cost. A Jev decision is
+~450ms of model. `decideOnce` also calls `listWebMCP` every step, and that used
+to block 1519ms on any page without page tools, because the event drain only
+broke early once something had been seen and most pages have no tools. Now the
+quiet period applies either way: `list` is ~270ms and a whole 2-step `run` went
+from 3808ms to ~1320ms, with the model at 54% of it. If loop latency ever looks
+wrong, check what the code calls per step before blaming the judge.
+
 ## Generated files (never commit, how to rebuild)
 
 | Artifact | Source | Rebuild |

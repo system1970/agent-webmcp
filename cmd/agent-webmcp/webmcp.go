@@ -127,21 +127,29 @@ func listWebMCP(ctx context.Context, wsURL string, timeout time.Duration) ([]Web
 	}
 
 	// Event path: drain toolsAdded/toolsChanged, honor toolsRemoved.
+	//
+	// The quiet period applies whether or not anything has been seen. Most
+	// pages expose no tools at all, and WebMCP.enable already emits a
+	// toolsAdded event for every tool that exists, so silence means there are
+	// none: waiting out the full deadline costs 1.5s on every call and
+	// decideOnce calls this once per decision, which is more than the judge's
+	// own latency. Measured on a page with no page tools: 1519ms before,
+	// ~250ms after.
 	seen := map[string]map[string]any{}
-	deadline := time.Now().Add(minDuration(timeout, 1500*time.Millisecond))
-	quiet := 300 * time.Millisecond
+	deadline := time.Now().Add(minDuration(timeout, 900*time.Millisecond))
+	quiet := 250 * time.Millisecond
 	last := time.Now()
 	for {
 		remain := time.Until(deadline)
 		if remain <= 0 {
 			break
 		}
-		if len(seen) > 0 && time.Since(last) >= quiet {
+		if time.Since(last) >= quiet {
 			break
 		}
 		wait := remain
-		if len(seen) > 0 && time.Until(last.Add(quiet)) < wait {
-			wait = time.Until(last.Add(quiet))
+		if until := time.Until(last.Add(quiet)); until < wait {
+			wait = until
 		}
 		select {
 		case ev := <-c.events:
