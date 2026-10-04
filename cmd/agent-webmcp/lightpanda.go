@@ -221,6 +221,33 @@ type lpInteractive struct {
 	TabIndex      int    `json:"tabIndex"`
 }
 
+// lpNodeDetails is what LP.getNodeDetails returns. It carries strictly more
+// than getInteractiveElements does, and the extra fields are the ones that
+// matter: inputType is the real control type (getInteractiveElements reports
+// "native" for everything), value is the live value, checked is the toggle
+// state, and options is the whole list behind a <select>.
+//
+// Verified against a page holding every control: getInteractiveElements gave
+// type "native" for a text input, a password field, a checkbox and a submit
+// button alike, so it cannot tell them apart. getNodeDetails can.
+type lpNodeDetails struct {
+	InputType  string `json:"inputType"`
+	Selector   string `json:"selector"`
+	Value      string `json:"value"`
+	Checked    bool   `json:"checked"`
+	IsInteract bool   `json:"isInteractive"`
+	Options    []struct {
+		Value    string `json:"value"`
+		Text     string `json:"text"`
+		Selected bool   `json:"selected"`
+	} `json:"options"`
+}
+
+// lpHiddenInputTypes are the control types observeJS refuses to offer at all.
+// A password field must not reach the judge on either engine: the judge does not
+// need it, and an engine that offers it invites a fill into a secret.
+var lpHiddenInputTypes = map[string]bool{"password": true, "file": true, "hidden": true}
+
 type lpInteractiveResult struct {
 	Elements []lpInteractive `json:"elements"`
 }
@@ -330,35 +357,105 @@ func lpSnapshot(ctx context.Context, p *lpProcess, target string, timeout time.D
 		}
 	}
 
-	return lpBuildSnapshot(snapURL, snapTitle, text, ir), nil
+	// One getNodeDetails per element, for the same reasons as the loop's
+	// observe: the real input type, the live value, and a dropdown's options.
+	// A failed read leaves that element on its role and tag alone.
+	details := make([]lpNodeDetails, 0, len(ir.Elements))
+	for _, e := range ir.Elements {
+		var d lpNodeDetails
+		if r, derr := page("LP.getNodeDetails", map[string]any{"backendNodeId": e.BackendNodeID}); derr == nil {
+			var w struct {
+				NodeDetails lpNodeDetails `json:"nodeDetails"`
+			}
+			if json.Unmarshal(r, &w) == nil {
+				d = w.NodeDetails
+			}
+		}
+		details = append(details, d)
+	}
+
+	return lpBuildSnapshot(snapURL, snapTitle, text, ir, details), nil
 }
 
 // lpBuildSnapshot turns a getInteractiveElements result into a snapshot. It is
 // the one place the element-to-action mapping lives, so observe, crawl and the
 // run loop cannot drift apart on what an element means.
 //
-// Two differences from observeJS are deliberate. A <select> is one action
-// carrying the whole dropdown, because Lightpanda reports elements and not
-// their options; the value comes from --params. There are no scroll actions,
-// because there is no layout to scroll.
-func lpBuildSnapshot(pageURL, title, text string, ir lpInteractiveResult) *snapshot {
+// details is one LP.getNodeDetails result per element, in the same order. It is
+// what makes this equivalent to observeJS rather than merely similar: the real
+// input type, the live value, the toggle state, and the options behind a
+// dropdown. An element with no details entry is still offered, on the role and
+// tag alone, because a missing read must not silently hide a control.
+//
+// One difference from observeJS stands: there are no scroll actions, because
+// there is no layout to scroll.
+func lpBuildSnapshot(pageURL, title, text string, ir lpInteractiveResult, details []lpNodeDetails) *snapshot {
 	snap := &snapshot{URL: pageURL, Title: title, Text: text, Guards: map[string][]any{}}
-	for _, e := range ir.Elements {
+	for i, e := range ir.Elements {
+		var d lpNodeDetails
+		if i < len(details) {
+			d = details[i]
+		}
+		// A password, file or hidden field is not offered. observeJS refuses
+		// those too, and an engine that offers one invites the judge to type a
+		// secret into it.
+		if lpHiddenInputTypes[strings.ToLower(d.InputType)] {
+			continue
+		}
+		// observeJS falls back to the role when a control has no accessible
+		// name, and falls back to nothing else: httpbin's radios and checkboxes
+		// have a null name, and an unlabelled action is one the judge cannot
+		// reason about. Same order here, with href last because a link without
+		// a name still has somewhere to go.
 		label := e.Name
+		if label == "" {
+			label = e.Role
+		}
 		if label == "" {
 			label = e.Href
 		}
-		snap.Actions = append(snap.Actions, snapAction{
-			ID:    fmt.Sprintf("lp%d", e.BackendNodeID),
-			Kind:  lpKind(e),
-			Node:  e.BackendNodeID,
-			Role:  e.Role,
-			Label: label,
-			Href:  e.Href,
-		})
+		id := fmt.Sprintf("lp%d", e.BackendNodeID)
+		kind := lpKind(e, d)
+		node := e.BackendNodeID
+
+		if kind == "select" && len(d.Options) > 0 {
+			// One action per option, the way observeJS offers a dropdown, so
+			// the judge chooses an option by name and no --params is needed.
+			for _, o := range d.Options {
+				if o.Selected {
+					continue
+				}
+				optLabel := label
+				if optLabel == "" {
+					optLabel = o.Text
+				} else if o.Text != "" {
+					optLabel = label + " " + o.Text
+				}
+				snap.Actions = append(snap.Actions, snapAction{
+					ID: id, Kind: "select", Node: node, Role: e.Role,
+					Label: optLabel, Value: o.Value,
+				})
+			}
+		} else {
+			value := d.Value
+			// A toggle's value is its option value ("c1"), which does not change
+			// when the box is ticked. Put the state in the slot the fingerprint
+			// reads, or clicking a checkbox reads as no change and the loop
+			// stops itself after three correct toggles.
+			if kind == "click" && (d.InputType == "checkbox" || d.InputType == "radio") {
+				value = ""
+				if d.Checked {
+					value = "true"
+				}
+			}
+			snap.Actions = append(snap.Actions, snapAction{
+				ID: id, Kind: kind, Node: node, Role: e.Role,
+				Label: label, Value: value, Href: e.Href,
+			})
+		}
 		// The guard names the element, never its value: an act is allowed to
 		// change the value without tripping its own freshness check.
-		snap.Guards[fmt.Sprintf("%d", e.BackendNodeID)] = []any{e.TagName, e.Role, e.Href}
+		snap.Guards[fmt.Sprintf("%d", e.BackendNodeID)] = []any{e.TagName, e.Role, e.Href, d.InputType}
 	}
 	snap.Actions = append(snap.Actions,
 		snapAction{ID: "wait", Kind: "wait", Label: "Wait for the page to update"})
@@ -367,24 +464,38 @@ func lpBuildSnapshot(pageURL, title, text string, ir lpInteractiveResult) *snaps
 
 // lpKind maps one interactive element onto the same operation vocabulary
 // observeJS uses, so the judge sees one set of operations on either engine.
-func lpKind(e lpInteractive) string {
+//
+// It reads inputType when it has one, because that is the real control type,
+// and falls back to role and tag. Never reads getInteractiveElements' type
+// field: that is "native" for every element (verified), so a switch on it
+// offers the judge a text field for a checkbox.
+func lpKind(e lpInteractive, d lpNodeDetails) string {
+	switch strings.ToLower(d.InputType) {
+	case "submit", "button", "image", "reset", "checkbox", "radio":
+		return "click"
+	case "text", "email", "url", "tel", "search", "number", "password", "time", "date":
+		return "fill"
+	case "":
+		// No inputType: not an <input>. Fall through to role and tag.
+	default:
+		return "click"
+	}
+	switch strings.ToLower(e.Role) {
+	case "textbox", "searchbox", "spinbutton":
+		return "fill"
+	case "combobox":
+		if strings.EqualFold(e.TagName, "select") {
+			return "select"
+		}
+		return "fill"
+	}
 	switch strings.ToLower(e.TagName) {
 	case "select":
 		return "select"
 	case "textarea":
 		return "fill"
-	case "a", "button":
-		return "click"
-	case "input":
-		switch strings.ToLower(e.Type) {
-		case "submit", "button", "image", "reset", "checkbox", "radio":
-			return "click"
-		default:
-			return "fill"
-		}
-	default:
-		return "click"
 	}
+	return "click"
 }
 
 // lpCall issues a CDP command on an attached Lightpanda session. dialCDP's

@@ -55,6 +55,15 @@ agent-webmcp run example.com --goal ".." --text ".." --engine lightpanda --execu
         verified there), <code>auth</code> (needs headed), <code>close</code>{" "}
         (no profiles).
       </p>
+      <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        The two engines offer the judge the same operations. Both hide password,
+        file and hidden fields; both name an unnamed control after its role;
+        both offer a dropdown one action per option; and both make a filled
+        field and a ticked box visible as a change, so a correct step never
+        reads as a stuck loop. What lightpanda does not do is pair every
+        editable with an extra click to open it first, and it has no scroll,
+        because there is no layout.
+      </p>
       <h2 className="mt-8 text-xl font-medium text-ink">URL policy</h2>
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
         <code>--allowed-domains</code> refuses navigation to any host outside the

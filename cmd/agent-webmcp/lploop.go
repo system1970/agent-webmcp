@@ -175,69 +175,31 @@ func (l *lpLoop) observe(ctx context.Context) (*snapshot, error) {
 			text = mr.Markdown
 		}
 	}
-	snap := lpBuildSnapshot(snapURL, snapTitle, text, ir)
-	l.lpStampValues(ctx, snap)
-	return snap, nil
+	return lpBuildSnapshot(snapURL, snapTitle, text, ir, l.nodeDetails(ctx, ir.Elements)), nil
 }
 
-// lpStampValues records what each field currently holds.
+// nodeDetails reads one LP.getNodeDetails per element. This is the extra round
+// trip that buys parity with observeJS: the real input type, the live value,
+// the toggle state, and the options behind a dropdown. getInteractiveElements
+// alone cannot tell a text field from a password field.
 //
-// LP.getInteractiveElements reports no values, and that is not a detail: the
-// judge reads buildState, which reduces every field to a filled or unfilled
-// bit. A snapshot with no values therefore tells the judge nothing ever got
-// typed, no matter what fillNode did. It also makes a fill invisible to
-// fingerprintSnap, so a run that is correctly filling fields looks stuck and
-// gets stopped after three steps. The Chrome path has values because observeJS
-// reads them, so this is where the two engines were not equivalent.
-//
-// Values reach the disk in last-snapshot.json, which is owner-only, and they
-// reach the model only as a presence bit. That is the same arrangement the
-// Chrome path already has.
-func (l *lpLoop) lpStampValues(ctx context.Context, snap *snapshot) {
-	bySelector := map[string]int{}
-	var selectors []string
-	for i := range snap.Actions {
-		if k := snap.Actions[i].Kind; k != "fill" && k != "select" {
-			continue
+// A failed read is not fatal. The element is still offered from its role and
+// tag, because a read that failed must not hide a control the judge could use.
+func (l *lpLoop) nodeDetails(ctx context.Context, els []lpInteractive) []lpNodeDetails {
+	out := make([]lpNodeDetails, 0, len(els))
+	for _, e := range els {
+		var d lpNodeDetails
+		if res, err := l.call(ctx, "LP.getNodeDetails", map[string]any{"backendNodeId": e.BackendNodeID}); err == nil {
+			var wrapped struct {
+				NodeDetails lpNodeDetails `json:"nodeDetails"`
+			}
+			if json.Unmarshal(res, &wrapped) == nil {
+				d = wrapped.NodeDetails
+			}
 		}
-		sel, err := l.lpSelector(ctx, snap.Actions[i].Node)
-		if err != nil || sel == "" {
-			continue
-		}
-		bySelector[sel] = i
-		selectors = append(selectors, sel)
+		out = append(out, d)
 	}
-	if len(selectors) == 0 {
-		return
-	}
-	quoted := make([]string, len(selectors))
-	for i, s := range selectors {
-		quoted[i] = lpQuote(s)
-	}
-	expr := fmt.Sprintf("[%s].map(s=>{const e=document.querySelector(s);return e&&'value' in e?String(e.value):''})",
-		strings.Join(quoted, ","))
-	res, err := l.call(ctx, "Runtime.evaluate", map[string]any{"expression": expr, "returnByValue": true})
-	if err != nil {
-		return // a missing value reads as unfilled, which is the safe direction
-	}
-	var values []string
-	// lpValueString only reads string-valued evaluates; this one returns an
-	// array, so the raw JSON value is what has to be parsed.
-	raw, err := lpJSONValue(res)
-	if err != nil {
-		return
-	}
-	if json.Unmarshal(raw, &values) != nil {
-		return
-	}
-	for i, sel := range selectors {
-		if i >= len(values) {
-			break
-		}
-		if at, ok := bySelector[sel]; ok {
-			snap.Actions[at].Value = values[i]
-		}
-	}
+	return out
 }
 
 // lpSelector resolves a node to a CSS selector through LP.getNodeDetails. The
@@ -314,8 +276,14 @@ func actLP(ctx context.Context, l *lpLoop, goal string, d *decision, saved *snap
 			reuse["fill:"+action.ID] = text
 		}
 	}
-	if action.Kind == "select" && strings.TrimSpace(params) == "" {
-		return fail("params_needed", fmt.Errorf("select %q needs a value (agent supplies --params)", action.Label))
+	if action.Kind == "select" && strings.TrimSpace(action.Value) == "" {
+		// A dropdown is offered one action per option, so the option value
+		// normally travels in the snapshot and no flag is needed. --params is
+		// the fallback for a select that came with no options.
+		if strings.TrimSpace(params) == "" {
+			return fail("params_needed", fmt.Errorf("select %q needs a value (agent supplies --params)", action.Label))
+		}
+		action.Value = params
 	}
 
 	fresh, err := l.observe(ctx)
@@ -356,7 +324,7 @@ func actLP(ctx context.Context, l *lpLoop, goal string, d *decision, saved *snap
 		if selErr != nil {
 			return fail("stale", selErr)
 		}
-		if err := l.setSelect(ctx, selector, params); err != nil {
+		if err := l.setSelect(ctx, selector, action.Value); err != nil {
 			return fail("act_failed", err)
 		}
 	}

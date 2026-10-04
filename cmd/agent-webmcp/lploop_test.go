@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -208,4 +209,85 @@ func (l *lpLoop) filledValues(ctx context.Context) string {
 		return ""
 	}
 	return lpValueString(res)
+}
+
+// A toggle must be visible to the loop. LP.getInteractiveElements reports a
+// checkbox's option value, which does not change when the box is ticked, so the
+// snapshot puts the checked state in the slot the fingerprint reads. Without
+// it, ticking a box reads as no change and the loop stops itself after three
+// correct toggles. This is the same failure as a fill that lands invisibly.
+func TestLPLoopToggleIsVisible(t *testing.T) {
+	bin := lpBinary(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	l, err := startLPLoop(ctx, bin, "lptest", "https://httpbin.org/forms/post", 60*time.Second)
+	if err != nil {
+		t.Fatalf("startLPLoop: %v", err)
+	}
+	defer l.close()
+
+	before, err := l.observe(ctx)
+	if err != nil {
+		t.Fatalf("observe: %v", err)
+	}
+	var box *snapAction
+	for i := range before.Actions {
+		if before.Actions[i].Role == "checkbox" {
+			box = &before.Actions[i]
+			break
+		}
+	}
+	if box == nil {
+		t.Skip("no checkbox on this page")
+	}
+	if box.Kind != "click" {
+		t.Fatalf("a checkbox must be a click, got %q", box.Kind)
+	}
+	if box.Label == "" {
+		t.Error("a toggle with no accessible name must fall back to its role")
+	}
+
+	// The page has not moved, so the gate that runs before an act must pass.
+	unmoved, err := l.observe(ctx)
+	if err != nil {
+		t.Fatalf("second observe: %v", err)
+	}
+	if err := checkFresh(before, unmoved, box.Node); err != nil {
+		t.Fatalf("an unmoved page must pass the freshness gate: %v", err)
+	}
+
+	if _, err := l.call(ctx, "LP.clickNode", map[string]any{"backendNodeId": box.Node}); err != nil {
+		t.Fatalf("clickNode: %v", err)
+	}
+	after, err := l.observe(ctx)
+	if err != nil {
+		t.Fatalf("re-observe: %v", err)
+	}
+	if fingerprintSnap(before) == fingerprintSnap(after) {
+		t.Error("ticking a checkbox must change the fingerprint, or the loop reads it as no change")
+	}
+
+	// The guard must hold steady across the toggle. That is what makes the
+	// change legitimate rather than the page having moved under the act.
+	key := fmt.Sprintf("%d", box.Node)
+	if !guardsEqual(before.Guards[key], after.Guards[key]) {
+		t.Errorf("the guard moved when the box was ticked: %v -> %v", before.Guards[key], after.Guards[key])
+	}
+
+	// And the DOM must actually show it ticked.
+	sel, err := l.lpSelector(ctx, box.Node)
+	if err != nil {
+		t.Fatalf("resolve checkbox selector: %v", err)
+	}
+	res, err := l.call(ctx, "Runtime.evaluate", map[string]any{
+		"expression":     fmt.Sprintf("(()=>{const e=document.querySelector(%s);return e&&e.checked?'yes':'no'})()", lpQuote(sel)),
+		"returnByValue": true,
+	})
+	if err != nil {
+		t.Fatalf("read checked: %v", err)
+	}
+	if lpValueString(res) != "yes" {
+		t.Errorf("LP.clickNode did not tick %s", sel)
+	}
 }

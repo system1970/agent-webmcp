@@ -24,7 +24,7 @@ usage:
   agent-webmcp mcp [--tools core|all]
   agent-webmcp doctor [--json]
   agent-webmcp eval <js|@file> [--session NAME] [--json]
-  agent-webmcp observe [--session NAME] [--json]
+  agent-webmcp observe [url] [--session NAME] [--json]
   agent-webmcp decide --goal ".." [--session NAME] [--json]
   agent-webmcp act [--session NAME] [--json]
   agent-webmcp tick --goal ".." [--session NAME] [--json]
@@ -47,6 +47,8 @@ lightpanda:
   Runs open, crawl, observe, eval and run. It forgets the page when its CDP
   connection closes, so run holds one connection for the whole loop and takes
   the page as an argument:  run example.com --goal ".." --engine lightpanda
+  observe takes a url for the same reason, or falls back to the session's last
+  page. crawl already carries its url.
   Refused there: decide, act and tick (use run), list/invoke/execute, auth, close.
 `)
 }
