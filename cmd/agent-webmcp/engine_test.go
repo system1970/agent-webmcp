@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func TestParseEngine(t *testing.T) {
 	for _, tc := range []struct {
@@ -32,12 +36,13 @@ func TestParseEngine(t *testing.T) {
 	}
 }
 
-// Lightpanda must refuse everything that needs layout or Chrome APIs. A
-// silent degradation here would mean acting on the wrong element.
+// Lightpanda must refuse the split verbs and everything that needs a real
+// renderer. run is deliberately absent: it works there, because it holds one
+// CDP connection for the whole loop (lploop.go).
 func TestEngineGates(t *testing.T) {
 	lp := EngineLightpanda
-	if err := requireChrome(lp, FeatureAct); err == nil {
-		t.Error("act must be refused on lightpanda")
+	if err := requireChrome(lp, FeatureSplitVerbs); err == nil {
+		t.Error("decide/act/tick must be refused on lightpanda")
 	}
 	if err := requireChrome(lp, FeatureWebMCP); err == nil {
 		t.Error("WebMCP must be refused on lightpanda")
@@ -48,16 +53,122 @@ func TestEngineGates(t *testing.T) {
 	if err := requireChrome(lp, FeatureProfiles); err == nil {
 		t.Error("profiles must be refused on lightpanda")
 	}
+	if err := requireChrome(lp, FeatureLayout); err == nil {
+		t.Error("geometry must be refused on lightpanda")
+	}
 	if err := requireChrome(lp, FeatureLoginFlow); err == nil {
 		t.Error("login flow must be refused on lightpanda")
 	}
+	// The refusal must name the remedy, not just the block.
+	err := requireChrome(lp, FeatureSplitVerbs)
+	if err == nil || !strings.Contains(err.Error(), "use run") {
+		t.Errorf("split-verb refusal must point at run, got %v", err)
+	}
 	ch := EngineChrome
-	for _, f := range []Feature{FeatureAct, FeatureWebMCP, FeatureHeaded, FeatureProfiles, FeatureLayout, FeatureLoginFlow} {
+	for _, f := range []Feature{FeatureSplitVerbs, FeatureWebMCP, FeatureHeaded, FeatureProfiles, FeatureLayout, FeatureLoginFlow} {
 		if err := requireChrome(ch, f); err != nil {
 			t.Errorf("chrome must allow %s, got %v", f, err)
 		}
 	}
 }
+
+// The refusal text is part of the contract: an agent that hits it must learn
+// what to run instead.
+func TestEngineRefusalNamesRemedy(t *testing.T) {
+	for feat, want := range map[Feature]string{
+		FeatureSplitVerbs: "run",
+		FeatureWebMCP:     "lightpanda",
+		FeatureHeaded:     "headless",
+	} {
+		msg := requireChrome(EngineLightpanda, feat).Error()
+		if !strings.Contains(msg, want) {
+			t.Errorf("%s refusal %q must mention %q", feat, msg, want)
+		}
+	}
+}
+
+// The element mapping must agree with the vocabulary observeJS uses, because
+// one judge reads both engines' snapshots.
+func TestLPKindVocabulary(t *testing.T) {
+	cases := []struct {
+		tag, typ, want string
+	}{
+		{"a", "", "click"},
+		{"button", "", "click"},
+		{"input", "submit", "click"},
+		{"input", "button", "click"},
+		{"input", "checkbox", "click"},
+		{"input", "radio", "click"},
+		{"input", "text", "fill"},
+		{"input", "email", "fill"},
+		{"input", "search", "fill"},
+		{"input", "password", "fill"},
+		{"textarea", "", "fill"},
+		{"select", "", "select"},
+		{"div", "", "click"},
+	}
+	for _, tc := range cases {
+		if got := lpKind(lpInteractive{TagName: tc.tag, Type: tc.typ}); got != tc.want {
+			t.Errorf("lpKind(%s type=%q) = %q, want %q", tc.tag, tc.typ, got, tc.want)
+		}
+	}
+}
+
+// The guard must name the element without naming its value: a fill changes the
+// value, and a fill that trips its own freshness check can never land.
+func TestLPGuardHoldsNoValue(t *testing.T) {
+	snap := lpBuildSnapshot("https://x.test", "t", "md", lpInteractiveResult{
+		Elements: []lpInteractive{
+			{BackendNodeID: 7, TagName: "input", Type: "text", Name: "Email"},
+		},
+	})
+	if g, ok := snap.Guards["7"]; !ok {
+		t.Fatal("element 7 must have a guard")
+	} else if len(g) != 3 {
+		t.Errorf("guard should hold tag, role and href only, got %v", g)
+	}
+	for _, v := range snap.Guards["7"] {
+		if s, ok := v.(string); ok && s == "Email" {
+			t.Error("guard must not carry the accessible name as a value slot")
+		}
+	}
+	// Every action needs a guard, or checkFresh refuses it forever.
+	for _, a := range snap.Actions {
+		if a.Kind == "wait" {
+			continue
+		}
+		key := fmt.Sprintf("%d", a.Node)
+		if _, ok := snap.Guards[key]; !ok {
+			t.Errorf("action %s (%s) has no guard", a.ID, a.Kind)
+		}
+	}
+	// The wait escape must exist so the judge is never forced to act.
+	var hasWait bool
+	for _, a := range snap.Actions {
+		if a.Kind == "wait" {
+			hasWait = true
+		}
+	}
+	if !hasWait {
+		t.Error("snapshot must offer a wait action")
+	}
+}
+
+// A filled field must change the fingerprint, or the loop reads its own write
+// as no change and never notices progress.
+func TestLPFillChangesFingerprint(t *testing.T) {
+	els := lpInteractiveResult{Elements: []lpInteractive{
+		{BackendNodeID: 7, TagName: "input", Type: "text", Name: "Email"},
+	}}
+	before := lpBuildSnapshot("https://x.test", "t", "md", els)
+	els.Elements[0].Name = "Email filled"
+	after := lpBuildSnapshot("https://x.test", "t", "md", els)
+	if fingerprintSnap(before) == fingerprintSnap(after) {
+		t.Error("a changed element list must change the fingerprint")
+	}
+}
+
+
 
 func TestHostAllowed(t *testing.T) {
 	cases := []struct {

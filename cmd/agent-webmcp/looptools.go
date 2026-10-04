@@ -108,7 +108,7 @@ func runLoopToolCore(ctx context.Context, session string, meta *toolMeta, args m
 		steps = 30
 	}
 	runID := fmt.Sprintf("loop-%d", time.Now().UnixNano())
-	status, steps, reason, code, err = runLoop(ctx, session, goal, loopFillText(meta, args), timeout, steps, runID, nil)
+	status, steps, reason, code, err = runLoop(ctx, session, goal, loopFillText(meta, args), "", timeout, steps, runID, nil)
 	return status, steps, reason, goal, code, err
 }
 

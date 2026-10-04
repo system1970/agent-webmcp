@@ -205,6 +205,15 @@ func scanCacheSave(session, url string, snap *snapshot) {
 }
 
 func captureSnapshot(ctx context.Context, session string, timeout time.Duration) (*snapshot, string, error) {
+	// The run loop carries a live Lightpanda page (lploop.go). Reading it here
+	// is what lets decideOnce, actExecute and runLoop stay engine-agnostic.
+	if l := lpLoopFrom(ctx); l != nil {
+		snap, err := l.observe(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		return snap, fingerprintSnap(snap), nil
+	}
 	t, err := sessionTarget(session, timeout)
 	if err != nil {
 		return nil, "", err

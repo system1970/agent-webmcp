@@ -25,7 +25,29 @@ func runCmd(ctx context.Context, g *globals, rest []string) int {
 	}
 	timeout := time.Duration(g.timeoutMs) * time.Millisecond
 	runID := fmt.Sprintf("run-%d", time.Now().UnixNano())
-	status, steps, reason, code, err := runLoop(ctx, g.session, goal, "", timeout, maxSteps, runID,
+	// Lightpanda forgets the page when its CDP connection closes, so the loop
+	// opens one and holds it for every step. ctx carries it to captureSnapshot
+	// and actExecute; runLoop itself is unchanged.
+	//
+	// The page comes from the URL argument, or from where the session last was.
+	// There is no browser to ask: this process is about to launch the only one
+	// there will be, and a fresh Lightpanda session has no page at all.
+	if g.engine == EngineLightpanda {
+		start := positionalURL(rest)
+		if start == "" {
+			start = lastSeenURL(g.session)
+		}
+		l, err := startLPLoop(ctx, g.enginePath, g.session, start, timeout)
+		if err != nil {
+			return failErr("browser_start_failed", err)
+		}
+		defer l.close()
+		ctx = withLPLoop(ctx, l)
+	}
+	// Text and params come from the calling agent, the same as tick. Without
+	// this a fill goal can never complete on run: every fill asks for text the
+	// loop was already given but did not pass on.
+	status, steps, reason, code, err := runLoop(ctx, g.session, goal, g.text, g.params, timeout, maxSteps, runID,
 		func(step int, receipt map[string]any, d *decision) {
 			if g.json {
 				fmt.Printf("%s\n", mustJSON(receipt))
@@ -58,8 +80,9 @@ func runCmd(ctx context.Context, g *globals, rest []string) int {
 }
 
 // runLoop ticks until terminal/budget/stuck. Shared by run and loop
-// tools so the two paths cannot drift apart.
-func runLoop(ctx context.Context, session, goal, text string, timeout time.Duration, maxSteps int, runID string, onStep func(step int, receipt map[string]any, d *decision)) (status string, steps int, reason string, code string, err error) {
+// tools so the two paths cannot drift apart. params carries the value for a
+// select the same way text carries the value for a fill.
+func runLoop(ctx context.Context, session, goal, text, params string, timeout time.Duration, maxSteps int, runID string, onStep func(step int, receipt map[string]any, d *decision)) (status string, steps int, reason string, code string, err error) {
 	reuse := map[string]string{}
 	visited := []string{}
 	stuck := 0
@@ -67,7 +90,7 @@ func runLoop(ctx context.Context, session, goal, text string, timeout time.Durat
 	for steps = 0; steps < maxSteps; steps++ {
 		var receipt map[string]any
 		var d *decision
-		receipt, d, code, err = tickOnce(ctx, session, goal, timeout, text, "", reuse, visited, runID)
+		receipt, d, code, err = tickOnce(ctx, session, goal, timeout, text, params, reuse, visited, runID)
 		if err != nil {
 			return "", steps, "", code, err
 		}

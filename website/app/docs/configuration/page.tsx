@@ -29,23 +29,31 @@ AGENT_WEBMCP_VAULT_KEY      64 hex chars (else generated machine-local key)`}
       />
       <h2 className="mt-8 text-xl font-medium text-ink">Engines</h2>
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        Chrome is the default and the only engine that can act. Lightpanda is a
-        from-scratch headless engine: it starts instantly and uses far less
-        memory, which makes crawl and observe cheap, but it has no layout
-        engine. Element boxes are approximate, so anything that hit-tests input
-        is refused rather than approximated. Use <code>--engine lightpanda</code>{" "}
-        for read-only work and Chrome for anything that acts.
+        Chrome is the default. Lightpanda is a from-scratch headless engine: it
+        starts instantly and uses far less memory, and it runs the autonomous
+        loop. It has no layout engine, so element boxes are approximate and
+        anything that hit-tests input stays on Chrome. Lightpanda resolves a
+        node by id instead, which is why it can act without geometry.
+      </p>
+      <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        One rule decides what runs there: Lightpanda forgets the page when its
+        CDP connection closes. The split verbs observe in one process and act in
+        the next, so on Lightpanda the second process would find a blank page.
+        <code>run</code> holds one connection for the whole loop, which is why it
+        works and <code>decide</code>, <code>act</code> and <code>tick</code>{" "}
+        do not. Give <code>run</code> the page as an argument.
       </p>
       <CodeBlock
         code={`agent-webmcp crawl <url> --engine lightpanda
-agent-webmcp observe --engine lightpanda --executable-path /path/to/lightpanda`}
+agent-webmcp run example.com --goal ".." --text ".." --engine lightpanda --executable-path /path/to/lightpanda`}
         lang="bash"
       />
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        Refused on lightpanda: <code>act</code>, <code>decide</code>,{" "}
-        <code>tick</code>, <code>run</code> (no layout), <code>list</code>,{" "}
-        <code>invoke</code>, <code>execute</code> (WebMCP is Chrome-only),{" "}
-        <code>auth</code> (needs headed), <code>close</code> (no profiles).
+        Refused on lightpanda: <code>decide</code>, <code>act</code>,{" "}
+        <code>tick</code> (use <code>run</code>), <code>list</code>,{" "}
+        <code>invoke</code>, <code>execute</code> (WebMCP page tools are not
+        verified there), <code>auth</code> (needs headed), <code>close</code>{" "}
+        (no profiles).
       </p>
       <h2 className="mt-8 text-xl font-medium text-ink">URL policy</h2>
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
