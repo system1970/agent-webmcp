@@ -50,6 +50,25 @@ pub struct Ctx {
     pub json: bool,
 }
 
+impl Ctx {
+    /// Session for this call: --session/--session=/−s wins, else the
+    /// context default (env AGENT_WEBMCP_SESSION or "default").
+    pub fn session_for(&self, args: &[String]) -> String {
+        let mut it = args.iter().peekable();
+        while let Some(a) = it.next() {
+            if a == "--session" || a == "-s" {
+                if let Some(v) = it.next() {
+                    return v.clone();
+                }
+            }
+            if let Some(v) = a.strip_prefix("--session=") {
+                return v.to_string();
+            }
+        }
+        self.session.clone()
+    }
+}
+
 /// A plugin: id, permissions it needs, verbs and hooks it contributes.
 pub struct Plugin {
     pub id: &'static str,

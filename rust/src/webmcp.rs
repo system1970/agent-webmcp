@@ -1,0 +1,285 @@
+// WebMCP protocol: discovery (listTools fast path, event drain
+// fallback) and invocation (invokeTool, callTool fallback, async
+// toolResponded wait). Ported from the Go CLI's webmcp.go, same
+// timings: quiet 250ms, cap 900ms — silence means no tools.
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
+
+/// Mirrors the Go CLI's isNotFound: the method-absent family of errors.
+fn is_not_found(msg: &str) -> bool {
+    let s = msg.to_lowercase();
+    [
+        "wasn't found",
+        "was not found",
+        "not found",
+        "no such",
+        "unsupported",
+        "invalid method",
+        "method not found",
+    ]
+    .iter()
+    .any(|sub| s.contains(sub))
+}
+/// A WebMCP session: one websocket, id-routed calls, event drain.
+pub struct Session {
+    sock: tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
+    next_id: i64,
+}
+
+impl Session {
+    pub fn connect(ws_url: &str) -> anyhow::Result<Self> {
+        let (sock, _) = tungstenite::connect(ws_url)?;
+        let mut s = Self { sock, next_id: 0 };
+        s.set_timeout(Duration::from_millis(500))?;
+        Ok(s)
+    }
+
+    fn set_timeout(&mut self, d: Duration) -> anyhow::Result<()> {
+        use tungstenite::stream::MaybeTlsStream;
+        match self.sock.get_mut() {
+            MaybeTlsStream::Plain(t) => t.set_read_timeout(Some(d))?,
+            _ => anyhow::bail!("tls unexpected on local CDP"),
+        }
+        Ok(())
+    }
+
+    /// One call; events for other ids are dropped (callers needing
+    /// events use drain_events instead).
+    pub fn call(&mut self, method: &str, params: &str) -> anyhow::Result<serde_json::Value> {
+        self.next_id += 1;
+        let id = self.next_id;
+        let req = format!(r#"{{"id":{id},"method":"{method}","params":{params}}}"#);
+        self.sock.send(tungstenite::Message::Text(req.into()))?;
+        loop {
+            match self.sock.read()? {
+                tungstenite::Message::Text(t) => {
+                    let v: serde_json::Value = serde_json::from_str(&t)?;
+                    if v.get("id").and_then(|i| i.as_i64()) == Some(id) {
+                        if let Some(e) = v.get("error") {
+                            let msg = e.get("message").and_then(|m| m.as_str()).unwrap_or("?");
+                            if is_not_found(msg) {
+                                anyhow::bail!("not_found: {method}");
+                            }
+                            anyhow::bail!("cdp {method}: {msg}");
+                        }
+                        return Ok(v);
+                    }
+                }
+                tungstenite::Message::Ping(p) => {
+                    self.sock.send(tungstenite::Message::Pong(p))?;
+                }
+                tungstenite::Message::Close(_) => anyhow::bail!("ws closed"),
+                _ => {}
+            }
+        }
+    }
+
+    /// Drain WebMCP.toolsAdded/Changed/Removed until 250ms quiet or
+    /// 900ms cap. Returns name -> (tool json, frame).
+    pub fn drain_tools(
+        &mut self,
+        cap: Duration,
+    ) -> anyhow::Result<HashMap<String, (serde_json::Value, String)>> {
+        let quiet = Duration::from_millis(250);
+        let deadline = Instant::now() + cap;
+        let mut last = Instant::now();
+        let mut seen: HashMap<String, (serde_json::Value, String)> = HashMap::new();
+        self.set_timeout(Duration::from_millis(100))?;
+        loop {
+            if Instant::now() >= deadline || Instant::now().duration_since(last) >= quiet {
+                break;
+            }
+            let msg = match self.sock.read() {
+                Ok(m) => m,
+                Err(tungstenite::Error::Io(e))
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    continue;
+                }
+                Err(e) => anyhow::bail!("drain: {e}"),
+            };
+            let t = match msg {
+                tungstenite::Message::Text(t) => t.to_string(),
+                tungstenite::Message::Ping(p) => {
+                    self.sock.send(tungstenite::Message::Pong(p))?;
+                    continue;
+                }
+                _ => continue,
+            };
+            let v: serde_json::Value = match serde_json::from_str(&t) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let method = v.get("method").and_then(|m| m.as_str()).unwrap_or("");
+            let params = match v.get("params") {
+                Some(p) => p,
+                None => continue,
+            };
+            let frame = params
+                .get("frameId")
+                .and_then(|f| f.as_str())
+                .unwrap_or("")
+                .to_string();
+            let tools = params
+                .get("tools")
+                .and_then(|t| t.as_array())
+                .cloned()
+                .unwrap_or_default();
+            match method {
+                "WebMCP.toolsAdded" | "WebMCP.toolsChanged" => {
+                    for mut tool in tools {
+                        let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                        if name.is_empty() {
+                            continue;
+                        }
+                        let fid = tool
+                            .get("frameId")
+                            .and_then(|f| f.as_str())
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or(&frame)
+                            .to_string();
+                        if tool.get("frameId").is_none() && !fid.is_empty() {
+                            tool["frameId"] = serde_json::json!(fid);
+                        }
+                        seen.insert(format!("{name}\x00{fid}"), (tool, fid));
+                    }
+                    last = Instant::now();
+                }
+                "WebMCP.toolsRemoved" => {
+                    for tool in tools {
+                        let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                        let fid = tool
+                            .get("frameId")
+                            .and_then(|f| f.as_str())
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or(&frame);
+                        seen.remove(&format!("{name}\x00{fid}"));
+                    }
+                    last = Instant::now();
+                }
+                _ => {}
+            }
+        }
+        Ok(seen)
+    }
+
+    /// Wait for the toolResponded event matching an invocation id.
+    pub fn wait_responded(
+        &mut self,
+        invocation: &str,
+        timeout: Duration,
+    ) -> anyhow::Result<serde_json::Value> {
+        let deadline = Instant::now() + timeout;
+        self.set_timeout(Duration::from_millis(200))?;
+        loop {
+            if Instant::now() >= deadline {
+                anyhow::bail!("timed out waiting for tool response");
+            }
+            let msg = match self.sock.read() {
+                Ok(m) => m,
+                Err(tungstenite::Error::Io(e))
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    continue;
+                }
+                Err(e) => anyhow::bail!("responded: {e}"),
+            };
+            let t = match msg {
+                tungstenite::Message::Text(t) => t.to_string(),
+                tungstenite::Message::Ping(p) => {
+                    self.sock.send(tungstenite::Message::Pong(p))?;
+                    continue;
+                }
+                _ => continue,
+            };
+            let v: serde_json::Value = match serde_json::from_str(&t) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("method").and_then(|m| m.as_str()) != Some("WebMCP.toolResponded") {
+                continue;
+            }
+            let p = &v["params"];
+            if p.get("invocationId").and_then(|i| i.as_str()) != Some(invocation) {
+                continue;
+            }
+            match p.get("status").and_then(|s| s.as_str()).unwrap_or("") {
+                "Completed" => {
+                    let out = p.get("output").cloned().unwrap_or(serde_json::json!({"ok": true}));
+                    return Ok(out);
+                }
+                "Canceled" => anyhow::bail!("tool canceled"),
+                other => {
+                    let err = p.get("errorText").and_then(|e| e.as_str()).unwrap_or("");
+                    if !err.is_empty() {
+                        anyhow::bail!("{err}");
+                    }
+                    anyhow::bail!("tool failed: {other}");
+                }
+            }
+        }
+    }
+}
+
+/// List page tools: enable, listTools fast path, event drain fallback.
+pub fn list_tools(ws_url: &str) -> anyhow::Result<Vec<(serde_json::Value, String)>> {
+    let mut s = Session::connect(ws_url)?;
+    let _ = s.call("WebMCP.enable", "{}");
+    match s.call("WebMCP.listTools", "{}") {
+        Ok(v) => {
+            let mut out = vec![];
+            if let Some(arr) = v
+                .get("result")
+                .and_then(|r| r.get("tools"))
+                .and_then(|t| t.as_array())
+            {
+                for tool in arr {
+                    let fid = tool
+                        .get("frameId")
+                        .and_then(|f| f.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    out.push((tool.clone(), fid));
+                }
+            }
+            return Ok(out);
+        }
+        Err(e) => {
+            if !(e.to_string().contains("not_found") || is_not_found(&e.to_string())) {
+                anyhow::bail!("{e:#}");
+            }
+        }
+    }
+    let seen = s.drain_tools(Duration::from_millis(900))?;
+    Ok(seen.into_values().collect())
+}
+
+/// Invoke a page tool: {frameId, toolName, input} -> invocationId ->
+/// toolResponded. Retries once as callTool on older builds.
+pub fn invoke_tool(
+    ws_url: &str,
+    name: &str,
+    params: &serde_json::Value,
+    frame: &str,
+) -> anyhow::Result<serde_json::Value> {
+    let mut s = Session::connect(ws_url)?;
+    let _ = s.call("WebMCP.enable", "{}");
+    let p = serde_json::json!({"frameId": frame, "toolName": name, "input": params}).to_string();
+    let raw = match s.call("WebMCP.invokeTool", &p) {
+        Ok(v) => v,
+        Err(e) if is_not_found(&e.to_string()) => s.call("WebMCP.callTool", &p)?,
+        Err(e) => anyhow::bail!("{e:#}"),
+    };
+    let id = raw
+        .get("result")
+        .and_then(|r| r.get("invocationId"))
+        .and_then(|i| i.as_str())
+        .unwrap_or("")
+        .to_string();
+    if id.is_empty() {
+        return Ok(raw); // synchronous result
+    }
+    s.wait_responded(&id, Duration::from_secs(30))
+}

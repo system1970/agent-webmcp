@@ -2,6 +2,7 @@
 // returning its plugins; mod.rs aggregates them for the registry.
 pub mod browser;
 pub mod core;
+pub mod webmcp;
 
 use crate::plugin::Plugin;
 
@@ -9,5 +10,6 @@ use crate::plugin::Plugin;
 pub fn all() -> Vec<Plugin> {
     let mut v = core::plugins();
     v.extend(browser::plugins());
+    v.extend(webmcp::plugins());
     v
 }
