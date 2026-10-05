@@ -200,10 +200,10 @@ pub fn run_program(
             let shared = shared.clone();
             webmcp.set(
                 "search",
-                Function::new(ctx.clone(), move |q: String, lim: Option<usize>, off: Option<usize>| -> rquickjs::Result<String> {
+                Function::new(ctx.clone(), move |q: String, lim: rquickjs::function::Opt<usize>, off: rquickjs::function::Opt<usize>| -> rquickjs::Result<String> {
                     let cat = shared.lock().unwrap();
                     let (page, total) =
-                        cat.search(&q, lim.unwrap_or(10).clamp(1, 50), off.unwrap_or(0));
+                        cat.search(&q, lim.0.unwrap_or(10).clamp(1, 50), off.0.unwrap_or(0));
                     Ok(serde_json::json!({"results": page, "total": total}).to_string())
                 })?,
             )?;
