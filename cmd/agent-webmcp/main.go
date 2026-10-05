@@ -15,29 +15,34 @@ func usage() {
 	fmt.Fprint(os.Stderr, `agent-webmcp `+version+` — typed WebMCP bridge
 
 usage:
-  agent-webmcp open [url] [--session NAME] [--headed] [--chrome PATH] [--profile NAME] [--json]
-  agent-webmcp crawl <url> [--session NAME] [--json]
-  agent-webmcp list [--session NAME] [--json]
-  agent-webmcp invoke <tool> [--params JSON|@file] [--frame ID] [--session NAME] [--json]
-  agent-webmcp execute --program @file|<js> [--session NAME] [--max-calls N] [--json]
-  agent-webmcp search <terms> [--session NAME] [--namespace HOST] [--limit N] [--offset N] [--json]
-  agent-webmcp mcp [--tools core|all]
-  agent-webmcp doctor [--json]
-  agent-webmcp eval <js|@file> [--session NAME] [--json]
-  agent-webmcp observe [url] [--session NAME] [--json]
-  agent-webmcp decide --goal ".." [--session NAME] [--json]
-  agent-webmcp act [--session NAME] [--json]
-  agent-webmcp tick --goal ".." [--session NAME] [--json]
-  agent-webmcp run --goal ".." [--session NAME] [--max-steps N] [--text ..] [--params ..] [--json]
-  agent-webmcp auth <probe|handoff> [--session NAME] [--json]
-  agent-webmcp auth login <bitwarden-item> [--session NAME] [--url URL] [--submit] [--totp] [--json]
-  agent-webmcp tools <add|list|load|remove|verify> [--session NAME] [--json]
-  agent-webmcp tools list --query <terms> [--json]
-  agent-webmcp tools add --goal "..{{param}}.." --for HOST --name NAME --fields "a,b" [--fill a] [--confirm]
-  agent-webmcp close [--session NAME | --all]
-  agent-webmcp sessions [--json]
-  agent-webmcp status [--session NAME] [--json]
-  agent-webmcp version
+  browse (free, no keys):
+    agent-webmcp open [url] [--session NAME] [--headed] [--chrome PATH] [--profile NAME] [--json]
+    agent-webmcp observe [url] [--session NAME] [--json]
+    agent-webmcp eval <js|@file> [--session NAME] [--json]
+    agent-webmcp crawl <url> [--session NAME] [--json]
+    agent-webmcp close [--session NAME | --all]
+    agent-webmcp sessions [--json]
+    agent-webmcp status [--session NAME] [--json]
+  tools (free):
+    agent-webmcp list [--session NAME] [--json]
+    agent-webmcp invoke <tool> [--params JSON|@file] [--frame ID] [--session NAME] [--json]
+    agent-webmcp tools <add|list|load|remove|verify> [--session NAME] [--json]
+    agent-webmcp tools list --query <terms> [--json]
+    agent-webmcp tools add --goal "..{{param}}.." --for HOST --name NAME --fields "a,b" [--fill a] [--confirm]
+    agent-webmcp execute --program @file|<js> [--session NAME] [--max-calls N] [--json]
+    agent-webmcp search <terms> [--session NAME] [--namespace HOST] [--limit N] [--offset N] [--json]
+  auth (free; logins via your password manager):
+    agent-webmcp auth <probe|handoff> [--session NAME] [--json]
+    agent-webmcp auth login <item> [--vault bitwarden] [--session NAME] [--url URL] [--submit] [--totp] [--json]
+  judge (needs TYPESAFE_API_KEY):
+    agent-webmcp decide --goal ".." [--session NAME] [--json]
+    agent-webmcp act [--session NAME] [--json]
+    agent-webmcp tick --goal ".." [--session NAME] [--json]
+    agent-webmcp run --goal ".." [--session NAME] [--max-steps N] [--text ..] [--params ..] [--json]
+  setup:
+    agent-webmcp mcp [--tools core|all]
+    agent-webmcp doctor [--json]
+    agent-webmcp version
 
 global flags:
   --engine chrome|lightpanda     browser engine (default chrome)
