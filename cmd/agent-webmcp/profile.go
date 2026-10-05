@@ -76,6 +76,66 @@ func writeHeaded(p string, headed bool) {
 
 // ensureProfileBrowser reuses the profile's live browser or launches one.
 // Headed is a launch property: callers handle mismatch explicitly.
+// optProfileSource is set by --profile-source (or AGENT_WEBMCP_PROFILE_SOURCE):
+// import an existing Chrome user-data-dir into a fresh agent profile once,
+// so the agent starts with the user's sessions instead of a blank jar.
+// Copy-only, never attach: the source browser must be closed first.
+
+var optProfileSource = ""
+
+// profileSourceDir resolves the import source, flag then env.
+func profileSourceDir() string {
+	if strings.TrimSpace(optProfileSource) != "" {
+		return strings.TrimSpace(optProfileSource)
+	}
+	return strings.TrimSpace(os.Getenv("AGENT_WEBMCP_PROFILE_SOURCE"))
+}
+
+// importProfileSource copies a Chrome user-data-dir's contents into a fresh
+// profile dir. Refuses when the destination is not fresh, when the source
+// is live (SingletonLock present — a running browser owns its SQLite), or
+// when source and destination are the same dir.
+func importProfileSource(dest string) error {
+	src := profileSourceDir()
+	if src == "" {
+		return nil
+	}
+	sabs, err := filepath.Abs(src)
+	if err != nil {
+		return fmt.Errorf("bad_source: %v", err)
+	}
+	dabs, err := filepath.Abs(dest)
+	if err != nil {
+		return fmt.Errorf("bad_source: %v", err)
+	}
+	if sabs == dabs {
+		return fmt.Errorf("bad_source: source is the profile itself (copy, never self-import)")
+	}
+	si, err := os.Stat(sabs)
+	if err != nil || !si.IsDir() {
+		return fmt.Errorf("bad_source: no directory at %s", src)
+	}
+	if _, err := os.Stat(filepath.Join(sabs, "Default")); err != nil {
+		return fmt.Errorf("bad_source: %s has no Default profile", src)
+	}
+	if _, err := os.Stat(filepath.Join(dabs, "Default")); err == nil {
+		return fmt.Errorf("profile_ready: destination already has a profile (import runs once, on a fresh profile)")
+	}
+	for _, lock := range []string{"SingletonLock", "SingletonSocket", "SingletonCookie"} {
+		if _, err := os.Lstat(filepath.Join(sabs, lock)); err == nil {
+			return fmt.Errorf("source_live: close the source browser first (lock present at %s)", src)
+		}
+	}
+	cmd := exec.Command("cp", "-a", sabs+string(os.PathSeparator)+".", dabs+string(os.PathSeparator))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("import_failed: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+	for _, lock := range []string{"SingletonLock", "SingletonSocket", "SingletonCookie"} {
+		_ = os.Remove(filepath.Join(dabs, lock))
+	}
+	return nil
+}
+
 func ensureProfileBrowser(p, chromeBin string, headed bool, timeout time.Duration) (port int, reused bool, err error) {
 	if port, err := profilePort(p); err == nil {
 		var v map[string]any
@@ -94,6 +154,9 @@ func ensureProfileBrowser(p, chromeBin string, headed bool, timeout time.Duratio
 		return 0, false, err
 	}
 	if err := os.MkdirAll(browserProfileDir(p), 0o755); err != nil {
+		return 0, false, err
+	}
+	if err := importProfileSource(browserProfileDir(p)); err != nil {
 		return 0, false, err
 	}
 	log, err := os.OpenFile(filepath.Join(profileBase(p), "chrome.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
