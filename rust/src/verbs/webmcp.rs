@@ -4,7 +4,7 @@ use crate::plugin::{Plugin, Verb};
 
 fn page_ws(ctx: &crate::plugin::Ctx, args: &[String]) -> anyhow::Result<String> {
     let (port, _) = crate::session::load(&ctx.session_for(args))?;
-    crate::cdp::first_page(port)
+    crate::session::session_target(&ctx.session_for(args), port)
 }
 
 /// Resolve a tool name to its frame: exactly one match wins; several

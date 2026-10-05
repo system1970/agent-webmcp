@@ -27,8 +27,9 @@ fn has(args: &[String], name: &str) -> bool {
 /// pause mid-run for a human).
 fn build_catalog(ctx: &crate::plugin::Ctx, args: &[String], max: usize) -> anyhow::Result<crate::exec::Catalog> {
     use std::collections::HashMap;
-    let (port, _) = crate::session::load(&ctx.session_for(args))?;
-    let ws = crate::cdp::first_page(port)?;
+    let session = ctx.session_for(args);
+    let (port, _) = crate::session::load(&session)?;
+    let ws = crate::session::session_target(&session, port)?;
     let mut leaves = HashMap::new();
     // Live page tools.
     for (tool, frame) in crate::webmcp::list_tools(&ws).unwrap_or_default() {

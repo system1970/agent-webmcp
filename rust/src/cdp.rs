@@ -16,8 +16,16 @@ pub fn free_port() -> u16 {
     18711
 }
 
-pub fn launch_chrome(port: u16, headed: bool) -> anyhow::Result<Child> {
+pub fn launch_chrome(port: u16, headed: bool, profile: &str) -> anyhow::Result<Child> {
+    // One profile = one browser = one cookie jar. The user-data-dir is
+    // what keeps parallel browsers from collapsing into Chromium's
+    // singleton — without it, a second launch just forwards into the
+    // first and headed/headless mix into nonsense.
+    let home = std::env::var("HOME").unwrap_or("/tmp".into());
+    let dir = format!("{home}/.agent-webmcp/rust/profiles/{profile}");
+    std::fs::create_dir_all(&dir)?;
     let mut cmd = Command::new("/usr/bin/chromium");
+    cmd.arg(format!("--user-data-dir={dir}"));
     cmd.args([
         "--no-first-run",
         "--no-default-browser-check",
@@ -37,6 +45,15 @@ pub fn launch_chrome(port: u16, headed: bool) -> anyhow::Result<Child> {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()?)
+}
+
+/// One cheap liveness probe (no wait loop): does the browser answer.
+pub fn http_up(port: u16) -> bool {
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        Duration::from_millis(300),
+    )
+    .is_ok()
 }
 
 pub fn wait_http(port: u16) -> anyhow::Result<()> {
@@ -151,23 +168,11 @@ pub fn wait_load(ws_url: &str) -> anyhow::Result<()> {
     }
 }
 
-/// First page target with a debugger URL; polls while Chrome starts.
-pub fn first_page(port: u16) -> anyhow::Result<String> {
-    for _ in 0..50 {
-        let list: serde_json::Value = serde_json::from_str(&http_get(port, "/json/list")?)?;
-        if let Some(arr) = list.as_array() {
-            for t in arr {
-                let is_page = t.get("type").and_then(|k| k.as_str()) == Some("page");
-                if is_page {
-                    if let Some(ws) = t.get("webSocketDebuggerUrl").and_then(|w| w.as_str()) {
-                        if !ws.is_empty() {
-                            return Ok(ws.to_string());
-                        }
-                    }
-                }
-            }
-        }
-        std::thread::sleep(Duration::from_millis(300));
-    }
-    anyhow::bail!("no page target")
+/// Browser-level debugger URL for Target.* calls.
+pub fn browser_ws(port: u16) -> anyhow::Result<String> {
+    let v: serde_json::Value = serde_json::from_str(&http_get(port, "/json/version")?)?;
+    v.get("webSocketDebuggerUrl")
+        .and_then(|w| w.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| anyhow::anyhow!("no_browser: no debugger url on {port}"))
 }
