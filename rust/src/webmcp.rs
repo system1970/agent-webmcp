@@ -21,15 +21,18 @@ fn is_not_found(msg: &str) -> bool {
     .any(|sub| s.contains(sub))
 }
 /// A WebMCP session: one websocket, id-routed calls, event drain.
+/// Non-reply messages are parked, never dropped: events arriving
+/// during a call wait for the drain instead of vanishing.
 pub struct Session {
     sock: tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
     next_id: i64,
+    parked: std::collections::VecDeque<serde_json::Value>,
 }
 
 impl Session {
     pub fn connect(ws_url: &str) -> anyhow::Result<Self> {
         let (sock, _) = tungstenite::connect(ws_url)?;
-        let mut s = Self { sock, next_id: 0 };
+        let mut s = Self { sock, next_id: 0, parked: std::collections::VecDeque::new() };
         s.set_timeout(Duration::from_millis(500))?;
         Ok(s)
     }
@@ -54,6 +57,10 @@ impl Session {
             match self.sock.read()? {
                 tungstenite::Message::Text(t) => {
                     let v: serde_json::Value = serde_json::from_str(&t)?;
+                    if v.get("method").is_some() && v.get("id").is_none() {
+                        self.parked.push_back(v);
+                        continue;
+                    }
                     if v.get("id").and_then(|i| i.as_i64()) == Some(id) {
                         if let Some(e) = v.get("error") {
                             let msg = e.get("message").and_then(|m| m.as_str()).unwrap_or("?");
@@ -73,9 +80,68 @@ impl Session {
             }
         }
     }
+}
 
+/// Fold one CDP message into the tool set. Returns true when the
+/// quiet clock resets (a tool event arrived).
+fn ingest(
+    seen: &mut HashMap<String, (serde_json::Value, String)>,
+    v: &serde_json::Value,
+) -> bool {
+    let method = v.get("method").and_then(|m| m.as_str()).unwrap_or("");
+    let params = match v.get("params") {
+        Some(p) => p,
+        None => return false,
+    };
+    let frame = params
+        .get("frameId")
+        .and_then(|f| f.as_str())
+        .unwrap_or("")
+        .to_string();
+    let tools = params
+        .get("tools")
+        .and_then(|t| t.as_array())
+        .cloned()
+        .unwrap_or_default();
+    match method {
+        "WebMCP.toolsAdded" | "WebMCP.toolsChanged" => {
+            for mut tool in tools {
+                let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                if name.is_empty() {
+                    continue;
+                }
+                let fid = tool
+                    .get("frameId")
+                    .and_then(|f| f.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&frame)
+                    .to_string();
+                if tool.get("frameId").is_none() && !fid.is_empty() {
+                    tool["frameId"] = serde_json::json!(fid);
+                }
+                seen.insert(format!("{name}\x00{fid}"), (tool, fid));
+            }
+            true
+        }
+        "WebMCP.toolsRemoved" => {
+            for tool in tools {
+                let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                let fid = tool
+                    .get("frameId")
+                    .and_then(|f| f.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&frame);
+                seen.remove(&format!("{name}\x00{fid}"));
+            }
+            true
+        }
+        _ => false,
+    }
+}
+impl Session {
     /// Drain WebMCP.toolsAdded/Changed/Removed until 250ms quiet or
-    /// 900ms cap. Returns name -> (tool json, frame).
+    /// 900ms cap. Parked events from earlier calls are folded first.
+    /// Returns name -> (tool json, frame).
     pub fn drain_tools(
         &mut self,
         cap: Duration,
@@ -84,6 +150,11 @@ impl Session {
         let deadline = Instant::now() + cap;
         let mut last = Instant::now();
         let mut seen: HashMap<String, (serde_json::Value, String)> = HashMap::new();
+        for v in self.parked.drain(..).collect::<Vec<_>>() {
+            if ingest(&mut seen, &v) {
+                last = Instant::now();
+            }
+        }
         self.set_timeout(Duration::from_millis(100))?;
         loop {
             if Instant::now() >= deadline || Instant::now().duration_since(last) >= quiet {
@@ -111,54 +182,8 @@ impl Session {
                 Ok(v) => v,
                 Err(_) => continue,
             };
-            let method = v.get("method").and_then(|m| m.as_str()).unwrap_or("");
-            let params = match v.get("params") {
-                Some(p) => p,
-                None => continue,
-            };
-            let frame = params
-                .get("frameId")
-                .and_then(|f| f.as_str())
-                .unwrap_or("")
-                .to_string();
-            let tools = params
-                .get("tools")
-                .and_then(|t| t.as_array())
-                .cloned()
-                .unwrap_or_default();
-            match method {
-                "WebMCP.toolsAdded" | "WebMCP.toolsChanged" => {
-                    for mut tool in tools {
-                        let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
-                        if name.is_empty() {
-                            continue;
-                        }
-                        let fid = tool
-                            .get("frameId")
-                            .and_then(|f| f.as_str())
-                            .filter(|s| !s.is_empty())
-                            .unwrap_or(&frame)
-                            .to_string();
-                        if tool.get("frameId").is_none() && !fid.is_empty() {
-                            tool["frameId"] = serde_json::json!(fid);
-                        }
-                        seen.insert(format!("{name}\x00{fid}"), (tool, fid));
-                    }
-                    last = Instant::now();
-                }
-                "WebMCP.toolsRemoved" => {
-                    for tool in tools {
-                        let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                        let fid = tool
-                            .get("frameId")
-                            .and_then(|f| f.as_str())
-                            .filter(|s| !s.is_empty())
-                            .unwrap_or(&frame);
-                        seen.remove(&format!("{name}\x00{fid}"));
-                    }
-                    last = Instant::now();
-                }
-                _ => {}
+            if ingest(&mut seen, &v) {
+                last = Instant::now();
             }
         }
         Ok(seen)
@@ -221,6 +246,7 @@ impl Session {
             }
         }
     }
+
 }
 
 /// List page tools: enable, listTools fast path, event drain fallback.
