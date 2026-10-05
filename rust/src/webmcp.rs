@@ -199,7 +199,7 @@ impl Session {
         self.set_timeout(Duration::from_millis(200))?;
         loop {
             if Instant::now() >= deadline {
-                anyhow::bail!("timed out waiting for tool response");
+                anyhow::bail!("timeout: no tool response within budget");
             }
             let msg = match self.sock.read() {
                 Ok(m) => m,
@@ -235,7 +235,7 @@ impl Session {
                     let out = p.get("output").cloned().unwrap_or(serde_json::json!({"ok": true}));
                     return Ok(out);
                 }
-                "Canceled" => anyhow::bail!("tool canceled"),
+                "Canceled" => anyhow::bail!("canceled: tool canceled by page"),
                 other => {
                     let err = p.get("errorText").and_then(|e| e.as_str()).unwrap_or("");
                     if !err.is_empty() {
@@ -308,7 +308,7 @@ pub fn invoke_detached(
         .unwrap_or("")
         .to_string();
     if id.is_empty() {
-        anyhow::bail!("synchronous result (no detach needed): {raw}");
+        anyhow::bail!("usage: synchronous result, no detach needed: {raw}");
     }
     let dir = invocation_dir(session)?;
     std::fs::write(
@@ -345,7 +345,7 @@ fn invocation_dir(session: &str) -> anyhow::Result<std::path::PathBuf> {
 pub fn read_result(session: &str, id: &str) -> anyhow::Result<serde_json::Value> {
     let b = std::fs::read_to_string(invocation_dir(session)?.join(format!("{id}.json")))
         .map_err(|_| anyhow::anyhow!("not_found: no invocation {id} for session {session}"))?;
-    serde_json::from_str(&b).map_err(|_| anyhow::anyhow!("unreadable invocation {id}"))
+    serde_json::from_str(&b).map_err(|_| anyhow::anyhow!("not_found: unreadable invocation {id}"))
 }
 /// Invoke a page tool: {frameId, toolName, input} -> invocationId ->
 /// toolResponded. Retries once as callTool on older builds.

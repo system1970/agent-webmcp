@@ -34,7 +34,7 @@ pub fn plugins() -> Vec<Plugin> {
             permissions: vec![],
             verbs: vec![Verb {
                 name: "version",
-                help: "print version",
+                help: "version — print binary version",
                 run: |_ctx, _reg, _verb, _args| Ok(serde_json::json!({"version": env!("CARGO_PKG_VERSION")})),
             }],
             hooks: crate::plugin::Hooks {

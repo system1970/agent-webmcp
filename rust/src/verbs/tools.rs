@@ -71,7 +71,7 @@ fn tools_add(args: &[String]) -> anyhow::Result<serde_json::Value> {
     let name = crate::args::flag(args, "--name").ok_or_else(|| anyhow::anyhow!("tools add needs --name"))?;
     let desc = crate::args::flag(args, "--desc").unwrap_or_default();
     let js = std::fs::read_to_string(&file)
-        .map_err(|e| anyhow::anyhow!("cannot read {file}: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("not_found: cannot read {file}: {e}"))?;
     let stored = crate::tools::save_file(&name, &js)?;
     let meta = crate::tools::ToolMeta {
         name: name.clone(),

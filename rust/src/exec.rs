@@ -53,7 +53,7 @@ impl Catalog {
         }
         self.calls += 1;
         if self.calls > self.max {
-            anyhow::bail!("max_calls exceeded ({})", self.max);
+            anyhow::bail!("budget: max_calls exceeded ({})", self.max);
         }
         Ok(())
     }
@@ -95,7 +95,7 @@ impl Catalog {
                 "tool": leaf.name, "description": leaf.desc,
                 "required": leaf.required,
             })),
-            None => anyhow::bail!("unknown tool {name}"),
+            None => anyhow::bail!("not_found: unknown tool {name}"),
         }
     }
 }
@@ -261,7 +261,7 @@ pub fn run_program(
             }
         })?;
         if v.type_of() == rquickjs::Type::Undefined {
-            anyhow::bail!("no return: programs must return a value explicitly");
+            anyhow::bail!("usage: no return: programs must return a value explicitly");
         }
         to_json(ctx, v)
     })

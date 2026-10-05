@@ -152,7 +152,7 @@ pub fn plugins() -> Vec<Plugin> {
             },
             Verb {
                 name: "eval",
-                help: "eval <js> [--session NAME] — run JavaScript, return value",
+                help: "eval <js> [--session NAME] — run page JavaScript, return JSON value",
                 run: |ctx, _reg, _verb, args| {
                     let expr = crate::args::positionals(args).first().cloned().unwrap_or_default();
                     if expr.is_empty() {
@@ -190,7 +190,7 @@ pub fn plugins() -> Vec<Plugin> {
                 },
                 Verb {
                     name: "sessions",
-                    help: "sessions — known sessions with liveness and urls",
+                    help: "sessions — list known sessions with liveness and urls",
                     run: |_ctx, _reg, _verb, _args| {
                         Ok(serde_json::json!({"sessions": crate::session::list_all()}))
                     },
