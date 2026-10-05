@@ -52,6 +52,11 @@ pub fn plugins() -> Vec<Plugin> {
                     Some("list") => Ok(reg.list()),
                     _ => anyhow::bail!("usage: plugin <list>"),
                 },
+            },
+            Verb {
+                name: "audit",
+                help: "audit — verb usage, error rate, mean ms from the evidence log",
+                run: |_ctx, _reg, _args| Ok(crate::session::audit_all()),
             }],
             hooks: crate::plugin::Hooks {
                 before: None,
