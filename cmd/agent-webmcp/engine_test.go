@@ -651,3 +651,15 @@ func TestWebMCPRefusalIsStructural(t *testing.T) {
 		}
 	}
 }
+func TestIsLoginGoal(t *testing.T) {
+	for _, g := range []string{"Click the Continue with Google button to start login", "sign in via oauth", "authenticate the session"} {
+		if !isLoginGoal(g) {
+			t.Errorf("expected login goal: %q", g)
+		}
+	}
+	for _, g := range []string{"find the pricing page", "search for startups", "read the docs"} {
+		if isLoginGoal(g) {
+			t.Errorf("unexpected login goal: %q", g)
+		}
+	}
+}

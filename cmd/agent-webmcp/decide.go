@@ -66,6 +66,22 @@ func opsForKind(kind string) string {
 	return ""
 }
 
+// isLoginGoal reports a goal whose task is authentication itself. The
+// login-wall gate keeps the loop from burning steps on a wall it cannot
+// pass — but when the wall IS the task (sign in via OAuth, fill the login
+// form), refusing means the judge can never attempt the job it was asked
+// to do. Observed live: decide refused on a sign-in page whose Google
+// button was the entire goal.
+func isLoginGoal(goal string) bool {
+	g := strings.ToLower(goal)
+	for _, m := range []string{"log in", "login", "log-in", "sign in", "signin", "sign-in", "oauth", "authenticate"} {
+		if strings.Contains(g, m) {
+			return true
+		}
+	}
+	return false
+}
+
 func decideCmd(ctx context.Context, g *globals, rest []string) int {
 	goal, _ := verbFlag(rest, "goal")
 	if strings.TrimSpace(goal) == "" {
@@ -203,7 +219,7 @@ func decideOnce(ctx context.Context, session, goal string, timeout time.Duration
 	if detectBotWall(snap.URL, snap.Text) {
 		return fail("bot_wall", fmt.Errorf("bot check page (%s) — stopping before burning steps", snap.URL))
 	}
-	if detectLoginWall(snap.URL, snap.Text) {
+	if detectLoginWall(snap.URL, snap.Text) && !isLoginGoal(goal) {
 		return fail("auth_required", fmt.Errorf("login wall at %s — one-time handoff: auth handoff --session %s --url %s", snap.URL, session, snap.URL))
 	}
 	// Page tools live in the page, so they need a page to read them from.
