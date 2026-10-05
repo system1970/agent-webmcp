@@ -41,10 +41,22 @@ pub fn launch_chrome(port: u16, headed: bool, profile: &str) -> anyhow::Result<C
     } else {
         cmd.args(["--headless=new", "--hide-scrollbars", "--window-size=1440,900"]);
     }
-    Ok(cmd
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()?)
+    // Chrome's own log goes to the profile dir: a dead browser must
+    // leave evidence instead of silence (stdio=null taught us nothing).
+    let log_path = format!("{dir}/chrome.log");
+    let out = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map(std::process::Stdio::from)
+        .unwrap_or(std::process::Stdio::null());
+    let err = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .map(std::process::Stdio::from)
+        .unwrap_or(std::process::Stdio::null());
+    Ok(cmd.stdout(out).stderr(err).spawn()?)
 }
 
 /// One cheap liveness probe (no wait loop): does the browser answer.
