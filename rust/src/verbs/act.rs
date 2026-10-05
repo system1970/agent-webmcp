@@ -72,7 +72,7 @@ pub fn plugins() -> Vec<Plugin> {
             Verb {
                 name: "click",
                 help: "click <@eN> [--session NAME] — trusted click on a snapshot target",
-                run: |ctx, _reg, args| {
+                run: |ctx, _reg, _verb, args| {
                     let id = crate::args::positionals(args)
                         .first()
                         .cloned()
@@ -89,7 +89,7 @@ pub fn plugins() -> Vec<Plugin> {
             Verb {
                 name: "fill",
                 help: "fill <@eN> <text> [--session NAME] [--submit] — focus, trusted text entry, read-back verified",
-                run: |ctx, _reg, args| {
+                run: |ctx, _reg, _verb, args| {
                     let pos = crate::args::positionals(args);
                     let id = pos
                         .first()

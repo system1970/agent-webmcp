@@ -7,8 +7,9 @@ use std::time::Duration;
 /// Build the session catalog: live page tools plus verified custom
 /// tools for the page host. Required args come from each tool's
 /// input schema; loop/confirm tools are excluded (a program cannot
-/// pause mid-run for a human).
-fn build_catalog(ctx: &crate::plugin::Ctx, args: &[String], max: usize) -> anyhow::Result<crate::exec::Catalog> {
+/// pause mid-run for a human). Shared with ext: external verbs run
+/// over the same catalog as execute.
+pub(crate) fn build_catalog(ctx: &crate::plugin::Ctx, args: &[String], max: usize) -> anyhow::Result<crate::exec::Catalog> {
     use std::collections::HashMap;
     let session = ctx.session_for(args);
     let (port, _) = crate::session::load(&session)?;
@@ -56,14 +57,14 @@ fn build_catalog(ctx: &crate::plugin::Ctx, args: &[String], max: usize) -> anyho
 }
 
 /// Build the session catalog: live page tools plus verified custom
-fn max_calls(args: &[String]) -> usize {
+pub(crate) fn max_calls(args: &[String]) -> usize {
     crate::args::flag(args, "--max-calls")
         .and_then(|s| s.parse().ok())
         .map(|n: i64| n.clamp(1, 50) as usize)
         .unwrap_or(10)
 }
 
-fn timeout_ms(args: &[String]) -> u64 {
+pub(crate) fn timeout_ms(args: &[String]) -> u64 {
     crate::args::flag(args, "--timeout-ms")
         .and_then(|s| s.parse().ok())
         .unwrap_or(30_000)
@@ -78,7 +79,7 @@ pub fn plugins() -> Vec<Plugin> {
             Verb {
                 name: "execute",
                 help: "execute --program @file|<js> [--session NAME] [--max-calls N] — run one JS program over session tools",
-                run: |ctx, _reg, args| {
+                run: |ctx, _reg, _verb, args| {
                     let positional: Vec<String> = crate::args::positionals(args);
                     let code = if crate::args::has(args, "--program") {
                         crate::args::flag(args, "--program").unwrap_or_default()
@@ -105,7 +106,7 @@ pub fn plugins() -> Vec<Plugin> {
             Verb {
                 name: "search",
                 help: "search <terms> [--session NAME] [--limit N] [--offset N] — progressive discovery over session tools",
-                run: |ctx, _reg, args| {
+                run: |ctx, _reg, _verb, args| {
                     let query = crate::args::positionals(args).join(" ");
                     if query.trim().is_empty() {
                         anyhow::bail!("usage: search <terms> [--session NAME] [--limit N] [--offset N]");

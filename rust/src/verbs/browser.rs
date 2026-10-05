@@ -91,7 +91,7 @@ pub fn plugins() -> Vec<Plugin> {
             verbs: vec![Verb {
                 name: "open",
                 help: "open <url> [--session NAME] [--profile NAME] [--headed] — reuse profile browser, navigate session tab",
-                run: |ctx, _reg, args| {
+                run: |ctx, _reg, _verb, args| {
                     // Positional URL: first bare arg that is not a flag
                     // value (--session/--profile values are skipped).
                     // --url works too for MCP-style {url} arguments.
@@ -143,7 +143,7 @@ pub fn plugins() -> Vec<Plugin> {
             verbs: vec![Verb {
                 name: "observe",
                 help: "observe [--session NAME] — snapshot: stable @eN refs + labels",
-                run: |ctx, _reg, args| {
+                run: |ctx, _reg, _verb, args| {
                     let (port, _) = crate::session::load(&ctx.session_for(args))?;
                     let ws = crate::session::session_target(&ctx.session_for(args), port)?;
                     let snap = eval(&ws, SNAP_JS)?;
@@ -153,7 +153,7 @@ pub fn plugins() -> Vec<Plugin> {
             Verb {
                 name: "eval",
                 help: "eval <js> [--session NAME] — run JavaScript, return value",
-                run: |ctx, _reg, args| {
+                run: |ctx, _reg, _verb, args| {
                     let expr = crate::args::positionals(args).first().cloned().unwrap_or_default();
                     if expr.is_empty() {
                         anyhow::bail!("usage: eval <js> [--session NAME]");
@@ -177,7 +177,7 @@ pub fn plugins() -> Vec<Plugin> {
                 Verb {
                     name: "close",
                     help: "close [--session NAME] [--all] — shut the session tab, or every profile browser",
-                    run: |ctx, _reg, args| {
+                    run: |ctx, _reg, _verb, args| {
                         let all = args.iter().any(|a| a == "--all");
                         if all {
                             let killed = crate::session::kill_all();
@@ -191,7 +191,7 @@ pub fn plugins() -> Vec<Plugin> {
                 Verb {
                     name: "sessions",
                     help: "sessions — known sessions with liveness and urls",
-                    run: |_ctx, _reg, _args| {
+                    run: |_ctx, _reg, _verb, _args| {
                         Ok(serde_json::json!({"sessions": crate::session::list_all()}))
                     },
                 },

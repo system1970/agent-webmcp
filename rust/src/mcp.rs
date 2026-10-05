@@ -94,7 +94,7 @@ fn handle(reg: &Registry, ctx: &Ctx, line: &str) -> String {
                             &format!("hook veto: {e:#}"),
                         );
                     }
-                    match (v.run)(ctx, reg, &args) {
+                    match (v.run)(ctx, reg, verb, &args) {
                         Ok(val) => {
                             let _ = reg.hooks_after(ctx, verb, &args, &val);
                             rpc_ok(

@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 mod args;
 mod cdp;
 mod exec;
+mod ext;
 mod mcp;
 mod plugin;
 mod session;
@@ -14,7 +15,9 @@ use plugin::{Ctx, Registry};
 
 /// Build the registry: all verb plugins plus the enable/disable
 /// control list from AGENT_WEBMCP_PLUGINS (comma-separated, opencode
-/// syntax: "*", "-id", "-ns.*", later IDs re-enable).
+/// syntax: "*", "-id", "-ns.*", later IDs re-enable). External
+/// manifest plugins load last; a broken manifest warns on stderr and
+/// never fails the boot.
 fn boot_registry() -> Registry {
     let control: Vec<String> = std::env::var("AGENT_WEBMCP_PLUGINS")
         .unwrap_or_default()
@@ -27,6 +30,7 @@ fn boot_registry() -> Registry {
     for p in verbs::all() {
         r.register(p);
     }
+    ext::load_all(&mut r);
     r
 }
 
@@ -74,7 +78,7 @@ fn main() {
         fail(&format!("hook veto: {e:#}"));
     }
     let start = std::time::Instant::now();
-    let out = match (v.run)(&ctx, &reg, &words) {
+    let out = match (v.run)(&ctx, &reg, &name, &words) {
         Ok(out) => out,
         Err(e) => {
             crate::session::log_call(
