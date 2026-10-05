@@ -16,16 +16,24 @@ pub fn free_port() -> u16 {
     18711
 }
 
-pub fn launch_chrome(port: u16) -> anyhow::Result<Child> {
-    Ok(Command::new("/usr/bin/chromium")
-        .args([
-            "--headless=new",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-dev-shm-usage",
-            "--enable-features=WebMCP,WebMCPTesting",
-            &format!("--remote-debugging-port={port}"),
-        ])
+pub fn launch_chrome(port: u16, headed: bool) -> anyhow::Result<Child> {
+    let mut cmd = Command::new("/usr/bin/chromium");
+    cmd.args([
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-dev-shm-usage",
+        "--enable-features=WebMCP,WebMCPTesting",
+        &format!("--remote-debugging-port={port}"),
+    ]);
+    if headed {
+        // A headed window opens at a usable size, not maximized: somebody
+        // watching a driven browser wants a window they can move and use
+        // alongside their own.
+        cmd.arg("--window-size=1000,700");
+    } else {
+        cmd.args(["--headless=new", "--hide-scrollbars", "--window-size=1440,900"]);
+    }
+    Ok(cmd
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()?)

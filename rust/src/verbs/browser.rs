@@ -64,7 +64,7 @@ pub fn plugins() -> Vec<Plugin> {
             permissions: vec![Permission::Spawn, Permission::Network],
             verbs: vec![Verb {
                 name: "open",
-                help: "open <url> [--session NAME] — launch headless Chromium, navigate, wait load",
+                help: "open <url> [--session NAME] [--headed] — launch Chromium, navigate, wait load",
                 run: |ctx, _reg, args| {
                     let url = args
                         .iter()
@@ -72,8 +72,9 @@ pub fn plugins() -> Vec<Plugin> {
                         .map(|s| s.as_str())
                         .unwrap_or("about:blank");
                     let session = ctx.session_for(args);
+                    let headed = args.iter().any(|a| a == "--headed");
                     let port = crate::cdp::free_port();
-                    let child = crate::cdp::launch_chrome(port)?;
+                    let child = crate::cdp::launch_chrome(port, headed)?;
                     crate::cdp::wait_http(port)?;
                     let ws = crate::cdp::first_page(port)?;
                     crate::cdp::call(&ws, 1, "Page.navigate", &format!(r#"{{"url":{url:?}}}"#))?;
@@ -94,7 +95,7 @@ pub fn plugins() -> Vec<Plugin> {
                         .unwrap_or(url);
                     let injected = crate::tools::inject_verified(&ws, host);
                     std::mem::forget(child);
-                    Ok(serde_json::json!({"session": session, "url": url, "port": port, "customTools": injected}))
+                    Ok(serde_json::json!({"session": session, "url": url, "port": port, "headed": headed, "customTools": injected}))
                 },
             }],
             hooks: crate::plugin::Hooks {
