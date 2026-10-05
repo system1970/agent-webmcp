@@ -50,7 +50,7 @@ pub fn plugins() -> Vec<Plugin> {
             },
             Verb {
                 name: "invoke",
-                help: "invoke <tool> [--params JSON] [--frame ID] [--tool NAME] — call a page tool",
+                help: "invoke <tool> [--params JSON] [--frame ID] [--tool NAME] [--detach] — call a page tool",
                 run: |ctx, _reg, _verb, args| {
                     // Tool name: first positional (shared parser, so flag
                     // values never leak in), or --tool for MCP-style calls

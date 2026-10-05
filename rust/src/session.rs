@@ -123,16 +123,35 @@ pub fn session_target(session: &str, port: u16) -> anyhow::Result<String> {
 
 /// Kill one profile browser (tabs die; cookies persist for relaunch).
 /// Uses the recorded pid; the port file goes regardless so a dead
-/// browser never reads as live.
+/// browser never reads as live. Browsers launched with a pgid marker
+/// own their process group (setsid at launch): the whole tree dies,
+/// so stray renderers can't pile up and wedge the box. Unmarked
+/// (pre-marker) browsers fall back to single-pid kill — killpg on a
+/// foreign group could take the caller's own shell.
 pub fn kill_profile(profile: &str) {
     let dir = profile_dir(profile);
     let pid = std::fs::read_to_string(dir.join("pid"))
         .ok()
         .and_then(|p| p.trim().parse::<u32>().ok());
+    let grouped = dir.join("pgid").is_file();
     let _ = std::fs::remove_file(dir.join("port"));
     let _ = std::fs::remove_file(dir.join("pid"));
     let _ = std::fs::remove_file(dir.join("headed"));
+    let _ = std::fs::remove_file(dir.join("pgid"));
     if let Some(pid) = pid {
+        // PID reuse guard: only signal a process that is still our
+        // profile's browser (cmdline carries the user-data-dir).
+        let cmd =
+            std::fs::read_to_string(format!("/proc/{pid}/cmdline")).unwrap_or_default().replace('\0', " ");
+        if !(cmd.contains("chrom") && cmd.contains(&format!("profiles/{profile}"))) {
+            return;
+        }
+        if grouped {
+            use nix::sys::signal::{killpg, Signal};
+            if killpg(nix::unistd::Pid::from_raw(pid as i32), Signal::SIGKILL).is_ok() {
+                return;
+            }
+        }
         // Unix-only by design (Linux-first CLI): SIGKILL via kill(1).
         let _ = std::process::Command::new("kill")
             .args(["-9", &pid.to_string()])

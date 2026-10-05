@@ -109,7 +109,7 @@ pub fn plugins() -> Vec<Plugin> {
                     // A headed/headless mismatch relaunches: a reused
                     // browser in the wrong mode is a lie the receipt
                     // must never tell (same rule as ensure_browser).
-                    let (port, reused) = match crate::session::load(&session) {
+                    let (mut port, mut reused) = match crate::session::load(&session) {
                         Ok((port, _)) => {
                             if crate::session::profile_headed(&profile) != headed {
                                 crate::session::kill_profile(&profile);
@@ -124,13 +124,32 @@ pub fn plugins() -> Vec<Plugin> {
                             (port, false)
                         }
                     };
-                    let ws = crate::session::session_target(&session, port)?;
+                    let mut ws = crate::session::session_target(&session, port)?;
                     crate::cdp::call(&ws, 1, "Page.navigate", &format!(r#"{{"url":{url:?}}}"#))?;
                     // Same tab after navigate. about:blank never
                     // fires load; everything else enables-then-navigates
                     // on one connection so fast loads can't slip through.
                     if url != "about:blank" {
-                        crate::cdp::navigate_and_wait(&ws, &url)?;
+                        if let Err(e) = crate::cdp::navigate_and_wait(&ws, &url) {
+                            // Wedged renderers heal by relaunch, exactly
+                            // once: a dead tab (evaluate fails) on a reused
+                            // browser gets a fresh browser + retry. A live
+                            // but slow tab reports honestly — no second
+                            // deadline burned on a slow site.
+                            let wedge = reused
+                                && e.to_string().contains("load timeout")
+                                && !crate::cdp::tab_alive(&ws);
+                            if !wedge {
+                                return Err(e);
+                            }
+                            crate::session::kill_profile(&profile);
+                            (port, reused) = match crate::session::ensure_browser(&profile, headed) {
+                                Ok((p, _)) => (p, false),
+                                Err(_) => return Err(e),
+                            };
+                            ws = crate::session::session_target(&session, port)?;
+                            crate::cdp::navigate_and_wait(&ws, &url)?;
+                        }
                     }
                     crate::session::save(&session, &profile, port, &url)?;
                     // Verified host-matched tools inject on every open.
