@@ -23,6 +23,7 @@ pub fn launch_chrome(port: u16) -> anyhow::Result<Child> {
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-dev-shm-usage",
+            "--enable-features=WebMCP,WebMCPTesting",
             &format!("--remote-debugging-port={port}"),
         ])
         .stdout(std::process::Stdio::null())

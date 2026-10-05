@@ -4,6 +4,7 @@ mod cdp;
 mod plugin;
 mod session;
 mod verbs;
+mod webmcp;
 
 use plugin::{Ctx, Registry};
 

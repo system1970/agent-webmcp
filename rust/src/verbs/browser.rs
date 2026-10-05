@@ -54,16 +54,21 @@ pub fn plugins() -> Vec<Plugin> {
                 name: "open",
                 help: "open <url> [--session NAME] — launch headless Chromium, navigate, wait load",
                 run: |ctx, _reg, args| {
-                    let url = args.first().map(|s| s.as_str()).unwrap_or("about:blank");
+                    let url = args
+                        .iter()
+                        .find(|a| !a.starts_with('-'))
+                        .map(|s| s.as_str())
+                        .unwrap_or("about:blank");
+                    let session = ctx.session_for(args);
                     let port = crate::cdp::free_port();
                     let child = crate::cdp::launch_chrome(port)?;
                     crate::cdp::wait_http(port)?;
                     let ws = crate::cdp::first_page(port)?;
                     crate::cdp::call(&ws, 1, "Page.navigate", &format!(r#"{{"url":{url:?}}}"#))?;
                     crate::cdp::wait_load(&ws)?;
-                    crate::session::save(&ctx.session, port, url)?;
+                    crate::session::save(&session, port, url)?;
                     std::mem::forget(child);
-                    Ok(serde_json::json!({"session": ctx.session, "url": url, "port": port}))
+                    Ok(serde_json::json!({"session": session, "url": url, "port": port}))
                 },
             }],
             hooks: crate::plugin::Hooks {
@@ -77,8 +82,8 @@ pub fn plugins() -> Vec<Plugin> {
             verbs: vec![Verb {
                 name: "observe",
                 help: "observe [--session NAME] — snapshot: stable @eN refs + labels",
-                run: |ctx, _reg, _args| {
-                    let (port, _) = crate::session::load(&ctx.session)?;
+                run: |ctx, _reg, args| {
+                    let (port, _) = crate::session::load(&ctx.session_for(args))?;
                     let ws = crate::cdp::first_page(port)?;
                     let snap = eval(&ws, SNAP_JS)?;
                     Ok(snap)
