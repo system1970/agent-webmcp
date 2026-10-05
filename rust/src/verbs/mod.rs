@@ -1,0 +1,13 @@
+// Verb plugins, one file per area. Each module exposes a constructor
+// returning its plugins; mod.rs aggregates them for the registry.
+pub mod browser;
+pub mod core;
+
+use crate::plugin::Plugin;
+
+/// All verb plugins, in dispatch order.
+pub fn all() -> Vec<Plugin> {
+    let mut v = core::plugins();
+    v.extend(browser::plugins());
+    v
+}

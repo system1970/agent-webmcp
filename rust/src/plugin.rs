@@ -11,9 +11,9 @@
 // ignore removals so policy can never be switched off: `core.policy`
 // (untrusted-page-data rules) and `core.receipts` (every action leaves
 // a receipt).
-use std::collections::HashMap;
 
 /// What a plugin may touch. Requested in the manifest, enforced by the host.
+// Unused variants are future backends (secrets managers, fs tools).
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Permission {
@@ -25,11 +25,12 @@ pub enum Permission {
 }
 
 /// A verb a plugin contributes: name, one-line help, handler.
-#[allow(dead_code)]
+/// Handlers receive the call context, the registry (so verbs like
+/// `plugin list` can describe the system), and raw args.
 pub struct Verb {
     pub name: &'static str,
     pub help: &'static str,
-    pub run: fn(&Ctx, &[String]) -> anyhow::Result<serde_json::Value>,
+    pub run: fn(&Ctx, &Registry, &[String]) -> anyhow::Result<serde_json::Value>,
 }
 
 /// Hooks run around verbs. `before` may veto by returning Err.
@@ -39,6 +40,8 @@ pub struct Hooks {
 }
 
 /// Host context handed to every verb: session, profile, output mode.
+/// `json` reserves machine-vs-human output for future human-readable
+/// verbs; today every verb emits JSON.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct Ctx {
@@ -142,26 +145,19 @@ impl Registry {
         Ok(())
     }
 
-    pub fn list(&self) -> Vec<HashMap<&str, String>> {
-        self.plugins
+    pub fn list(&self) -> serde_json::Value {
+        let plugins: Vec<serde_json::Value> = self
+            .plugins
             .iter()
             .map(|p| {
-                let mut m = HashMap::new();
-                m.insert("id", p.id.to_string());
-                m.insert(
-                    "enabled",
-                    if self.enabled(p.id) {
-                        "true".into()
-                    } else {
-                        "false".into()
-                    },
-                );
-                m.insert(
-                    "verbs",
-                    p.verbs.iter().map(|v| v.name).collect::<Vec<_>>().join(","),
-                );
-                m
+                serde_json::json!({
+                    "id": p.id,
+                    "enabled": self.enabled(p.id),
+                    "permissions": p.permissions.iter().map(|perm| format!("{perm:?}").to_lowercase()).collect::<Vec<_>>(),
+                    "verbs": p.verbs.iter().map(|v| serde_json::json!({"name": v.name, "help": v.help})).collect::<Vec<_>>(),
+                })
             })
-            .collect()
+            .collect();
+        serde_json::json!({"plugins": plugins})
     }
 }
