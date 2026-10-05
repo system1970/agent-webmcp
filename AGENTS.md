@@ -147,3 +147,19 @@ New verb, flag, env var, or behavior change → update **all** of these:
 - `observe` output is already minimal — prefer it over raw `eval` dumps.
 - Thresholds (`goalCompleteThreshold`, margin/acceptance floors, stuck budget)
   are fit to loop data in `policy.go`; do not retune from theory, re-run live.
+
+## Agent skills
+
+### Issue tracker
+
+Local markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Defaults (`needs-triage`, `needs-info`, `ready-for-agent`,
+`ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `AGENTS.md` vocabulary + `MAP.md` facts.
+See `docs/agents/domain.md`.

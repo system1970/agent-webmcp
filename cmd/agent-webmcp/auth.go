@@ -168,7 +168,7 @@ func finishAuthRequired(g *globals, goal string, steps int, pageURL string) int 
 
 func authCmd(ctx context.Context, g *globals, rest []string) int {
 	if len(rest) == 0 {
-		return fail("usage", "usage: agent-webmcp auth <probe|handoff|save|login|list|show|delete> [--session NAME] [--json]")
+		return fail("usage", "usage: agent-webmcp auth <probe|handoff|login> [--session NAME] [--json]")
 	}
 	switch rest[0] {
 	case "probe":
@@ -177,15 +177,23 @@ func authCmd(ctx context.Context, g *globals, rest []string) int {
 		return authHandoffCmd(ctx, g, rest[1:])
 	case "login":
 		// Bare `auth login` is the headed handoff alias; `auth login
-		// <name>` is the vault login (profile name, not a flag).
+		// <item>` fills from the secrets backend (item name or id),
+		// never stored. `--vault` picks the manager (default bitwarden).
 		if len(rest) > 1 && !strings.HasPrefix(rest[1], "-") {
-			return authVaultLoginCmd(ctx, g, rest[1:])
+			vault, _ := verbFlag(rest, "vault")
+			if vault == "" {
+				vault = os.Getenv("AGENT_WEBMCP_VAULT")
+			}
+			backend, err := backendFor(vault)
+			if err != nil {
+				return failErr("bad_vault", err)
+			}
+			url, _ := verbFlag(rest, "url")
+			return runLoginFlow(ctx, g, backend, rest[1], url, hasFlag(rest, "submit"), hasFlag(rest, "totp"))
 		}
 		return authHandoffCmd(ctx, g, rest[1:])
-	case "save", "list", "show", "delete":
-		return authVaultCmd(g, rest)
 	default:
-		return fail("usage", "usage: agent-webmcp auth <probe|handoff|save|login|list|show|delete> [--session NAME] [--json]")
+		return fail("usage", "usage: agent-webmcp auth <probe|handoff|login> [--session NAME] [--json]")
 	}
 }
 

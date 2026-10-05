@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 )
 
@@ -62,11 +63,13 @@ func doctorCmd(ctx context.Context, g *globals, rest []string) int {
 		add("registry", true, fmt.Sprintf("%d tools, %d verified", len(tools), verified))
 	}
 
-	vf, verr := vaultLoad()
-	if verr != nil {
-		add("vault", false, verr.Error())
+	backend, berr := backendFor(os.Getenv("AGENT_WEBMCP_VAULT"))
+	if berr != nil {
+		add("secrets", false, berr.Error())
+	} else if detail, serr := backend.Status(ctx); serr != nil {
+		add("secrets", false, serr.Error())
 	} else {
-		add("vault", true, fmt.Sprintf("%d profiles", len(vf.Profiles)))
+		add("secrets", true, fmt.Sprintf("%s: %s", backend.Name(), detail))
 	}
 
 	if cerr == nil {
