@@ -56,14 +56,28 @@ pub fn http_get(port: u16, path: &str) -> anyhow::Result<String> {
         .text()?)
 }
 
-/// One CDP round trip. Events for other calls are skipped.
+/// One CDP round trip. Reads carry a timeout so a silent peer can
+/// never wedge the CLI: every read either progresses or the deadline
+/// fires. Events for other calls are skipped.
 pub fn call(ws_url: &str, id: i64, method: &str, params: &str) -> anyhow::Result<serde_json::Value> {
     let (mut sock, _) = tungstenite::connect(ws_url)?;
+    set_timeout(&mut sock, Duration::from_secs(5))?;
     let req = format!(r#"{{"id":{id},"method":"{method}","params":{params}}}"#);
     sock.send(tungstenite::Message::Text(req.into()))?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(25);
     loop {
-        match sock.read()? {
-            tungstenite::Message::Text(t) => {
+        if std::time::Instant::now() >= deadline {
+            anyhow::bail!("cdp {method}: reply timeout");
+        }
+        match sock.read() {
+            Err(tungstenite::Error::Io(e))
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                continue;
+            }
+            Err(e) => anyhow::bail!("cdp {method}: {e}"),
+            Ok(tungstenite::Message::Text(t)) => {
                 let v: serde_json::Value = serde_json::from_str(&t)?;
                 if v.get("id").and_then(|i| i.as_i64()) == Some(id) {
                     if let Some(e) = v.get("error") {
@@ -72,18 +86,33 @@ pub fn call(ws_url: &str, id: i64, method: &str, params: &str) -> anyhow::Result
                     return Ok(v);
                 }
             }
-            tungstenite::Message::Ping(p) => {
+            Ok(tungstenite::Message::Ping(p)) => {
                 sock.send(tungstenite::Message::Pong(p))?;
             }
-            tungstenite::Message::Close(_) => anyhow::bail!("ws closed"),
-            _ => {}
+            Ok(tungstenite::Message::Close(_)) => anyhow::bail!("ws closed"),
+            Ok(_) => {}
         }
     }
 }
 
-/// Enable Page and block until loadEventFired (20s cap).
+fn set_timeout(
+    sock: &mut tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
+    d: Duration,
+) -> anyhow::Result<()> {
+    use tungstenite::stream::MaybeTlsStream;
+    match sock.get_mut() {
+        MaybeTlsStream::Plain(t) => t.set_read_timeout(Some(d))?,
+        _ => anyhow::bail!("tls unexpected on local CDP"),
+    }
+    Ok(())
+}
+
+/// Enable Page and block until loadEventFired (20s cap). Reads are
+/// timeout-paced so a page that never loads (about:blank) fails fast
+/// instead of wedging.
 pub fn wait_load(ws_url: &str) -> anyhow::Result<()> {
     let (mut sock, _) = tungstenite::connect(ws_url)?;
+    set_timeout(&mut sock, Duration::from_secs(2))?;
     sock.send(tungstenite::Message::Text(
         r#"{"id":1,"method":"Page.enable","params":{}}"#.into(),
     ))?;
@@ -92,17 +121,24 @@ pub fn wait_load(ws_url: &str) -> anyhow::Result<()> {
         if start.elapsed() > Duration::from_secs(20) {
             anyhow::bail!("load timeout");
         }
-        match sock.read()? {
-            tungstenite::Message::Text(t) => {
+        match sock.read() {
+            Err(tungstenite::Error::Io(e))
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                continue;
+            }
+            Err(e) => anyhow::bail!("load: {e}"),
+            Ok(tungstenite::Message::Text(t)) => {
                 if t.contains("Page.loadEventFired") {
                     return Ok(());
                 }
             }
-            tungstenite::Message::Ping(p) => {
+            Ok(tungstenite::Message::Ping(p)) => {
                 sock.send(tungstenite::Message::Pong(p))?;
             }
-            tungstenite::Message::Close(_) => anyhow::bail!("ws closed"),
-            _ => {}
+            Ok(tungstenite::Message::Close(_)) => anyhow::bail!("ws closed"),
+            Ok(_) => {}
         }
     }
 }

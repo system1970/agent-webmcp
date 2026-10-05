@@ -77,7 +77,11 @@ pub fn plugins() -> Vec<Plugin> {
                     crate::cdp::wait_http(port)?;
                     let ws = crate::cdp::first_page(port)?;
                     crate::cdp::call(&ws, 1, "Page.navigate", &format!(r#"{{"url":{url:?}}}"#))?;
-                    crate::cdp::wait_load(&ws)?;
+                    // Same page target after navigate. about:blank never
+                    // fires load; everything else waits for it.
+                    if url != "about:blank" {
+                        crate::cdp::wait_load(&ws)?;
+                    }
                     crate::session::save(&session, port, url)?;
                     // Verified host-matched tools inject on every open.
                     // Best-effort: injection never fails the open.
