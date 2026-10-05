@@ -100,6 +100,10 @@ func importProfileSource(dest string) error {
 	if src == "" {
 		return nil
 	}
+	// Firefox/Zen-shaped sources take the cookie-seed path, not the copy path.
+	if firefoxSource() != "" {
+		return nil
+	}
 	sabs, err := filepath.Abs(src)
 	if err != nil {
 		return fmt.Errorf("bad_source: %v", err)
@@ -136,38 +140,30 @@ func importProfileSource(dest string) error {
 	return nil
 }
 
-func ensureProfileBrowser(p, chromeBin string, headed bool, timeout time.Duration) (port int, reused bool, err error) {
-	if port, err := profilePort(p); err == nil {
-		var v map[string]any
-		if err := cdpGet(port, "/json/version", &v); err == nil {
-			return port, true, nil
-		}
-	}
+// basicStoreMarker records a completed Firefox/Zen cookie import (count
+// inside). Import runs once, on a fresh profile; the marker is the guard.
+const basicStoreMarker = ".basic-store"
+
+func startProfileBrowser(p, chromeBin string, headed bool, timeout time.Duration) (port int, err error) {
 	if chromeBin == "" {
 		if chromeBin, err = findChrome(""); err != nil {
-			return 0, false, err
+			return 0, err
 		}
 	} else if chromeBin, err = findChrome(chromeBin); err != nil {
-		return 0, false, err
+		return 0, err
 	}
 	if port, err = freePort(); err != nil {
-		return 0, false, err
-	}
-	if err := os.MkdirAll(browserProfileDir(p), 0o755); err != nil {
-		return 0, false, err
-	}
-	if err := importProfileSource(browserProfileDir(p)); err != nil {
-		return 0, false, err
+		return 0, err
 	}
 	log, err := os.OpenFile(filepath.Join(profileBase(p), "chrome.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		return 0, false, err
+		return 0, err
 	}
 	defer log.Close()
 	cmd := exec.Command(chromeBin, chromeArgs(port, browserProfileDir(p), headed)...)
 	cmd.Stdout, cmd.Stderr = log, log
 	if err := cmd.Start(); err != nil {
-		return 0, false, fmt.Errorf("chrome launch failed: %w", err)
+		return 0, fmt.Errorf("chrome launch failed: %w", err)
 	}
 	go cmd.Wait()
 	_ = os.MkdirAll(profileBase(p), 0o755)
@@ -175,6 +171,103 @@ func ensureProfileBrowser(p, chromeBin string, headed bool, timeout time.Duratio
 	_ = os.WriteFile(browserPidFile(p), []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0o644)
 	writeHeaded(p, headed)
 	if err := waitCDP(port, timeout); err != nil {
+		return 0, err
+	}
+	return port, nil
+}
+
+// firefoxSource finds a Firefox/Zen cookies.sqlite inside the import
+// source: top level or one profile subdir deep. Empty when the source
+// is a Chrome user-data-dir (Default/) instead.
+func firefoxSource() string {
+	src := profileSourceDir()
+	if src == "" {
+		return ""
+	}
+	if _, err := os.Stat(filepath.Join(src, "cookies.sqlite")); err == nil {
+		return filepath.Join(src, "cookies.sqlite")
+	}
+	ents, err := os.ReadDir(src)
+	if err != nil {
+		return ""
+	}
+	for _, e := range ents {
+		if !e.IsDir() {
+			continue
+		}
+		cand := filepath.Join(src, e.Name(), "cookies.sqlite")
+		if _, err := os.Stat(cand); err == nil {
+			return cand
+		}
+	}
+	return ""
+}
+
+// maybeSeedFirefox imports a Firefox/Zen cookie jar into the running
+// profile browser: read moz_cookies, set each through
+// Storage.setCookies, stamp the once-only marker. Chrome persists to
+// its own store — no SQLite surgery, no key handling. Returns
+// seeded=false when the source is Chrome-shaped or already seeded.
+func maybeSeedFirefox(ctx context.Context, p string, port int) (bool, error) {
+	cookiesSQLite := firefoxSource()
+	if cookiesSQLite == "" {
+		return false, nil
+	}
+	dest := browserProfileDir(p)
+	if _, err := os.Stat(filepath.Join(dest, basicStoreMarker)); err == nil {
+		return false, nil
+	}
+	// Refuse a live source: Zen/Firefox lock their profile while running.
+	src := profileSourceDir()
+	locked := func(dir string) bool {
+		for _, lock := range []string{"lock", "lock.sqlite", "parent.lock"} {
+			if _, err := os.Stat(filepath.Join(dir, lock)); err == nil {
+				return true
+			}
+		}
+		return false
+	}
+	if locked(src) {
+		return false, fmt.Errorf("source_live: close Zen/Firefox first (lock present at %s)", src)
+	}
+	if ents, err := os.ReadDir(src); err == nil {
+		for _, e := range ents {
+			if e.IsDir() && locked(filepath.Join(src, e.Name())) {
+				return false, fmt.Errorf("source_live: close Zen/Firefox first (lock present at %s)", src)
+			}
+		}
+	}
+	fcs, err := readFirefoxCookies(cookiesSQLite)
+	if err != nil {
+		return false, err
+	}
+	n, err := setCookiesLive(ctx, port, fcs)
+	if err != nil {
+		return false, err
+	}
+	_ = os.WriteFile(filepath.Join(dest, basicStoreMarker), []byte(fmt.Sprintf("%d firefox cookies", n)), 0o644)
+	return true, nil
+}
+
+func ensureProfileBrowser(ctx context.Context, p, chromeBin string, headed bool, timeout time.Duration) (port int, reused bool, err error) {
+	if port, err := profilePort(p); err == nil {
+		var v map[string]any
+		if err := cdpGet(port, "/json/version", &v); err == nil {
+			return port, true, nil
+		}
+	}
+	if err := os.MkdirAll(browserProfileDir(p), 0o755); err != nil {
+		return 0, false, err
+	}
+	if err := importProfileSource(browserProfileDir(p)); err != nil {
+		return 0, false, err
+	}
+	port, err = startProfileBrowser(p, chromeBin, headed, timeout)
+	if err != nil {
+		return 0, false, err
+	}
+	if _, err := maybeSeedFirefox(ctx, p, port); err != nil {
+		killProfileBrowser(p)
 		return 0, false, err
 	}
 	return port, false, nil
@@ -265,8 +358,7 @@ func sessionURL(session string, timeout time.Duration) (string, error) {
 // bindSessionTab ensures the profile browser and binds the session to a
 // live tab: the bound tab when alive, else a fresh tab (optionally at url).
 func bindSessionTab(ctx context.Context, session, rawURL, chromeBin string, headed bool, timeout time.Duration) (Target, bool, error) {
-	_ = ctx
-	port, _, err := ensureProfileBrowser(sessionProfile, chromeBin, headed, timeout)
+	port, _, err := ensureProfileBrowser(ctx, sessionProfile, chromeBin, headed, timeout)
 	if err != nil {
 		return Target{}, false, err
 	}

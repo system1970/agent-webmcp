@@ -339,7 +339,7 @@ when the code moves. Only this region's agent writes this file.
 - When live session tools are included, the envelope is marked `untrusted`. searchcmd.go:279
 - The live half hard-fails `webmcp_unsupported` without a WebMCP domain, which is why it is Chrome-only. searchcmd.go:205, searchcmd.go:208
 
-### Auth and the vault
+### Auth and secrets backends
 
 - Gates: index anonymously, escalate at use time. `probe` is read-only and always exits 0 with a state stamp; `handoff` pauses for a human. auth.go:14, auth.go:161
 - `authStamp` states: logged_in, anonymous, unknown, no_session, unreachable. auth.go:69
@@ -348,15 +348,19 @@ when the code moves. Only this region's agent writes this file.
 - Handoff wait defaults to 300s, clamped 30..1800. auth.go:221, auth.go:227, auth.go:230
 - `detectLoginWall`: URL markers decisive, text markers need 2 hits. auth.go:31, auth.go:54
 - `detectBotWall`: same shape, 2 text hits. customtools.go:427, customtools.go:446
-- Vault: AES-256-GCM. Key is 32 random bytes in `<home>/.vault-key` (0600); `AGENT_WEBMCP_VAULT_KEY` (64 hex) overrides it. authvault.go:86, authvault.go:58, authvault.go:59
-- Associated data binds the profile name, so entries cannot be swapped between profiles. authvault.go:139
-- `vault.json` is 0600 in a 0700 dir. authvault.go:116, authvault.go:125
-- `auth save` requires a secret from `--password-stdin` or `--password` and refuses an empty one. authvault.go:363, authvault.go:374
-- Profile names must match `^[A-Za-z0-9_-]+$`. authvault.go:170, authvault.go:343
-- `auth login <name>` decrypts in process and fills the form in-page; values never leave the page JS. authvault.go:195, authvault.go:250, authvault.go:281
-- History for a vault login records metadata only (`user_set`, `pass_set`, `submitted`), never values. authvault.go:308
-- `auth show` returns metadata and `hasPassword`; it never opens the secret. authvault.go:444
+- Secrets live in password managers, never in the CLI: SecretBackend interface (Name/Status/GetLogin/TOTP), one file per manager plus one factory line. secrets.go:50, secrets.go:66
+- Launch backend is bitwarden (`bw` CLI, free); unlock comes from the caller's BW_SESSION. bitwarden.go:20, secrets.go:30
+- `auth login <item> [--vault NAME] [--url] [--submit] [--totp] [--no-open]`; `--no-open` fills the current page for multi-step forms. auth.go:178, loginfill.go:108
+- Origin check pours only into the navigated host corroborated by the item's URIs; field binding aborts a swapped mid-fill form. loginfill.go:140, loginfill.go:100
+- History and receipts carry metadata only, never values. loginfill.go:190
 - Chrome-only: `auth` is refused on LP because handoff needs headed mode. main.go:228, engine.go:71
+
+### Profile import (sessions inheritance)
+
+- `--profile-source DIR` (or AGENT_WEBMCP_PROFILE_SOURCE) imports once into a fresh profile: Chrome user-data-dirs copy over, Firefox/Zen jars seed via CDP. profile.go:24, profile.go:36
+- Refusals: live source (SingletonLock / lock files — close it first), non-fresh destination, self-import. profile.go:62, profile.go:96, profile.go:215
+- Firefox/Zen: moz_cookies read read-only, set through Storage.setCookies on the live browser, which persists them itself; marker file guards once-only. cookies.go:86, profile.go:205, profile.go:262
+- Verified live: Zen import logged into X, GitHub, Gmail on first launch.
 
 ### Crawl
 
@@ -430,17 +434,15 @@ when the code moves. Only this region's agent writes this file.
 | File | Hash | Told about |
 |---|---|---|
 | cmd/agent-webmcp/act.go | 8dc21d13d086 | agent-webmcp |
-| cmd/agent-webmcp/auth.go | 58022e31fb9f | agent-webmcp |
-| cmd/agent-webmcp/authvault.go | 279592e6d040 | agent-webmcp |
-| cmd/agent-webmcp/authvault_test.go | 40bbc99f55fc | agent-webmcp |
+| cmd/agent-webmcp/auth.go | 2f13717a2162 | agent-webmcp |
 | cmd/agent-webmcp/browser.go | 4310fa8262ff | agent-webmcp |
 | cmd/agent-webmcp/cdp.go | a457b5e5a8a3 | agent-webmcp |
-| cmd/agent-webmcp/chrome.go | 44ebc8680951 | agent-webmcp |
+| cmd/agent-webmcp/chrome.go | faec4ebb86cc | agent-webmcp |
 | cmd/agent-webmcp/commands.go | 7e666d175c44 | agent-webmcp |
 | cmd/agent-webmcp/crawl.go | 3a9ebd64d0ec | agent-webmcp |
 | cmd/agent-webmcp/customtools.go | fe1bb2b8f9ea | agent-webmcp |
 | cmd/agent-webmcp/decide.go | b9c4588b0ff0 | agent-webmcp |
-| cmd/agent-webmcp/doctor.go | a7b1461badcd | agent-webmcp |
+| cmd/agent-webmcp/doctor.go | 50f0499270e1 | agent-webmcp |
 | cmd/agent-webmcp/engine.go | 31dc5f141bc3 | agent-webmcp |
 | cmd/agent-webmcp/engine_test.go | bcb7ea332421 | agent-webmcp |
 | cmd/agent-webmcp/execmode.go | 070317514065 | agent-webmcp |
@@ -451,7 +453,7 @@ when the code moves. Only this region's agent writes this file.
 | cmd/agent-webmcp/looptools_test.go | a8c7267c0f6b | agent-webmcp |
 | cmd/agent-webmcp/lploop.go | fe4474c61257 | agent-webmcp |
 | cmd/agent-webmcp/lploop_test.go | d581e34a2232 | agent-webmcp |
-| cmd/agent-webmcp/main.go | 432e2b563ea5 | agent-webmcp |
+| cmd/agent-webmcp/main.go | 02a55fb4164b | agent-webmcp |
 | cmd/agent-webmcp/mcp.go | db2596894ff6 | agent-webmcp |
 | cmd/agent-webmcp/mcp_test.go | d868ea00672b | agent-webmcp |
 | cmd/agent-webmcp/observe.go | e9e3ec6b86b6 | agent-webmcp |
@@ -459,7 +461,7 @@ when the code moves. Only this region's agent writes this file.
 | cmd/agent-webmcp/perm_test.go | a482ea794911 | agent-webmcp |
 | cmd/agent-webmcp/policy.go | 7f5093b59972 | agent-webmcp |
 | cmd/agent-webmcp/policy_test.go | 1291a4463808 | agent-webmcp |
-| cmd/agent-webmcp/profile.go | a36eeeb40719 | agent-webmcp |
+| cmd/agent-webmcp/profile.go | 5e3a27728acb | agent-webmcp |
 | cmd/agent-webmcp/run.go | 86cbdfe88eea | agent-webmcp |
 | cmd/agent-webmcp/searchcmd.go | eaa19fa3be70 | agent-webmcp |
 | cmd/agent-webmcp/searchcmd_test.go | 4f21e7775d38 | agent-webmcp |
@@ -468,7 +470,11 @@ when the code moves. Only this region's agent writes this file.
 | cmd/agent-webmcp/tick.go | 28710758e1f2 | agent-webmcp |
 | cmd/agent-webmcp/tools.go | ac8ca238fc04 | agent-webmcp |
 | cmd/agent-webmcp/webmcp.go | 501d868befe7 | agent-webmcp |
-| go.mod | b30c602db9e4 | agent-webmcp |
+| cmd/agent-webmcp/cookies.go | 876aa1c09377 | agent-webmcp |
+| cmd/agent-webmcp/secrets.go | 54ecf4e6ceeb | agent-webmcp |
+| cmd/agent-webmcp/loginfill.go | e224a5d6f981 | agent-webmcp |
+| cmd/agent-webmcp/bitwarden.go | 422cf9731954 | agent-webmcp |
+| go.mod | 88148245efd3 | agent-webmcp |
 | .gitignore | 9ec5ef3156b9 | agent-webmcp |
 | AGENTS.md | 726ae0d9048d | agent-webmcp |
 | website/AGENTS.md | b0db7c39c182 | agent-webmcp |
