@@ -432,13 +432,28 @@ func detectBotWall(url, text string) bool {
 		}
 	}
 	t := strings.ToLower(text)
-	markers := []string{
+	// Strong markers name the challenge outright, so one is enough. Observed
+	// live: Cloudflare's own interstitial reads "Performing security
+	// verification" and "verifies you are not a bot" — neither was in the
+	// list, and the old two-hit rule then let it through. The loop spent six
+	// confident WAITs on a page it should have refused with bot_wall, which
+	// is exactly what the check exists to prevent.
+	for _, m := range []string{
+		"performing security verification",
+		"security verification",
 		"verify you are human", "verify you're human", "verify that you are human",
+		"verifies you are not a bot", "protect against malicious bots",
 		"complete the captcha", "are you a robot", "i am not a robot",
-		"cloudflare", "checking your browser", "attention required",
+		"checking your browser", "attention required",
+	} {
+		if strings.Contains(t, m) {
+			return true
+		}
 	}
+	// Weak markers also appear on ordinary pages — "cloudflare" is on every
+	// Cloudflare page, including working ones — so they need corroboration.
 	hits := 0
-	for _, m := range markers {
+	for _, m := range []string{"cloudflare", "checking your browser", "attention required"} {
 		if strings.Contains(t, m) {
 			hits++
 		}

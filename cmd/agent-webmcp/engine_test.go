@@ -421,6 +421,154 @@ func TestProbeKeepsAConfirmedLogin(t *testing.T) {
 	}
 }
 
+// One executed record per action. buildState reads these back as the judge's
+// recent_actions, so a duplicate halves the history window and leaves
+// page_changed null on half of what the judge sees — which is how a live run
+// re-clicked an already-open panel four times while believing every click was
+// of unknown effect.
+func TestOneExecutedRecordPerAction(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AGENT_WEBMCP_HOME", dir)
+
+	appendExecuted("s", "run-1", map[string]any{"operation": "CLICK", "target": "e2", "page_changed": false})
+	logExecuted("s", map[string]any{"operation": "CLICK", "target": "e9", "executed": true})
+
+	b, err := os.ReadFile(decisionsPath("s"))
+	if err != nil {
+		t.Fatalf("read evidence: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("want 2 records for 2 actions, got %d: %s", len(lines), b)
+	}
+	var recs []map[string]any
+	for _, l := range lines {
+		var m map[string]any
+		if json.Unmarshal([]byte(l), &m) != nil {
+			t.Fatalf("bad record: %s", l)
+		}
+		recs = append(recs, m)
+	}
+	for i, r := range recs {
+		if r["kind"] != "executed" {
+			t.Errorf("record %d lost its kind: %v", i, r)
+		}
+	}
+	if recs[0]["run"] != "run-1" {
+		t.Errorf("a fused record must keep its run id: %v", recs[0])
+	}
+	if _, dup := recs[1]["run"]; dup {
+		t.Errorf("a split-verb record must not claim a run id: %v", recs[1])
+	}
+	// The split verb's receipt carries text; the record must keep it, because
+	// the text is what makes an executed fill auditable.
+	appendExecuted("s2", "", map[string]any{"kind": "executed", "operation": "TYPE_TEXT", "target": "e1", "text": "hello", "page_changed": true})
+	b2, _ := os.ReadFile(decisionsPath("s2"))
+	if !strings.Contains(string(b2), `"text":"hello"`) {
+		t.Errorf("text must survive into the record: %s", b2)
+	}
+}
+
+// The judge must be told, on the element itself, that it already tried it and
+// nothing changed. That is the fact that stops a repeat; a rule in the prompt
+// is advice, this is a fact in the state.
+func TestBuildStateMarksTriedElements(t *testing.T) {
+	snap := &snapshot{
+		URL: "https://x.test/", Text: "t",
+		Actions: []snapAction{
+			{ID: "e1", Kind: "click", Label: "Ask AI"},
+			{ID: "e2", Kind: "click", Label: "Submit"},
+		},
+	}
+	history := []map[string]any{
+		{"operation": "CLICK", "target": "e1", "page_changed": false},
+		{"operation": "CLICK", "target": "e2", "page_changed": true},
+	}
+	raw, _ := json.Marshal(buildState("g", snap, nil, history, nil))
+	var st struct {
+		Elements []map[string]any `json:"elements"`
+	}
+	json.Unmarshal(raw, &st)
+	if len(st.Elements) != 2 {
+		t.Fatalf("want 2 elements, got %d", len(st.Elements))
+	}
+	if st.Elements[0]["no_change"] != true {
+		t.Errorf("a target that changed nothing must be marked: %v", st.Elements[0])
+	}
+	if _, marked := st.Elements[1]["no_change"]; marked {
+		t.Errorf("a target that changed the page must not be marked: %v", st.Elements[1])
+	}
+}
+
+// A record whose page_changed is null says nothing about effect, so it must not
+// mark anything. Guessing "no change" from missing data would push the judge
+// off targets that actually worked.
+func TestBuildStateIgnoresUnknownOutcome(t *testing.T) {
+	snap := &snapshot{Actions: []snapAction{{ID: "e1", Kind: "click", Label: "Go"}}}
+	history := []map[string]any{{"operation": "CLICK", "target": "e1", "page_changed": nil}}
+	raw, _ := json.Marshal(buildState("g", snap, nil, history, nil))
+	if strings.Contains(string(raw), "no_change") {
+		t.Errorf("an unknown outcome must not be reported as no change: %s", raw)
+	}
+}
+
+// filled only means something on a field. On a click it was pure noise, and
+// most elements are clicks.
+func TestBuildStateOmitsFilledOnNonFills(t *testing.T) {
+	snap := &snapshot{Actions: []snapAction{
+		{ID: "e1", Kind: "click", Label: "Go"},
+		{ID: "e2", Kind: "fill", Label: "Email", Value: "a@b.test"},
+		{ID: "e3", Kind: "fill", Label: "Name"},
+	}}
+	raw, _ := json.Marshal(buildState("g", snap, nil, nil, nil))
+	var st struct {
+		Elements []map[string]any `json:"elements"`
+	}
+	json.Unmarshal(raw, &st)
+	if _, has := st.Elements[0]["filled"]; has {
+		t.Errorf("a click must not carry filled: %v", st.Elements[0])
+	}
+	if st.Elements[1]["filled"] != true {
+		t.Errorf("a field holding text must read as filled: %v", st.Elements[1])
+	}
+	if st.Elements[2]["filled"] != false {
+		t.Errorf("an empty field must read as unfilled: %v", st.Elements[2])
+	}
+	if strings.Contains(string(raw), "a@b.test") {
+		t.Errorf("the value must not reach model state: %s", raw)
+	}
+}
+
+// Visited URLs were passed whole, query strings and all: ~270 tokens on a real
+// site to say what host+path says.
+func TestBriefVisited(t *testing.T) {
+	got := briefVisited([]string{
+		"https://shop.test/cart?id=9&x=1",
+		"https://shop.test/cart?id=9&x=2",
+		"https://shop.test/checkout/",
+		"https://shop.test/",
+		"",
+	}, 12)
+	want := []string{"https://shop.test/cart", "https://shop.test/checkout", "https://shop.test"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	// The tail wins when truncating, same as before.
+	long := make([]string, 20)
+	for i := range long {
+		long[i] = "https://x.test/" + string(rune('a'+i))
+	}
+	tail := briefVisited(long, 3)
+	if len(tail) != 3 || tail[2] != "https://x.test/t" {
+		t.Errorf("tail must be kept: %v", tail)
+	}
+}
+
 func TestCheckURLPolicy(t *testing.T) {
 	if err := checkURLPolicy("", "https://anything.test"); err != nil {
 		t.Errorf("empty allowlist must permit: %v", err)
