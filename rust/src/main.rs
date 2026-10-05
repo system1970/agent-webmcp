@@ -1,148 +1,135 @@
-// Spike 1: Rust talks CDP. Launch headless Chromium, navigate to
-// example.com, Runtime.evaluate document.title, print it, exit.
-// Sync only: reqwest blocking + tungstenite connect. No async runtime.
-use std::process::{Child, Command};
-use std::time::Duration;
+use clap::{Parser, Subcommand};
 
-fn free_port() -> u16 {
-    for port in 18711..18731 {
-        if std::net::TcpStream::connect_timeout(
-            &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
-            Duration::from_millis(50),
-        )
-        .is_err()
-        {
-            return port;
-        }
-    }
-    18711
-}
+mod cdp;
+mod plugin;
 
-fn http_get(port: u16, path: &str) -> anyhow::Result<String> {
-    let url = format!("http://127.0.0.1:{port}{path}");
-    Ok(reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()?
-        .get(url)
-        .send()?
-        .text()?)
-}
+use plugin::{Ctx, Permission, Plugin, Registry, Verb};
 
-fn wait_http(port: u16) -> anyhow::Result<()> {
-    for _ in 0..150 {
-        if std::net::TcpStream::connect_timeout(
-            &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
-            Duration::from_millis(100),
-        )
-        .is_ok()
-        {
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    anyhow::bail!("chrome never came up on {port}")
-}
-
-// wait_load enables the Page domain and blocks until loadEventFired.
-// One connection, events skipped except the one waited on.
-fn wait_load(ws_url: &str) -> anyhow::Result<()> {
-    let (mut sock, _) = tungstenite::connect(ws_url)?;
-    sock.send(tungstenite::Message::Text(
-        r#"{"id":1,"method":"Page.enable","params":{}}"#.into(),
-    ))?;
-    // Skip ack id 1 and any stray events until the load event lands.
-    let start = std::time::Instant::now();
-    loop {
-        if start.elapsed() > Duration::from_secs(20) {
-            anyhow::bail!("load timeout");
-        }
-        match sock.read()? {
-            tungstenite::Message::Text(t) => {
-                if t.contains("Page.loadEventFired") {
-                    return Ok(());
+fn boot_registry() -> Registry {
+    let mut r = Registry::new(vec![]);
+    // core.policy: untrusted-page-data rules live here so no repo can
+    // switch them off (enabled() ignores removals for core.*).
+    r.register(Plugin {
+        id: "core.policy",
+        permissions: vec![],
+        verbs: vec![],
+        hooks: plugin::Hooks {
+            before: None,
+            after: Some(|_ctx, _verb, _args, out| {
+                // Receipts carry an untrusted marker on page-derived data.
+                // Today: no-op guard proving the hook path runs.
+                let _ = out;
+                Ok(())
+            }),
+        },
+    });
+    r.register(Plugin {
+        id: "core.receipts",
+        permissions: vec![],
+        verbs: vec![],
+        hooks: plugin::Hooks {
+            before: None,
+            after: None,
+        },
+    });
+    r.register(Plugin {
+        id: "core.version",
+        permissions: vec![],
+        verbs: vec![Verb {
+            name: "version",
+            help: "print version",
+            run: |_ctx, _args| Ok(serde_json::json!({"version": env!("CARGO_PKG_VERSION")})),
+        }],
+        hooks: plugin::Hooks {
+            before: None,
+            after: None,
+        },
+    });
+    r.register(Plugin {
+        id: "core.plugin",
+        permissions: vec![],
+        verbs: vec![Verb {
+            name: "plugin",
+            help: "plugin <list> — show registered plugins and state",
+            run: |ctx, args| {
+                let _ = ctx;
+                match args.first().map(|s| s.as_str()) {
+                    Some("list") => Ok(serde_json::json!({"plugins": REG.list()})),
+                    _ => anyhow::bail!("usage: plugin <list>"),
                 }
-            }
-            tungstenite::Message::Ping(p) => {
-                sock.send(tungstenite::Message::Pong(p))?;
-            }
-            tungstenite::Message::Close(_) => anyhow::bail!("ws closed"),
-            _ => {}
-        }
-    }
+            },
+        }],
+        hooks: plugin::Hooks {
+            before: None,
+            after: None,
+        },
+    });
+    r.register(Plugin {
+        id: "browser.open",
+        permissions: vec![Permission::Spawn, Permission::Network],
+        verbs: vec![Verb {
+            name: "open",
+            help: "open <url> — launch headless Chromium, navigate, wait load",
+            run: |ctx, args| {
+                let _ = ctx;
+                let url = args.first().map(|s| s.as_str()).unwrap_or("about:blank");
+                let port = cdp::free_port();
+                let child = cdp::launch_chrome(port)?;
+                cdp::wait_http(port)?;
+                let ws = cdp::first_page(port)?;
+                cdp::call(&ws, 1, "Page.navigate", &format!(r#"{{"url":{url:?}}}"#))?;
+                // Same page target after navigate; wait load on it.
+                cdp::wait_load(&ws)?;
+                // The browser outlives the verb (sessions bind later);
+                // The browser outlives the verb (sessions bind later);
+                // the spike leaks the handle: the browser keeps running.
+                std::mem::forget(child);
+                Ok(serde_json::json!({"url": url, "port": port}))
+            },
+        }],
+        hooks: plugin::Hooks {
+            before: None,
+            after: None,
+        },
+    });
+    r
 }
 
-fn cdp_call(ws_url: &str, id: i64, method: &str, params: &str) -> anyhow::Result<serde_json::Value> {
-    let (mut sock, _) = tungstenite::connect(ws_url)?;
-    let req = format!(r#"{{"id":{id},"method":"{method}","params":{params}}}"#);
-    sock.send(tungstenite::Message::Text(req.into()))?;
-    loop {
-        match sock.read()? {
-            tungstenite::Message::Text(t) => {
-                let v: serde_json::Value = serde_json::from_str(&t)?;
-                if v.get("id").and_then(|i| i.as_i64()) == Some(id) {
-                    if let Some(e) = v.get("error") {
-                        anyhow::bail!("cdp error: {e}");
-                    }
-                    return Ok(v);
-                }
-                // event for another call; skip
-            }
-            tungstenite::Message::Ping(p) => {
-                sock.send(tungstenite::Message::Pong(p))?;
-            }
-            tungstenite::Message::Close(_) => anyhow::bail!("ws closed"),
-            _ => {}
-        }
-    }
+// The registry is process-global: verbs look it up for `plugin list`.
+static REG: std::sync::LazyLock<Registry> = std::sync::LazyLock::new(boot_registry);
+
+#[derive(Parser)]
+#[command(name = "agent-webmcp", version, about = "minimal WebMCP bridge for any harness")]
+struct Cli {
+    #[command(subcommand)]
+    verb: Verbs,
+}
+
+#[derive(Subcommand)]
+enum Verbs {
+    /// run a verb by name (verbs are plugins; this is the dispatcher)
+    #[command(external_subcommand)]
+    Other(Vec<String>),
 }
 
 fn main() -> anyhow::Result<()> {
-    let port = free_port();
-    let mut child: Child = Command::new("/usr/bin/chromium")
-        .args([
-            "--headless=new",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-dev-shm-usage",
-            &format!("--remote-debugging-port={port}"),
-            "https://example.com/",
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()?;
-    wait_http(port)?;
-    // Find the example.com page target.
-    let mut ws_url = String::new();
-    for _ in 0..50 {
-        let list: serde_json::Value = serde_json::from_str(&http_get(port, "/json/list")?)?;
-        if let Some(arr) = list.as_array() {
-            for t in arr {
-                let url = t.get("url").and_then(|u| u.as_str()).unwrap_or("");
-                if url.contains("example.com") {
-                    if let Some(ws) = t.get("webSocketDebuggerUrl").and_then(|w| w.as_str()) {
-                        ws_url = ws.to_string();
-                        break;
-                    }
-                }
-            }
-        }
-        if !ws_url.is_empty() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(300));
+    let cli = Cli::parse();
+    let ctx = Ctx {
+        session: std::env::var("AGENT_WEBMCP_SESSION").unwrap_or("default".into()),
+        profile: std::env::var("AGENT_WEBMCP_PROFILE").unwrap_or("shared".into()),
+        json: true,
+    };
+    let Verbs::Other(mut words) = cli.verb;
+    if words.is_empty() {
+        anyhow::bail!("usage: agent-webmcp <verb> [args]");
     }
-    if ws_url.is_empty() {
-        anyhow::bail!("no example.com target");
-    }
-    wait_load(&ws_url)?;
-    let res = cdp_call(
-        &ws_url,
-        1,
-        "Runtime.evaluate",
-        r#"{"expression":"document.title","returnByValue":true}"#,
-    )?;
-    let title = &res["result"]["result"]["value"];
-    println!("title: {title}");
-    child.kill()?;
+    let name = words.remove(0);
+    let rest = words;
+    let reg = &*REG;
+    let (_, v) = reg.verb(&name).ok_or_else(|| anyhow::anyhow!("unknown verb {name}"))?;
+    reg.hooks_before(&ctx, &name, &rest)?;
+    let out = (v.run)(&ctx, &rest)?;
+    reg.hooks_after(&ctx, &name, &rest, &out)?;
+    println!("{}", serde_json::to_string_pretty(&out)?);
     Ok(())
 }
