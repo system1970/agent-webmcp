@@ -1,0 +1,11 @@
+/home/pracurser/Projects/agent-webmcp/rust/target/debug/deps/zeroize-2b28f4292d58679d.d: /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/lib.rs /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/x86.rs /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/barrier.rs /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/stack.rs /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/../README.md
+
+/home/pracurser/Projects/agent-webmcp/rust/target/debug/deps/libzeroize-2b28f4292d58679d.rlib: /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/lib.rs /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/x86.rs /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/barrier.rs /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/stack.rs /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/../README.md
+
+/home/pracurser/Projects/agent-webmcp/rust/target/debug/deps/libzeroize-2b28f4292d58679d.rmeta: /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/lib.rs /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/x86.rs /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/barrier.rs /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/stack.rs /home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/../README.md
+
+/home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/lib.rs:
+/home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/x86.rs:
+/home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/barrier.rs:
+/home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/stack.rs:
+/home/pracurser/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/../README.md:
