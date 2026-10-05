@@ -31,7 +31,8 @@ fn profile_dir(profile: &str) -> PathBuf {
 }
 
 /// Ensure the profile browser: reuse the live one, else launch.
-/// Returns (port, reused).
+/// A headed/headless mismatch relaunches: a reused browser in the
+/// wrong mode is a lie the receipt must never tell.
 pub fn ensure_browser(profile: &str, headed: bool) -> anyhow::Result<(u16, bool)> {
     let d = profile_dir(profile);
     std::fs::create_dir_all(&d)?;
@@ -39,7 +40,13 @@ pub fn ensure_browser(profile: &str, headed: bool) -> anyhow::Result<(u16, bool)
         if let Ok(port) = port.trim().parse::<u16>() {
             // Liveness: one cheap HTTP probe, not a wait loop.
             if crate::cdp::http_up(port) {
-                return Ok((port, true));
+                let was_headed = std::fs::read_to_string(d.join("headed"))
+                    .map(|h| h.trim() == "1")
+                    .unwrap_or(false);
+                if was_headed == headed {
+                    return Ok((port, true));
+                }
+                kill_profile(profile);
             }
         }
     }
@@ -48,6 +55,7 @@ pub fn ensure_browser(profile: &str, headed: bool) -> anyhow::Result<(u16, bool)
     crate::cdp::wait_http(port)?;
     std::fs::write(d.join("port"), port.to_string())?;
     std::fs::write(d.join("pid"), child.id().to_string())?;
+    std::fs::write(d.join("headed"), if headed { "1" } else { "0" })?;
     std::mem::forget(child); // the browser outlives verbs
     Ok((port, false))
 }
@@ -115,6 +123,7 @@ pub fn kill_profile(profile: &str) {
         .and_then(|p| p.trim().parse::<u32>().ok());
     let _ = std::fs::remove_file(dir.join("port"));
     let _ = std::fs::remove_file(dir.join("pid"));
+    let _ = std::fs::remove_file(dir.join("headed"));
     if let Some(pid) = pid {
         // Unix-only by design (Linux-first CLI): SIGKILL via kill(1).
         let _ = std::process::Command::new("kill")
