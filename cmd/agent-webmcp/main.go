@@ -30,7 +30,7 @@ usage:
   agent-webmcp tick --goal ".." [--session NAME] [--json]
   agent-webmcp run --goal ".." [--session NAME] [--max-steps N] [--text ..] [--params ..] [--json]
   agent-webmcp auth <probe|handoff> [--session NAME] [--json]
-  agent-webmcp auth <save|login|list|show|delete> [--session NAME] [--json]
+  agent-webmcp auth login <bitwarden-item> [--session NAME] [--url URL] [--submit] [--totp] [--json]
   agent-webmcp tools <add|list|load|remove|verify> [--session NAME] [--json]
   agent-webmcp tools list --query <terms> [--json]
   agent-webmcp tools add --goal "..{{param}}.." --for HOST --name NAME --fields "a,b" [--fill a] [--confirm]
