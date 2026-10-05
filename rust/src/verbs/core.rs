@@ -35,7 +35,7 @@ pub fn plugins() -> Vec<Plugin> {
             verbs: vec![Verb {
                 name: "version",
                 help: "print version",
-                run: |_ctx, _reg, _args| Ok(serde_json::json!({"version": env!("CARGO_PKG_VERSION")})),
+                run: |_ctx, _reg, _verb, _args| Ok(serde_json::json!({"version": env!("CARGO_PKG_VERSION")})),
             }],
             hooks: crate::plugin::Hooks {
                 before: None,
@@ -47,16 +47,30 @@ pub fn plugins() -> Vec<Plugin> {
             permissions: vec![],
             verbs: vec![Verb {
                 name: "plugin",
-                help: "plugin <list> — show registered plugins and state",
-                run: |_ctx, reg, args| match args.first().map(|s| s.as_str()) {
+                help: "plugin <list|new|show> — list plugins, scaffold one, show one",
+                run: |_ctx, reg, _verb, args| match args.first().map(|s| s.as_str()) {
                     Some("list") => Ok(reg.list()),
-                    _ => anyhow::bail!("usage: plugin <list>"),
+                    Some("new") => {
+                        let id = crate::args::positionals(args)
+                            .into_iter()
+                            .find(|a| a != "new")
+                            .ok_or_else(|| anyhow::anyhow!("usage: plugin new <id> [--here]"))?;
+                        crate::ext::scaffold(&id, crate::args::has(args, "--here"))
+                    }
+                    Some("show") => {
+                        let id = crate::args::positionals(args)
+                            .into_iter()
+                            .find(|a| a != "show")
+                            .ok_or_else(|| anyhow::anyhow!("usage: plugin show <id>"))?;
+                        crate::ext::show(reg, &id)
+                    }
+                    _ => anyhow::bail!("usage: plugin <list|new|show>"),
                 },
             },
             Verb {
                 name: "audit",
                 help: "audit — verb usage, error rate, mean ms from the evidence log",
-                run: |_ctx, _reg, _args| Ok(crate::session::audit_all()),
+                run: |_ctx, _reg, _verb, _args| Ok(crate::session::audit_all()),
             }],
             hooks: crate::plugin::Hooks {
                 before: None,
@@ -69,7 +83,7 @@ pub fn plugins() -> Vec<Plugin> {
             verbs: vec![Verb {
                 name: "mcp",
                 help: "mcp — serve verbs over MCP stdio (JSON-RPC 2.0)",
-                run: |ctx, reg, _args| {
+                run: |ctx, reg, _verb, _args| {
                     crate::mcp::serve(reg, ctx)?;
                     Ok(serde_json::json!({"closed": true}))
                 },

@@ -35,7 +35,7 @@ pub fn plugins() -> Vec<Plugin> {
             Verb {
                 name: "list",
                 help: "list [--session NAME] — page tools (WebMCP), untrusted",
-                run: |ctx, _reg, args| {
+                run: |ctx, _reg, _verb, args| {
                     let _ = args;
                     let ws = page_ws(ctx, args)?;
                     let tools = crate::webmcp::list_tools(&ws)?;
@@ -51,7 +51,7 @@ pub fn plugins() -> Vec<Plugin> {
             Verb {
                 name: "invoke",
                 help: "invoke <tool> [--params JSON] [--frame ID] — call a page tool",
-                run: |ctx, _reg, args| {
+                run: |ctx, _reg, _verb, args| {
                     // First positional that is not a flag value: skip --params/--frame and their values.
                     let mut skip_next = false;
                     let name = args
@@ -97,7 +97,7 @@ pub fn plugins() -> Vec<Plugin> {
             Verb {
                 name: "result",
                 help: "result <invocation> [--session NAME] — collect a detached tool result (pending/ready/error)",
-                run: |ctx, _reg, args| {
+                run: |ctx, _reg, _verb, args| {
                     let id = crate::args::positionals(args)
                         .first()
                         .cloned()

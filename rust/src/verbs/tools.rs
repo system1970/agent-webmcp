@@ -39,7 +39,7 @@ pub fn plugins() -> Vec<Plugin> {
             Verb {
                 name: "tools",
                 help: "tools <add|list|verify> — manage crafted page tools",
-                run: |ctx, _reg, args| {
+                run: |ctx, _reg, _verb, args| {
                     let sub = crate::args::positionals(args)
                         .first()
                         .cloned()

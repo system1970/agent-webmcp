@@ -28,6 +28,9 @@ fn takes_value(a: &str) -> bool {
     if VALUE_FLAGS.contains(&a) {
         return true;
     }
+    if extra_flags().lock().is_ok_and(|set| set.contains(a)) {
+        return true;
+    }
     // --name=value form still counts as a flag (value attached).
     VALUE_FLAGS.iter().any(|n| a.starts_with(&format!("{n}=")))
 }
@@ -35,6 +38,27 @@ fn takes_value(a: &str) -> bool {
 /// Bare flag present (--headed, --all). Values never count.
 pub fn has(args: &[String], name: &str) -> bool {
     args.iter().any(|a| a == name)
+}
+
+/// Value flags contributed by external plugin manifests (manifest
+/// `flags` per verb). Same semantics as VALUE_FLAGS: global, additive.
+fn extra_flags() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
+    static SET: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+        std::sync::OnceLock::new();
+    SET.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
+/// Register manifest-declared value flags (--depth, ...). Additive and
+/// global, like the const table: a declared flag consumes its value in
+/// positionals for every verb.
+pub fn register_value_flags(flags: &[String]) {
+    if let Ok(mut set) = extra_flags().lock() {
+        for f in flags {
+            if f.starts_with("--") && !f.contains('=') {
+                set.insert(f.clone());
+            }
+        }
+    }
 }
 
 /// Flag value: --name value or --name=value. None when absent.
