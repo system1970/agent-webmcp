@@ -1,5 +1,5 @@
-// Sessions and profiles. The model mirrors agent-browser's:
-// named sessions, one stable id reused across commands; profiles own
+// Sessions and profiles: named sessions, one stable id reused
+// across commands; profiles own
 // browsers (one profile = one browser = one cookie jar); sessions bind
 // to tabs by target id and reattach across invocations.
 //
@@ -181,50 +181,6 @@ pub fn kill_all() -> Vec<String> {
 /// Parse an attach URL into a local CDP port. Accepts ws://host:port/..,
 /// http://host:port, or a bare port. Only loopback hosts: attaching
 /// across the network is refused (cookies cross that wire).
-fn parse_endpoint(url: &str) -> anyhow::Result<u16> {
-    let u = url.trim();
-    if let Ok(port) = u.parse::<u16>() {
-        return Ok(port);
-    }
-    let after_scheme = u.split("://").nth(1).unwrap_or(u);
-    let host_port = after_scheme.split('/').next().unwrap_or("");
-    let (host, port) = match host_port.rsplit_once(':') {
-        Some((h, p)) => (h, p),
-        None => anyhow::bail!("usage: connect <ws://host:port/..|http://host:port|port> [--session NAME]"),
-    };
-    if host != "127.0.0.1" && host != "localhost" {
-        anyhow::bail!("refused: attach is loopback-only (got {host})");
-    }
-    port.parse::<u16>()
-        .map_err(|_| anyhow::anyhow!("usage: connect <ws://host:port/..|http://host:port|port> [--session NAME]"))
-}
-
-/// Save an external endpoint: port + marker. Tabs bind lazily on first
-/// use; the daemon owns the browser lifecycle (we never kill it).
-fn save_external(session: &str, port: u16) -> anyhow::Result<()> {
-    let d = session_dir(session);
-    std::fs::create_dir_all(&d)?;
-    std::fs::write(d.join("port"), port.to_string())?;
-    std::fs::write(d.join("external"), "agent-browser")?;
-    Ok(())
-}
-
-/// Attach a session to an existing CDP endpoint (agent-browser's
-/// daemon, or any Chromium with --remote-debugging-port). Verifies the
-/// endpoint speaks CDP, then binds lazily like any session.
-pub fn connect_attachment(session: &str, url: &str) -> anyhow::Result<(u16, String)> {
-    let port = parse_endpoint(url)?;
-    let v: serde_json::Value = serde_json::from_str(&crate::cdp::http_get(port, "/json/version")?)
-        .map_err(|_| anyhow::anyhow!("no_browser: nothing speaks CDP on {port}"))?;
-    let browser = v
-        .get("Browser")
-        .and_then(|b| b.as_str())
-        .unwrap_or("unknown")
-        .to_string();
-    save_external(session, port)?;
-    Ok((port, browser))
-}
-
 /// Save session state: profile, port, url.
 pub fn save(session: &str, profile: &str, port: u16, url: &str) -> anyhow::Result<()> {
     let d = session_dir(session);

@@ -169,19 +169,6 @@ pub fn plugins() -> Vec<Plugin> {
                         Ok(serde_json::json!({"sessions": crate::session::list_all()}))
                     },
                 },
-                Verb {
-                    name: "connect",
-                    help: "connect <ws://host:port/..|http://host:port|port> [--session NAME] — attach the session to an existing browser (agent-browser daemon, any CDP)",
-                    run: |ctx, _reg, args| {
-                        let url = crate::args::positionals(args).first().cloned().unwrap_or_default();
-                        if url.is_empty() {
-                            anyhow::bail!("usage: connect <ws://host:port/..|http://host:port|port> [--session NAME]");
-                        }
-                        let session = ctx.session_for(args);
-                        let (port, browser) = crate::session::connect_attachment(&session, &url)?;
-                        Ok(serde_json::json!({"session": session, "port": port, "browser": browser, "attached": true}))
-                    },
-                },
             ],
             hooks: crate::plugin::Hooks {
                 before: None,
