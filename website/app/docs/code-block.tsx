@@ -10,6 +10,9 @@ type Tok = { t: string; k: string };
 
 const KIND_CLASS: Record<string, string> = {
   plain: "text-[var(--term-plain)]",
+  cmd: "text-[var(--term-kw)]",
+  fn: "text-[var(--term-fn)]",
+  url: "text-[var(--term-str)]",
   comment: "text-[var(--term-dim)]",
   prompt: "text-[var(--term-dim)]",
   string: "text-[var(--term-str)]",
@@ -32,6 +35,7 @@ function tokenize(line: string, lang: string): Tok[] {
     i = m.length;
   }
   let buf = "";
+  let atCmd = lang === "bash" || lang === "text"; // first word is the command
   const flush = () => {
     push(buf, "plain");
     buf = "";
@@ -42,6 +46,7 @@ function tokenize(line: string, lang: string): Tok[] {
     // Strings (all langs).
     if (ch === '"' || ch === "'") {
       flush();
+      atCmd = false;
       let j = i + 1;
       while (j < line.length && line[j] !== ch) {
         if (line[j] === "\\") j++;
@@ -73,8 +78,38 @@ function tokenize(line: string, lang: string): Tok[] {
     const mFlag = lang !== "json" && rest.match(/^--[A-Za-z][A-Za-z0-9_-]*/);
     if (mFlag) {
       flush();
+      atCmd = false;
       push(mFlag[0], "flag");
       i += mFlag[0].length;
+      continue;
+    }
+    // URLs read as strings (bash/text, outside quotes).
+    const mUrl =
+      (lang === "bash" || lang === "text") &&
+      rest.match(/^https?:\/\/\S+/);
+    if (mUrl) {
+      flush();
+      atCmd = false;
+      push(mUrl[0], "url");
+      i += mUrl[0].length;
+      continue;
+    }
+    // Identifiers: first bash word is the command; a name followed by
+    // `(` is a function call (both read as actions). Runs after the
+    // keyword rules so `const` et al keep their color.
+    const mId = rest.match(/^[A-Za-z_$][A-Za-z0-9_$-]*/);
+    if (mId && !/^(const|return|function|new|for|while|if|else|try|catch|throw|let|var|of|in|typeof|await|true|false|null)$/.test(mId[0])) {
+      const after = line.slice(i + mId[0].length).match(/^\s*\(/);
+      flush();
+      if (atCmd && /^[A-Za-z]/.test(mId[0])) {
+        push(mId[0], "cmd");
+      } else if (after) {
+        push(mId[0], "fn");
+      } else {
+        push(mId[0], "plain");
+      }
+      atCmd = false;
+      i += mId[0].length;
       continue;
     }
     const mKw =
@@ -100,10 +135,12 @@ function tokenize(line: string, lang: string): Tok[] {
     const mNum = rest.match(/^\d[\d.]*/);
     if (mNum) {
       flush();
+      atCmd = false;
       push(mNum[0], "number");
       i += mNum[0].length;
       continue;
     }
+    if (ch === "|" || ch === "&" || ch === ";") atCmd = true; // new command follows
     buf += ch;
     i++;
   }

@@ -20,6 +20,7 @@
   --term-str: light-dark(oklch(0.52 0.17 150), oklch(0.74 0.16 155));
   --term-flag: light-dark(oklch(0.55 0.18 290), oklch(0.75 0.15 290));
   --term-kw: light-dark(oklch(0.55 0.19 255), oklch(0.75 0.15 255));
+  --term-fn: light-dark(oklch(0.55 0.14 95), oklch(0.86 0.14 95));
   --term-num: light-dark(oklch(0.6 0.18 70), oklch(0.78 0.15 75));
   --term-plain: light-dark(oklch(0.205 0 0), oklch(0.83 0 0));
   --term-dim: light-dark(oklch(0.55 0 0), oklch(0.6 0 0));
