@@ -70,7 +70,13 @@ fn handle(reg: &Registry, ctx: &Ctx, line: &str) -> String {
                 .map(|m| {
                     m.iter()
                         .flat_map(|(k, v)| {
-                            if v.is_string() {
+                            // Booleans are bare flags (true) or omitted (false);
+                            // everything else is --key value.
+                            if v.as_bool() == Some(true) {
+                                vec![format!("--{k}")]
+                            } else if v.as_bool() == Some(false) || v.is_null() {
+                                vec![]
+                            } else if v.is_string() {
                                 vec![format!("--{k}"), v.as_str().unwrap_or("").to_string()]
                             } else {
                                 vec![format!("--{k}"), v.to_string()]
