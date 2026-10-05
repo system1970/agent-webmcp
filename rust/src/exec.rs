@@ -66,24 +66,27 @@ impl Catalog {
 
     /// Ranked search over name+description: AND of space-separated
     /// substrings, exact-callable signatures back (mirrors list --query).
-    pub fn search(&self, query: &str) -> Vec<serde_json::Value> {
+    /// limit/offset paginate (defaults 10/0); total reports the full count.
+    pub fn search(&self, query: &str, limit: usize, offset: usize) -> (Vec<serde_json::Value>, usize) {
         let terms: Vec<String> = query
             .split_whitespace()
             .map(|t| t.to_lowercase())
             .filter(|t| !t.is_empty())
             .collect();
-        let mut out = vec![];
+        let mut all = vec![];
         for leaf in self.leaves.values() {
             let hay = format!("{} {}", leaf.name, leaf.desc).to_lowercase();
             if terms.iter().all(|t| hay.contains(t)) {
-                out.push(serde_json::json!({
+                all.push(serde_json::json!({
                     "tool": leaf.name, "description": leaf.desc,
                     "required": leaf.required,
                 }));
             }
         }
-        out.sort_by(|a, b| a["tool"].as_str().cmp(&b["tool"].as_str()));
-        out
+        all.sort_by(|a, b| a["tool"].as_str().cmp(&b["tool"].as_str()));
+        let total = all.len();
+        let page = all.into_iter().skip(offset).take(limit).collect();
+        (page, total)
     }
 
     pub fn describe(&self, name: &str) -> anyhow::Result<serde_json::Value> {
@@ -197,9 +200,11 @@ pub fn run_program(
             let shared = shared.clone();
             webmcp.set(
                 "search",
-                Function::new(ctx.clone(), move |q: String| -> rquickjs::Result<String> {
+                Function::new(ctx.clone(), move |q: String, lim: Option<usize>, off: Option<usize>| -> rquickjs::Result<String> {
                     let cat = shared.lock().unwrap();
-                    Ok(serde_json::json!(cat.search(&q)).to_string())
+                    let (page, total) =
+                        cat.search(&q, lim.unwrap_or(10).clamp(1, 50), off.unwrap_or(0));
+                    Ok(serde_json::json!({"results": page, "total": total}).to_string())
                 })?,
             )?;
         }
