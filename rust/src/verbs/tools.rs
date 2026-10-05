@@ -2,19 +2,6 @@
 // host-scoped, verified before they auto-inject.
 use crate::plugin::{Plugin, Verb};
 
-fn flag(args: &[String], name: &str) -> Option<String> {
-    let mut it = args.iter().peekable();
-    while let Some(a) = it.next() {
-        if a == name {
-            return it.next().cloned();
-        }
-        if let Some(v) = a.strip_prefix(&format!("{name}=")) {
-            return Some(v.to_string());
-        }
-    }
-    None
-}
-
 /// Current time as ISO-8601 UTC, without pulling in chrono.
 fn now_iso() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -53,12 +40,11 @@ pub fn plugins() -> Vec<Plugin> {
                 name: "tools",
                 help: "tools <add|list|verify> — manage crafted page tools",
                 run: |ctx, _reg, args| {
-                    let sub = args
-                        .iter()
-                        .find(|a| !a.starts_with('-'))
-                        .map(|s| s.as_str())
-                        .unwrap_or("list");
-                    match sub {
+                    let sub = crate::args::positionals(args)
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| "list".to_string());
+                    match sub.as_str() {
                         "add" => tools_add(args),
                         "list" => tools_list(args),
                         "verify" => tools_verify(ctx, args),
@@ -75,15 +61,15 @@ pub fn plugins() -> Vec<Plugin> {
 }
 
 fn tools_add(args: &[String]) -> anyhow::Result<serde_json::Value> {
-    let file = flag(args, "--file").ok_or_else(|| anyhow::anyhow!("usage: tools add --file <js> --for HOST --name NAME [--desc ..]"))?;
-    let hosts: Vec<String> = flag(args, "--for")
+    let file = crate::args::flag(args, "--file").ok_or_else(|| anyhow::anyhow!("usage: tools add --file <js> --for HOST --name NAME [--desc ..]"))?;
+    let hosts: Vec<String> = crate::args::flag(args, "--for")
         .ok_or_else(|| anyhow::anyhow!("usage: tools add --file <js> --for HOST --name NAME"))?
         .split(',')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    let name = flag(args, "--name").ok_or_else(|| anyhow::anyhow!("tools add needs --name"))?;
-    let desc = flag(args, "--desc").unwrap_or_default();
+    let name = crate::args::flag(args, "--name").ok_or_else(|| anyhow::anyhow!("tools add needs --name"))?;
+    let desc = crate::args::flag(args, "--desc").unwrap_or_default();
     let js = std::fs::read_to_string(&file)
         .map_err(|e| anyhow::anyhow!("cannot read {file}: {e}"))?;
     let stored = crate::tools::save_file(&name, &js)?;
@@ -100,7 +86,7 @@ fn tools_add(args: &[String]) -> anyhow::Result<serde_json::Value> {
 }
 
 fn tools_list(args: &[String]) -> anyhow::Result<serde_json::Value> {
-    let q = flag(args, "--query").unwrap_or_default().to_lowercase();
+    let q = crate::args::flag(args, "--query").unwrap_or_default().to_lowercase();
     let items: Vec<serde_json::Value> = crate::tools::load_all()
         .into_iter()
         .filter(|m| {
@@ -119,10 +105,9 @@ fn tools_list(args: &[String]) -> anyhow::Result<serde_json::Value> {
 }
 
 fn tools_verify(ctx: &crate::plugin::Ctx, args: &[String]) -> anyhow::Result<serde_json::Value> {
-    let name = args
-        .iter()
-        .find(|a| !a.starts_with('-') && *a != "verify")
-        .cloned()
+    let name = crate::args::positionals(args)
+        .into_iter()
+        .find(|a| a != "verify")
         .ok_or_else(|| anyhow::anyhow!("usage: tools verify <name> [--session NAME]"))?;
     let mut meta = crate::tools::load_all()
         .into_iter()
@@ -133,8 +118,7 @@ fn tools_verify(ctx: &crate::plugin::Ctx, args: &[String]) -> anyhow::Result<ser
     let session = ctx.session_for(args);
     let (port, _) = crate::session::load(&session)?;
     let ws = crate::session::session_target(&session, port)?;
-    crate::cdp::call(&ws, 1, "Page.reload", "{}")?;
-    crate::cdp::wait_load(&ws)?;
+    crate::cdp::reload_and_wait(&ws)?;
     let js = std::fs::read_to_string(crate::tools::root().join(&meta.file))?;
     let names = crate::tools::inject(&ws, &js)?;
     let live = crate::webmcp::list_tools(&ws)?;

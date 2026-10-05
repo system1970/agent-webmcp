@@ -4,23 +4,6 @@
 use crate::plugin::{Plugin, Verb};
 use std::time::Duration;
 
-fn flag(args: &[String], name: &str) -> Option<String> {
-    let mut it = args.iter().peekable();
-    while let Some(a) = it.next() {
-        if a == name {
-            return it.next().cloned();
-        }
-        if let Some(v) = a.strip_prefix(&format!("{name}=")) {
-            return Some(v.to_string());
-        }
-    }
-    None
-}
-
-fn has(args: &[String], name: &str) -> bool {
-    args.iter().any(|a| a == name)
-}
-
 /// Build the session catalog: live page tools plus verified custom
 /// tools for the page host. Required args come from each tool's
 /// input schema; loop/confirm tools are excluded (a program cannot
@@ -74,14 +57,14 @@ fn build_catalog(ctx: &crate::plugin::Ctx, args: &[String], max: usize) -> anyho
 
 /// Build the session catalog: live page tools plus verified custom
 fn max_calls(args: &[String]) -> usize {
-    flag(args, "--max-calls")
+    crate::args::flag(args, "--max-calls")
         .and_then(|s| s.parse().ok())
         .map(|n: i64| n.clamp(1, 50) as usize)
         .unwrap_or(10)
 }
 
 fn timeout_ms(args: &[String]) -> u64 {
-    flag(args, "--timeout-ms")
+    crate::args::flag(args, "--timeout-ms")
         .and_then(|s| s.parse().ok())
         .unwrap_or(30_000)
 }
@@ -96,25 +79,11 @@ pub fn plugins() -> Vec<Plugin> {
                 name: "execute",
                 help: "execute --program @file|<js> [--session NAME] [--max-calls N] — run one JS program over session tools",
                 run: |ctx, _reg, args| {
-                    let mut skip = false;
-                    let positional: Vec<&String> = args
-                        .iter()
-                        .filter(|a| {
-                            if skip {
-                                skip = false;
-                                return false;
-                            }
-                            if *a == "--session" || *a == "--max-calls" || *a == "--timeout-ms" || *a == "--program" {
-                                skip = true;
-                                return false;
-                            }
-                            !a.starts_with('-')
-                        })
-                        .collect();
-                    let code = if has(args, "--program") {
-                        flag(args, "--program").unwrap_or_default()
+                    let positional: Vec<String> = crate::args::positionals(args);
+                    let code = if crate::args::has(args, "--program") {
+                        crate::args::flag(args, "--program").unwrap_or_default()
                     } else {
-                        positional.first().map(|s| s.as_str()).unwrap_or_default().to_string()
+                        positional.first().cloned().unwrap_or_default()
                     };
                     let code = if let Some(path) = code.strip_prefix('@') {
                         std::fs::read_to_string(path)
@@ -137,32 +106,15 @@ pub fn plugins() -> Vec<Plugin> {
                 name: "search",
                 help: "search <terms> [--session NAME] [--limit N] [--offset N] — progressive discovery over session tools",
                 run: |ctx, _reg, args| {
-                    // Terms are positionals that are not flags or flag values.
-                    let mut skip = false;
-                    let query = args
-                        .iter()
-                        .filter(|a| {
-                            if skip {
-                                skip = false;
-                                return false;
-                            }
-                            if *a == "--session" || *a == "--limit" || *a == "--offset" {
-                                skip = true;
-                                return false;
-                            }
-                            !a.starts_with('-')
-                        })
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join(" ");
+                    let query = crate::args::positionals(args).join(" ");
                     if query.trim().is_empty() {
                         anyhow::bail!("usage: search <terms> [--session NAME] [--limit N] [--offset N]");
                     }
-                    let limit = flag(args, "--limit")
+                    let limit = crate::args::flag(args, "--limit")
                         .and_then(|s| s.parse().ok())
                         .map(|n: usize| n.clamp(1, 50))
                         .unwrap_or(10);
-                    let offset = flag(args, "--offset")
+                    let offset = crate::args::flag(args, "--offset")
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(0);
                     let catalog = build_catalog(ctx, args, 10)?;

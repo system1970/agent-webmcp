@@ -51,17 +51,16 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    /// Session for this call: --session/--session=/−s wins, else the
-    /// context default (env AGENT_WEBMCP_SESSION or "default").
+    /// Session for this call: --session/-s wins, else the context default.
     pub fn session_for(&self, args: &[String]) -> String {
-        self.flag_for(args, &["--session", "-s"])
+        crate::args::flag(args, "--session")
+            .or_else(|| crate::args::flag(args, "-s"))
             .unwrap_or_else(|| self.session.clone())
     }
 
-    /// Profile for this call: --profile wins, else env
-    /// AGENT_WEBMCP_PROFILE or "shared". One profile = one browser.
+    /// Profile for this call: --profile wins, else env or context default.
     pub fn profile_for(&self, args: &[String]) -> String {
-        self.flag_for(args, &["--profile"])
+        crate::args::flag(args, "--profile")
             .or_else(|| {
                 let v = std::env::var("AGENT_WEBMCP_PROFILE").unwrap_or_default();
                 if v.trim().is_empty() {
@@ -71,23 +70,6 @@ impl Ctx {
                 }
             })
             .unwrap_or_else(|| self.profile.clone())
-    }
-
-    fn flag_for(&self, args: &[String], names: &[&str]) -> Option<String> {
-        let mut it = args.iter().peekable();
-        while let Some(a) = it.next() {
-            for name in names {
-                if a == *name {
-                    if let Some(v) = it.next() {
-                        return Some(v.clone());
-                    }
-                }
-                if let Some(v) = a.strip_prefix(&format!("{name}=")) {
-                    return Some(v.to_string());
-                }
-            }
-        }
-        None
     }
 }
 
