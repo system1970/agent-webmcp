@@ -78,13 +78,19 @@ pub fn plugins() -> Vec<Plugin> {
                     let session = ctx.session_for(args);
                     let profile = ctx.profile_for(args);
                     let headed = args.iter().any(|a| a == "--headed");
-                    let (port, reused) = crate::session::ensure_browser(&profile, headed)?;
+                    // Reuse: a session with a live browser keeps it
+                    // (own or attached); otherwise ensure the profile's.
+                    let (port, reused) = match crate::session::load(&session) {
+                        Ok((port, _)) => (port, true),
+                        Err(_) => crate::session::ensure_browser(&profile, headed)?,
+                    };
                     let ws = crate::session::session_target(&session, port)?;
                     crate::cdp::call(&ws, 1, "Page.navigate", &format!(r#"{{"url":{url:?}}}"#))?;
-                    // Same page target after navigate. about:blank never
-                    // fires load; everything else waits for it.
+                    // Same tab after navigate. about:blank never
+                    // fires load; everything else enables-then-navigates
+                    // on one connection so fast loads can't slip through.
                     if url != "about:blank" {
-                        crate::cdp::wait_load(&ws)?;
+                        crate::cdp::navigate_and_wait(&ws, &url)?;
                     }
                     crate::session::save(&session, &profile, port, &url)?;
                     // Verified host-matched tools inject on every open.
@@ -161,6 +167,19 @@ pub fn plugins() -> Vec<Plugin> {
                     help: "sessions — known sessions with liveness and urls",
                     run: |_ctx, _reg, _args| {
                         Ok(serde_json::json!({"sessions": crate::session::list_all()}))
+                    },
+                },
+                Verb {
+                    name: "connect",
+                    help: "connect <ws://host:port/..|http://host:port|port> [--session NAME] — attach the session to an existing browser (agent-browser daemon, any CDP)",
+                    run: |ctx, _reg, args| {
+                        let url = crate::args::positionals(args).first().cloned().unwrap_or_default();
+                        if url.is_empty() {
+                            anyhow::bail!("usage: connect <ws://host:port/..|http://host:port|port> [--session NAME]");
+                        }
+                        let session = ctx.session_for(args);
+                        let (port, browser) = crate::session::connect_attachment(&session, &url)?;
+                        Ok(serde_json::json!({"session": session, "port": port, "browser": browser, "attached": true}))
                     },
                 },
             ],
