@@ -22,6 +22,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--name",
     "--desc",
     "--file",
+    "--tool",
 ];
 
 fn takes_value(a: &str) -> bool {
