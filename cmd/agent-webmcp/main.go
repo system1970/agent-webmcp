@@ -547,6 +547,13 @@ func run(args []string) int {
 	case "doctor":
 		return doctorCmd(ctx, &g, rest)
 	default:
+		// Unknown verbs fail hard, never fuzzy: agents discover via
+		// usage, not "did you mean". Under --json the failure is an
+		// envelope, not human text, so machine callers can branch.
+		if g.json {
+			fmt.Printf("%s\n", mustJSON(map[string]any{"ok": false, "code": "bad_verb", "error": fmt.Sprintf("unknown verb %q", args[0])}))
+			return 2
+		}
 		usage()
 		return 2
 	}
