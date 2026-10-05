@@ -65,12 +65,26 @@ pub fn plugins() -> Vec<Plugin> {
                 name: "invoke",
                 help: "invoke <tool> [--params JSON] [--frame ID] — call a page tool",
                 run: |ctx, _reg, args| {
-                    let positional: Vec<&String> =
-                        args.iter().filter(|a| !a.starts_with('-')).collect();
-                    let name = positional
-                        .first()
+                    // First positional that is not a flag value: skip --params/--frame and their values.
+                    let mut skip_next = false;
+                    let name = args
+                        .iter()
+                        .filter(|a| {
+                            if skip_next {
+                                skip_next = false;
+                                return false;
+                            }
+                            if *a == "--params" || *a == "--frame" {
+                                skip_next = true;
+                                return false;
+                            }
+                            !a.starts_with('-')
+                        })
+                        .next()
                         .map(|s| s.as_str())
-                        .ok_or_else(|| anyhow::anyhow!("usage: invoke <tool> [--params JSON] [--frame ID]"))?;
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("usage: invoke <tool> [--params JSON] [--frame ID]")
+                        })?;
                     // --params consumes the next arg unless attached with =.
                     let params_raw = flag(args, "--params").unwrap_or_else(|| "{}".into());
                     let params: serde_json::Value =
