@@ -1,1 +1,1 @@
-/home/pracurser/Projects/agent-webmcp/rust/target/debug/agent-webmcp: /home/pracurser/Projects/agent-webmcp/rust/src/main.rs
+/home/pracurser/Projects/agent-webmcp/rust/target/debug/agent-webmcp: /home/pracurser/Projects/agent-webmcp/rust/src/cdp.rs /home/pracurser/Projects/agent-webmcp/rust/src/main.rs /home/pracurser/Projects/agent-webmcp/rust/src/plugin.rs
