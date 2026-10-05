@@ -58,5 +58,21 @@ pub fn plugins() -> Vec<Plugin> {
                 after: None,
             },
         },
+        Plugin {
+            id: "core.mcp",
+            permissions: vec![crate::plugin::Permission::Network],
+            verbs: vec![Verb {
+                name: "mcp",
+                help: "mcp — serve verbs over MCP stdio (JSON-RPC 2.0)",
+                run: |ctx, reg, _args| {
+                    crate::mcp::serve(reg, ctx)?;
+                    Ok(serde_json::json!({"closed": true}))
+                },
+            }],
+            hooks: crate::plugin::Hooks {
+                before: None,
+                after: None,
+            },
+        },
     ]
 }

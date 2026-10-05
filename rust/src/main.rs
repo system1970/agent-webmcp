@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 
 mod cdp;
 mod exec;
+mod mcp;
 mod plugin;
 mod session;
 mod tools;
