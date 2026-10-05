@@ -88,7 +88,7 @@ pub fn plugins() -> Vec<Plugin> {
                     };
                     let code = if let Some(path) = code.strip_prefix('@') {
                         std::fs::read_to_string(path)
-                            .map_err(|e| anyhow::anyhow!("cannot read program {path}: {e}"))?
+                            .map_err(|e| anyhow::anyhow!("not_found: cannot read program {path}: {e}"))?
                     } else {
                         code
                     };

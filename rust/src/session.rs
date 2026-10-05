@@ -194,10 +194,11 @@ pub fn save(session: &str, profile: &str, port: u16, url: &str) -> anyhow::Resul
 /// Load session state with liveness check.
 pub fn load(session: &str) -> anyhow::Result<(u16, String)> {
     let d = session_dir(session);
-    let port: u16 = std::fs::read_to_string(d.join("port"))?
+    let port: u16 = std::fs::read_to_string(d.join("port"))
+        .map_err(|_| anyhow::anyhow!("no_session: no such session {session}"))?
         .trim()
         .parse()
-        .map_err(|_| anyhow::anyhow!("bad port file for session {session}"))?;
+        .map_err(|_| anyhow::anyhow!("no_session: bad port file for session {session}"))?;
     let url = std::fs::read_to_string(d.join("url")).unwrap_or_default();
     if !crate::cdp::http_up(port) {
         anyhow::bail!("no_browser: session {session} has no live browser");
