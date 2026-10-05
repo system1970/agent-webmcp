@@ -26,19 +26,6 @@ fn resolve_frame(tools: &[(serde_json::Value, String)], name: &str, frame: &str)
     }
 }
 
-fn flag(args: &[String], name: &str) -> Option<String> {
-    let mut it = args.iter().peekable();
-    while let Some(a) = it.next() {
-        if a == name {
-            return it.next().cloned();
-        }
-        if let Some(v) = a.strip_prefix(&format!("{name}=")) {
-            return Some(v.to_string());
-        }
-    }
-    None
-}
-
 /// WebMCP verbs: list, invoke.
 pub fn plugins() -> Vec<Plugin> {
     vec![Plugin {
@@ -86,10 +73,10 @@ pub fn plugins() -> Vec<Plugin> {
                             anyhow::anyhow!("usage: invoke <tool> [--params JSON] [--frame ID]")
                         })?;
                     // --params consumes the next arg unless attached with =.
-                    let params_raw = flag(args, "--params").unwrap_or_else(|| "{}".into());
+                    let params_raw = crate::args::flag(args, "--params").unwrap_or_else(|| "{}".into());
                     let params: serde_json::Value =
                         serde_json::from_str(&params_raw).unwrap_or(serde_json::json!({}));
-                    let frame = flag(args, "--frame").unwrap_or_default();
+                    let frame = crate::args::flag(args, "--frame").unwrap_or_default();
                     let ws = page_ws(ctx, args)?;
                     let frame = if frame.is_empty() {
                         let tools = crate::webmcp::list_tools(&ws)?;

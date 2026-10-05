@@ -132,6 +132,61 @@ fn set_timeout(
     Ok(())
 }
 
+/// Reload the page and wait for load, subscribing BEFORE the reload
+/// fires: enable-then-reload on one connection, so a fast cached load
+/// cannot slip between trigger and subscribe.
+pub fn reload_and_wait(ws_url: &str) -> anyhow::Result<()> {
+    use tungstenite::stream::MaybeTlsStream;
+    let (mut sock, _) = tungstenite::connect(ws_url)?;
+    if let MaybeTlsStream::Plain(t) = sock.get_mut() {
+        t.set_read_timeout(Some(Duration::from_secs(2)))?;
+    }
+    let send = |sock: &mut tungstenite::WebSocket<MaybeTlsStream<std::net::TcpStream>>, id: i64, method: &str, params: &str| -> anyhow::Result<()> {
+        sock.send(tungstenite::Message::Text(
+            format!(r#"{{"id":{id},"method":"{method}","params":{params}}}"#).into(),
+        ))?;
+        Ok(())
+    };
+    send(&mut sock, 1, "Page.enable", "{}")?;
+    // Drain the enable ack.
+    loop {
+        match sock.read() {
+            Ok(tungstenite::Message::Text(t)) => {
+                if t.to_string().contains("\"id\":1") {
+                    break;
+                }
+            }
+            Ok(_) => continue,
+            Err(_) => break,
+        }
+    }
+    send(&mut sock, 2, "Page.reload", "{}")?;
+    let start = std::time::Instant::now();
+    loop {
+        if start.elapsed() > Duration::from_secs(20) {
+            anyhow::bail!("load timeout");
+        }
+        match sock.read() {
+            Err(tungstenite::Error::Io(e))
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                continue;
+            }
+            Err(e) => anyhow::bail!("reload: {e}"),
+            Ok(tungstenite::Message::Text(t)) => {
+                if t.to_string().contains("Page.loadEventFired") {
+                    return Ok(());
+                }
+            }
+            Ok(tungstenite::Message::Ping(p)) => {
+                sock.send(tungstenite::Message::Pong(p))?;
+            }
+            Ok(_) => {}
+        }
+    }
+}
+
 /// Enable Page and block until loadEventFired (20s cap). Reads are
 /// timeout-paced so a page that never loads (about:blank) fails fast
 /// instead of wedging.
