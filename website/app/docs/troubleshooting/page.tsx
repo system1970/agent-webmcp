@@ -42,7 +42,7 @@ export default function TroubleshootingPage() {
         <code className="font-mono text-[13px] text-ink">chrome.log</code> as
         evidence:
       </p>
-      <CodeBlock code={`agent-webmcp-rs close --all`} lang="bash" />
+      <CodeBlock code={`agent-webmcp close --all`} lang="bash" />
       <h2 className="mt-8 text-xl font-medium text-ink">
         Version skew
       </h2>

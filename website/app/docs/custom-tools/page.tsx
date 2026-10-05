@@ -19,9 +19,9 @@ export default function CustomToolsPage() {
         from found ones at invoke time.
       </p>
       <CodeBlock
-        code={`agent-webmcp-rs tools add --file heading.js --for example.com --name page_heading
-agent-webmcp-rs tools verify page_heading --session demo
-agent-webmcp-rs tools list --query heading`}
+        code={`agent-webmcp tools add --file heading.js --for example.com --name page_heading
+agent-webmcp tools verify page_heading --session demo
+agent-webmcp tools list --query heading`}
         lang="bash"
       />
       <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">

@@ -52,8 +52,8 @@ export default function CodemodePage() {
         Run it
       </h2>
       <CodeBlock
-        code={`agent-webmcp-rs execute --session demo --program @shop.js
-agent-webmcp-rs search "catalog shoes" --session demo --limit 5`}
+        code={`agent-webmcp execute --session demo --program @shop.js
+agent-webmcp search "catalog shoes" --session demo --limit 5`}
         lang="bash"
       />
     </article>

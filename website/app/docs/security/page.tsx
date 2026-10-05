@@ -43,7 +43,7 @@ export default function SecurityPage() {
       <h2 className="mt-8 text-xl font-medium text-ink">
         Evidence
       </h2>
-      <CodeBlock code={`agent-webmcp-rs audit`} lang="bash" />
+      <CodeBlock code={`agent-webmcp audit`} lang="bash" />
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
         Every call appends one row (verb, ms, ok) to the evidence log.{" "}
         <code className="font-mono text-[13px] text-ink">audit</code>{" "}

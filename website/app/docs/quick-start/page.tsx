@@ -16,11 +16,11 @@ export default function QuickStartPage() {
         copy-pasteable.
       </p>
       <CodeBlock
-        code={`agent-webmcp-rs open https://webmcp.com --session demo
-agent-webmcp-rs observe --session demo
-agent-webmcp-rs list --session demo
-agent-webmcp-rs search hatch --session demo
-agent-webmcp-rs execute --session demo --program '
+        code={`agent-webmcp open https://webmcp.com --session demo
+agent-webmcp observe --session demo
+agent-webmcp list --session demo
+agent-webmcp search hatch --session demo
+agent-webmcp execute --session demo --program '
   const found = JSON.parse(webmcp.search("hatch"));
   const out = batch([{tool: found.results[0].tool, args: {}}]);
   return {hatched: out};'`}
