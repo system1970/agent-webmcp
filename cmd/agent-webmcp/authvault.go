@@ -209,11 +209,20 @@ const vaultFillJS = `((u, p, submit) => {
     e.dispatchEvent(new Event('change', {bubbles: true}));
     return e.value === v;
   };
-  const out = {userFound: false, passFound: false, userSet: false, passSet: false, submitFound: false, submitted: false};
+  const out = {userFound: false, passFound: false, userSet: false, passSet: false, submitFound: false, submitted: false, bound: false};
   const user = [...document.querySelectorAll('input')].find(e => ['text','email','url','tel',''].includes(e.type) && !e.disabled && !e.readOnly && vis(e));
   const pass = [...document.querySelectorAll('input[type="password"]')].find(e => !e.disabled && !e.readOnly && vis(e));
   if (user) { out.userFound = true; try { user.focus(); } catch (err) {} out.userSet = set(user, u); }
   if (pass) { out.passFound = true; try { pass.focus(); } catch (err) {} out.passSet = set(pass, p); }
+  // Field binding: the nodes that received secrets must still be the same
+  // connected nodes holding the same values when submit is reached. A page
+  // that swaps fields or steals focus mid-fill aborts instead of submitting.
+  if (submit && out.userSet && out.passSet) {
+    out.bound = document.contains(user) && document.contains(pass) &&
+      user.value === u && pass.value === p &&
+      (document.activeElement === user || document.activeElement === pass ||
+       document.activeElement === document.body);
+    if (!out.bound) { out.url = location.href; return JSON.stringify(out); }
   if (submit && out.userSet && out.passSet) {
     const form = (pass && pass.form) || (user && user.form) || null;
     const btn = form
@@ -271,6 +280,11 @@ func authVaultLoginCmd(ctx context.Context, g *globals, rest []string) int {
 	if err != nil {
 		return failErr("no_page", err)
 	}
+	// Origin check: secrets pour only into the host we navigated to. A
+	// redirect landing elsewhere refuses before any fill is attempted.
+	if hostOfURL(t.URL) != hostOfURL(targetURL) {
+		return fail("origin_mismatch", fmt.Sprintf("landed %s, expected %s (not filling)", hostOfURL(t.URL), hostOfURL(targetURL)))
+	}
 	ub, _ := json.Marshal(p.Username)
 	pb, _ := json.Marshal(secret)
 	secret = ""
@@ -292,10 +306,17 @@ func authVaultLoginCmd(ctx context.Context, g *globals, rest []string) int {
 		PassSet     bool   `json:"passSet"`
 		SubmitFound bool   `json:"submitFound"`
 		Submitted   bool   `json:"submitted"`
+		Bound       bool   `json:"bound"`
 		URL         string `json:"url"`
 	}
 	if err := json.Unmarshal([]byte(out), &r); err != nil {
 		return failErr("act_failed", err)
+	}
+	// Field binding enforced CLI-side too: the page JS already refuses to
+	// submit unbound, and a bound=false with submit requested is a hard
+	// stop, never a silent partial fill.
+	if submit == "true" && !r.Bound {
+		return fail("field_moved", "login fields changed mid-fill (not submitted)")
 	}
 	if submit == "true" && r.Submitted {
 		time.Sleep(1500 * time.Millisecond)
@@ -311,7 +332,7 @@ func authVaultLoginCmd(ctx context.Context, g *globals, rest []string) int {
 	})
 	receipt := map[string]any{
 		"operation": "VAULT_LOGIN", "target": name, "executed": okFill,
-		"user_set": r.UserSet, "pass_set": r.PassSet,
+		"user_set": r.UserSet, "pass_set": r.PassSet, "bound": r.Bound,
 		"submit_found": r.SubmitFound, "submitted": r.Submitted, "url": r.URL,
 	}
 	if !r.UserFound || !r.PassFound {
