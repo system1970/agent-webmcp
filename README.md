@@ -4,15 +4,15 @@ Minimal WebMCP bridge for any harness. WebMCP is the core, not a
 feature: every browser the CLI launches carries it, no opt-out.
 
 Three pieces: **WebMCP verbs** (`open/observe/list/invoke`), **custom
-tools** (craft, verify, inject), **codemode** (`execute` over page tools
-+ custom tools). No auth, no browser-use loop — the harness brings its
-own brain; this CLI is the hands it calls.
+tools** (craft, verify, inject), **codemode** (`execute` over page tools).
+Plus actuation (`click/fill`), manifest **plugins**, and system verbs
+(`plugin/audit/version/mcp`). No auth, no browser-use loop — the harness
+brings its own brain; this CLI is the hands it calls.
 
 ## Install
 
 ```bash
-cd rust && cargo install --path .
-agent-webmcp doctor   # (pending) checks Chrome, sessions, registry
+scripts/install-local.sh   # build, quiesce live servers, atomic install, verify rev
 ```
 
 Needs Chrome/Chromium 149+ on PATH. Rust 1.85+.

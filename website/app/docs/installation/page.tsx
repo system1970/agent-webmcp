@@ -2,7 +2,7 @@ import { CodeBlock } from "../code-block";
 
 export const metadata = {
   title: "Installation · agent-webmcp docs",
-  description: "Install the binary and prove the browser path works.",
+  description: "Build the Rust CLI, install it safely, verify the version.",
 };
 
 export default function InstallationPage() {
@@ -12,34 +12,40 @@ export default function InstallationPage() {
         Installation
       </h1>
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        Two minutes: install the binary, confirm the version, open and close
-        a page. If the third step works, everything downstream works.
+        Needs Chrome or Chromium 149+ on PATH and Rust 1.85+. One binary,
+        no runtime.
       </p>
-      <h2 className="mt-8 text-xl font-medium text-ink">Install the binary</h2>
+      <h2 className="mt-8 text-xl font-medium text-ink">
+        Build and install
+      </h2>
       <CodeBlock
-        code={`# With Go
-go install github.com/system1970/agent-webmcp/cmd/agent-webmcp@latest`}
-      />
-      <h2 className="mt-8 text-xl font-medium text-ink">Confirm the version</h2>
-      <CodeBlock code={`agent-webmcp version\n# expect: agent-webmcp 0.4.0`} />
-      <h2 className="mt-8 text-xl font-medium text-ink">Prove the browser path</h2>
-      <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        You need Chrome 149 or newer (Brave or Chromium on a 151-base works
-        too). These two commands exercise the full path, browser launch to
-        tab close:
-      </p>
-      <CodeBlock
-        code={`agent-webmcp open example.com --session setup-check\nagent-webmcp close --session setup-check`}
+        code={`cd rust && cargo build
+scripts/install-local.sh   # quiesce live servers, atomic replace, verify rev`}
+        lang="bash"
       />
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        <code className="font-mono text-[13px] text-ink">chrome not found</code>{" "}
-        means pointing at the binary yourself: retry with{" "}
-        <code className="font-mono text-[13px] text-ink">--chrome &lt;path&gt;</code>{" "}
-        or export{" "}
-        <code className="font-mono text-[13px] text-ink">AGENT_WEBMCP_CHROME=&lt;path&gt;</code>.
-        Zen and Firefox have no CDP support, so a hanging{" "}
-        <code className="font-mono text-[13px] text-ink">open</code> almost
-        always means the wrong browser.
+        The installer stops live{" "}
+        <code className="font-mono text-[13px] text-ink">mcp</code> servers by
+        exact process identity (never pattern matching), replaces the binary
+        atomically, and verifies the installed rev matches the built commit.
+        It confirms before killing live servers unless passed{" "}
+        <code className="font-mono text-[13px] text-ink">--force</code>. The
+        harness respawns MCP servers on demand.
+      </p>
+      <h2 className="mt-8 text-xl font-medium text-ink">
+        Verify
+      </h2>
+      <CodeBlock
+        code={`agent-webmcp-rs version
+# {"version":"0.1.0","rev":"<commit>"}
+agent-webmcp-rs plugin list | head -c 300`}
+        lang="bash"
+      />
+      <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        The install lands at{" "}
+        <code className="font-mono text-[13px] text-ink">~/.local/bin/agent-webmcp-rs</code>.
+        The <code className="font-mono text-[13px] text-ink">rev</code> field
+        proves which commit serves — compare it after every install.
       </p>
     </article>
   );

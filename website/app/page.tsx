@@ -25,8 +25,8 @@ export default function Home() {
             can work with your software, not just read about it.
           </p>
           <p className="mt-7 text-[13px] text-ink-2">
-            <a href={`${REPO}/releases/tag/v0.4.0`}>v0.4.0</a> · Chrome 149
-            or newer · Windows, macOS, Linux
+            <a href={REPO}>v0.1.0</a> · Chrome 149
+            or newer · Linux-first (Windows, macOS untested)
           </p>
           <div className="mt-9 flex flex-wrap items-start justify-center gap-3">
             <SetupAgentButton />

@@ -17,3 +17,4 @@ next-env.d.ts
 /agent-webmcp
 /cmd/agent-webmcp/agent-webmcp
 rust/target/
+zig/.zig-cache/

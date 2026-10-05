@@ -2,30 +2,30 @@ import { CodeBlock } from "../code-block";
 
 export const metadata = {
   title: "Commands · agent-webmcp docs",
-  description: "The full verb list: free tier, Jev loop, and auth.",
+  description: "Every verb the Rust CLI serves: browse, act, WebMCP, craft, compose, system.",
 };
 
-const FREE = `open [url] [--session NAME] [--headed] [--chrome PATH] [--profile NAME] [--json]
-crawl <url> [--session NAME] [--json]
-list [--session NAME] [--json]
-invoke <tool> [--params JSON|@file] [--frame ID] [--session NAME] [--json]
-eval <js|@file> [--session NAME] [--json]
-observe [--session NAME] [--json]
-search <terms> [--session NAME] [--namespace HOST] [--limit N] [--offset N] [--json]
-execute --program @file|<js> [--session NAME] [--max-calls N] [--json]
-tools <add|list|load|remove|verify> [--session NAME] [--json]
-close [--session NAME | --all]
-sessions [--json]
-status [--session NAME] [--json]
-mcp [--tools core|all]
-doctor [--json]
-version`;
+const BROWSE = `open <url> [--session NAME] [--profile NAME] [--headed]
+observe [--session NAME]
+eval <js> [--session NAME]
+close [--session NAME] [--all]
+sessions`;
 
-const PAID = `decide --goal ".." [--session NAME] [--json]
-act [--session NAME] [--json]
-tick --goal ".." [--session NAME] [--json]
-run --goal ".." [--session NAME] [--max-steps N] [--json]
-auth <probe|handoff> [--session NAME] [--json]`;
+const ACT = `click <@eN> [--session NAME]
+fill <@eN> <text> [--session NAME] [--submit]`;
+
+const WEBMCP = `list [--session NAME]
+invoke <tool> [--params JSON] [--frame ID] [--tool NAME] [--detach]
+result <invocation> [--session NAME]`;
+
+const COMPOSE = `tools <add|list|verify>
+search <terms> [--session NAME] [--limit N] [--offset N]
+execute --program @file|<js> [--session NAME] [--max-calls N]`;
+
+const SYSTEM = `plugin <list|new|show>
+audit
+version
+mcp`;
 
 export default function CommandsPage() {
   return (
@@ -34,40 +34,29 @@ export default function CommandsPage() {
         Commands
       </h1>
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        The CLI does three jobs and each verb below serves exactly one: a
-        browser remote for eyes and hands, a tool cabinet for the verbs
-        themselves, and the loop for judgment in motion. Compositions like{" "}
-        <code className="font-mono text-[13px] text-ink">crawl</code> just run
-        several of these in one call.
+        Every verb is a plugin and every call returns JSON — pretty on a
+        TTY, compact when piped. Flags may precede or follow positionals.
+        Page-derived data always carries{" "}
+        <code className="font-mono text-[13px] text-ink">untrusted: true</code>.
       </p>
       <h2 className="mt-8 text-xl font-medium text-ink">
-        Free: $0, no keys
+        Browse
       </h2>
-      <CodeBlock code={FREE} lang="text" />
+      <CodeBlock code={BROWSE} lang="text" />
       <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
         <li>
-          <code className="font-mono text-[13px] text-ink">open</code> binds a
-          session to a tab in the shared-profile browser, then auto-injects
-          verified tools for that host.
+          <code className="font-mono text-[13px] text-ink">open</code>{" "}
+          reuses the profile&apos;s browser (one profile, one cookie jar),
+          binds the session to its own tab, navigates, and auto-injects
+          verified custom tools for the host. A headed/headless mismatch
+          relaunches instead of lying.
         </li>
         <li>
-          <code className="font-mono text-[13px] text-ink">crawl</code> folds
-          open, inventory, tool list, link harvest, and auth probe into one
-          envelope for indexing work.
-        </li>
-        <li>
-          <code className="font-mono text-[13px] text-ink">list</code> tags
-          each tool with its provenance: native,{" "}
-          <code className="font-mono text-[13px] text-ink">[custom]</code>, or{" "}
-          <code className="font-mono text-[13px] text-ink">[loop]</code>. Ours
-          never masquerade as the site&apos;s.
-        </li>
-        <li>
-          <code className="font-mono text-[13px] text-ink">search</code>{" "}
-          ranks the tool catalog (global without a session, live tools with
-          one);{" "}
-          <code className="font-mono text-[13px] text-ink">execute</code> runs
-          sandboxed programs that compose them. See Codemode.
+          <code className="font-mono text-[13px] text-ink">observe</code>{" "}
+          returns stable snapshot refs (<code className="font-mono text-[13px] text-ink">@eN</code>)
+          with kinds click/fill/select/scroll. Refs die on navigation:
+          re-observe after every act. Password, file, hidden, and disabled
+          controls are never listed.
         </li>
         <li>
           <code className="font-mono text-[13px] text-ink">close --all</code>{" "}
@@ -76,75 +65,94 @@ export default function CommandsPage() {
         </li>
       </ul>
       <h2 className="mt-8 text-xl font-medium text-ink">
-        Ultrafast: needs TYPESAFE_API_KEY
+        Act
       </h2>
-      <CodeBlock code={PAID} lang="text" />
+      <CodeBlock code={ACT} lang="text" />
       <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
         <li>
-          <code className="font-mono text-[13px] text-ink">decide</code> picks
-          one step and stops.{" "}
-          <code className="font-mono text-[13px] text-ink">act</code> executes
-          that saved decision exactly once, after re-checking the page is
-          unchanged.
+          <code className="font-mono text-[13px] text-ink">click</code> is
+          trusted CDP input on a hit-tested point: occluded, off-viewport,
+          or stale targets refuse with a remedy instead of clicking blind.
         </li>
         <li>
-          <code className="font-mono text-[13px] text-ink">tick</code> fuses
-          observe, decide, and act into a single step.{" "}
-          <code className="font-mono text-[13px] text-ink">run</code> repeats
-          ticks to DONE or BLOCKED inside a step budget, stopping early on
-          three stagnant steps.
-        </li>
-        <li>
-          Exits read as contracts:{" "}
-          <code className="font-mono text-[13px] text-ink">0</code> done,{" "}
-          <code className="font-mono text-[13px] text-ink">1</code>{" "}
-          blocked or failed,{" "}
-          <code className="font-mono text-[13px] text-ink">2</code> login wall.
-          The wall is a pause with a remedy, not a failure.
-        </li>
-        <li>
-          <code className="font-mono text-[13px] text-ink">auth probe</code>{" "}
-          senses the gate without touching it.{" "}
-          <code className="font-mono text-[13px] text-ink">auth handoff</code>{" "}
-          opens a headed window where you type the password yourself; the
-          secret never enters model context, logs, or tool state.{" "}
-          <code className="font-mono text-[13px] text-ink">auth save/login</code>{" "}
-          keeps sealed logins machine-local instead.
+          <code className="font-mono text-[13px] text-ink">fill</code>{" "}
+          focuses, types through trusted input, and reads the value back —
+          a mismatch fails the call. <code className="font-mono text-[13px] text-ink">--submit</code> fills
+          first; the harness confirms before anything state-changing.
         </li>
       </ul>
       <h2 className="mt-8 text-xl font-medium text-ink">
-        Machine surfaces
+        WebMCP
       </h2>
+      <CodeBlock code={WEBMCP} lang="text" />
       <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
+        <li>
+          <code className="font-mono text-[13px] text-ink">list</code> shows
+          the tools the page itself speaks — found, never invented.{" "}
+          <code className="font-mono text-[13px] text-ink">invoke</code>{" "}
+          calls one; <code className="font-mono text-[13px] text-ink">--tool NAME</code> exists
+          for harness-style calls where every argument arrives as a flag.
+        </li>
+        <li>
+          <code className="font-mono text-[13px] text-ink">--detach</code>{" "}
+          returns an invocation id at once while a forked daemon holds the
+          connection for slow tools;{" "}
+          <code className="font-mono text-[13px] text-ink">result</code>{" "}
+          collects pending/ready/error. The daemon outlives the CLI.
+        </li>
+      </ul>
+      <h2 className="mt-8 text-xl font-medium text-ink">
+        Craft and compose
+      </h2>
+      <CodeBlock code={COMPOSE} lang="text" />
+      <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
+        <li>
+          <code className="font-mono text-[13px] text-ink">tools add</code>{" "}
+          stages page JavaScript that registers through the page&apos;s own{" "}
+          <code className="font-mono text-[13px] text-ink">document.modelContext</code>, host-scoped.{" "}
+          <code className="font-mono text-[13px] text-ink">tools verify</code>{" "}
+          reloads, injects, and confirms every name in{" "}
+          <code className="font-mono text-[13px] text-ink">list</code> — only
+          verified tools auto-inject.
+        </li>
+        <li>
+          <code className="font-mono text-[13px] text-ink">search</code>{" "}
+          discovers progressively (pull definitions, never the catalog);{" "}
+          <code className="font-mono text-[13px] text-ink">execute</code> runs
+          one JS program over many tools with budgets. See Codemode.
+        </li>
+      </ul>
+      <h2 className="mt-8 text-xl font-medium text-ink">
+        System
+      </h2>
+      <CodeBlock code={SYSTEM} lang="text" />
+      <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
+        <li>
+          <code className="font-mono text-[13px] text-ink">plugin list</code>{" "}
+          shows registry state; <code className="font-mono text-[13px] text-ink">new</code> scaffolds
+          a plugin, <code className="font-mono text-[13px] text-ink">show</code> inspects
+          one. <code className="font-mono text-[13px] text-ink">audit</code> aggregates
+          the evidence log: usage, error rate, mean ms per verb.
+        </li>
         <li>
           <code className="font-mono text-[13px] text-ink">mcp</code> serves
-          the bridge over stdio JSON-RPC (core profile: open, list, invoke,
-          observe, close). Same internals as the CLI, so the surfaces cannot
-          drift.
-        </li>
-        <li>
-          <code className="font-mono text-[13px] text-ink">doctor</code>{" "}
-          checks version, Chrome, sessions, key presence, registry, vault,
-          and one live open. Exit 0 all-pass, 1 any fail.
+          the same registry over stdio JSON-RPC, so CLI and harness surfaces
+          cannot drift. <code className="font-mono text-[13px] text-ink">version</code> prints
+          the binary version plus build rev.
         </li>
       </ul>
       <h2 className="mt-8 text-xl font-medium text-ink">
-        Output contracts
+        Errors
       </h2>
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        With <code className="font-mono text-[13px] text-ink">--json</code>{" "}
-        every verb returns{" "}
-        <code className="font-mono text-[13px] text-ink">{"{ok, data}"}</code>{" "}
-        or{" "}
-        <code className="font-mono text-[13px] text-ink">{"{ok: false, code, error}"}</code>.
-        The data keys: open (session, url, port, headed, reused, customTools,
-        nativeTools), list (tools with provenance), observe (url, title,
-        text, count, elements, fingerprint), search (items, remaining, next),
-        execute (result, tool_calls), tick (operation, target, executed,
-        page_changed, confidence, url), run (status, steps, reason, goal),
-        sessions (name, live, url, profile, headed, dead_binding), doctor
-        (checks, pass). Text output is the compact human rendering of the
-        same data.
+        Failures are honest codes: <code className="font-mono text-[13px] text-ink">usage</code> (fix
+        args), <code className="font-mono text-[13px] text-ink">not_found</code> (discover
+        first), <code className="font-mono text-[13px] text-ink">stale_target</code> (re-observe),{" "}
+        <code className="font-mono text-[13px] text-ink">no_browser</code> /{" "}
+        <code className="font-mono text-[13px] text-ink">no_session</code> (open
+        first), <code className="font-mono text-[13px] text-ink">policy_denied</code> (refused),{" "}
+        <code className="font-mono text-[13px] text-ink">tool_failed</code> (diagnose).
+        Exit 2 is dispatch failure (unknown verb); exit 1 is call failure.
       </p>
     </article>
   );

@@ -129,7 +129,7 @@ export async function GET(
       src,
       "WEBMCP BROWSER CLI",
       "Turn the web into your agent's toolkit.",
-      "$ npx skills add system1970/agent-webmcp",
+      "$ git clone + scripts/install-local.sh",
       "Public · MIT",
       "agent-webmcp.vercel.app",
       72

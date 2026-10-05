@@ -7,50 +7,75 @@ Facts about this repo. Every fact names a file and a line.
 ### Shape of the repo
 
 - One Cargo package, binary `agent-webmcp`. `rust/src/*.rs`, `rust/src/verbs/*.rs`. rust/Cargo.toml:1
-- Deps: clap (derive), reqwest (blocking), tungstenite, serde_json, anyhow. rust/Cargo.toml:7
+- Deps: clap (derive), reqwest (blocking), tungstenite, serde_json, anyhow, nix (process+signal), rquickjs. rust/Cargo.toml:6
 - Sync only: no async runtime anywhere. rust/src/cdp.rs:1
-- Docs site: `website/` (Next.js, rewrite pending for Rust verbs).
-- Parked: `zig/` (CDP spike, stdlib churn shelved it).
+- Docs site: `website/` (Next.js; CLI docs only — install, verbs, authoring).
+- External plugins: `plugins/` (repo scope; `hello-echo` example). `plugins/README.md:1`
+- Harness playbook: `skill-data/SKILL.md` + `references/`.
+- Installer: `scripts/install-local.sh` (quiesce, atomic replace, rev verify).
+- Parked: `zig/` (CDP spike, shelved). Deleted: `cmd/` Go sources, root binary.
 
 ### Plugin system
 
-- Everything is a plugin: id, permissions, verbs, hooks. rust/src/plugin.rs:20
-- Permissions: Browser, Network, Secrets, Fs, Spawn — requested, host-enforced (enforcement pending). rust/src/plugin.rs:16
-- Control syntax from env AGENT_WEBMCP_PLUGINS: `*`, `-id`, `-ns.*`, later ID re-enables. rust/src/main.rs:12
-- `core.policy` and `core.receipts` ignore removals. rust/src/plugin.rs:60
-- Verbs receive (&Ctx, &Registry, args); `plugin list` describes via the registry. rust/src/plugin.rs:30, rust/src/verbs/core.rs:51
-- Hooks wrap every call: before may veto, after observes. rust/src/main.rs:60
-- Unknown verbs fail hard with a `bad_verb` envelope, exit 2. rust/src/main.rs:75
-- Pretty for TTY, compact when piped. rust/src/main.rs:68
+- Everything is a plugin: id, permissions, verbs, hooks. rust/src/plugin.rs:77
+- Verb handlers receive (&Ctx, &Registry, verb-name, args). rust/src/plugin.rs:31
+- Permissions: Browser, Network, Secrets, Fs, Spawn — requested in manifests. rust/src/plugin.rs:19
+- Control syntax from env AGENT_WEBMCP_PLUGINS: `*`, `-id`, `-ns.*`, later ID re-enables. rust/src/plugin.rs:107
+- `core.policy` and `core.receipts` ignore removals. rust/src/plugin.rs:109
+- Hooks wrap every call: before may veto, after observes. Registry owns both.
+- Unknown verbs fail hard with a `bad_verb` envelope, exit 2. rust/src/main.rs:60
+- Runtime errors exit 1 with a derived code (KNOWN_CODES). rust/src/main.rs:129
+- Pretty for TTY, compact when piped; `mcp` owns stdout (no trailing line). rust/src/main.rs:100
+- External manifests: repo/user/project scopes, trust-gated project. rust/src/ext.rs:178
+- External verbs run sandboxed JS with an `args` global over the session catalog. rust/src/ext.rs:347
+- Manifest engine must match the binary (0.x compares minor). rust/src/ext.rs:89
+- `plugin new` scaffolds, `plugin show` inspects. rust/src/ext.rs:422
 
-### Browser verbs (browser.*)
+### Browser (browser.*)
 
-- `open <url>`: free port, launch headless Chromium (always with WebMCP flags), navigate, wait loadEventFired, save session. rust/src/verbs/browser.rs:53
-- `observe`: snapshot JS over Runtime.evaluate: stable @eN refs, kinds click/fill/select/scroll, password/file/hidden skipped. rust/src/verbs/browser.rs:7
-- Sessions: name -> port+url files under ~/.agent-webmcp/rust/, liveness-checked on load. rust/src/session.rs:10
+- `open`: session reuse or profile launch, headed mismatch relaunches, dead-tab timeout relaunches once. rust/src/verbs/browser.rs:112
+- `observe`: snapshot JS: stable @eN refs, kinds click/fill/select/scroll, password/file/hidden skipped.
+- Chrome launches in its own process group (setsid); group-kill marker per profile. rust/src/cdp.rs:52
+- `kill_profile` takes the whole tree when marked, single-pid otherwise; PID-reuse guarded. rust/src/session.rs:131
+- `tab_alive`: one evaluate round-trip, failure paths only. rust/src/cdp.rs:92
+- Sessions: name -> port+url+target files under ~/.agent-webmcp/rust/, liveness-checked on load.
+- Evidence: every call appends (verb, ms, ok); `audit` aggregates. rust/src/session.rs:239
 
 ### WebMCP (core, not a feature)
 
-- Launch always carries WebMCP flags; no opt-out exists. rust/src/cdp.rs:26
-- Discovery: enable, listTools fast path, event drain fallback (quiet 250ms, cap 900ms). rust/src/webmcp.rs:230
-- Invocation: invokeTool, callTool fallback, async toolResponded wait (30s). rust/src/webmcp.rs:262
-- Method-absent errors match the method-absent family (wasn't found, no such, unsupported...). rust/src/webmcp.rs:8
-- `list`/`invoke` verbs live in webmcp.tools; every envelope carries untrusted:true. rust/src/verbs/webmcp.rs:40
+- Launch always carries WebMCP flags; no opt-out exists. rust/src/cdp.rs:34
+- Discovery: enable, listTools fast path, event drain fallback. rust/src/webmcp.rs:230
+- Invocation: invokeTool, callTool fallback, async toolResponded wait. `invoke` takes positional or `--tool`. rust/src/verbs/webmcp.rs:54
+- Detached waits fork a daemon holding the routed socket; `result` polls the file. rust/src/webmcp.rs:295
+- Method-absent errors match the method-absent family. Every envelope carries untrusted:true.
+
+### Codemode + craft
+
+- Catalog: live page tools; `search` pulls definitions, `batch` fans out (cap 8), budgets on max-calls + wall clock. rust/src/verbs/exec.rs:12
+- `tools add` stages host-scoped page JS; `verify` reloads + confirms in `list`; only verified auto-injects.
 
 ## Files covered
 
-| File | Hash | Told about |
-|---|---|---|
-| rust/src/main.rs | d2399afdf969 | agent-webmcp |
-| rust/src/plugin.rs | 6ef738812ebd | agent-webmcp |
-| rust/src/cdp.rs | 8f14040eefa7 | agent-webmcp |
-| rust/src/session.rs | 36f13d5c6aa9 | agent-webmcp |
-| rust/src/webmcp.rs | d9ecde9b61e3 | agent-webmcp |
-| rust/src/verbs/mod.rs | b88dcfdab73c | agent-webmcp |
-| rust/src/verbs/core.rs | 8e7a3f599b4c | agent-webmcp |
-| rust/src/verbs/browser.rs | a8e01aaa95af | agent-webmcp |
-| rust/src/verbs/webmcp.rs | a1c6a6fc0fc7 | agent-webmcp |
-| rust/Cargo.toml | 885562e7b8e0 | agent-webmcp |
+| File | Told about |
+|---|---|
+| rust/src/main.rs | agent-webmcp |
+| rust/src/plugin.rs | agent-webmcp |
+| rust/src/cdp.rs | agent-webmcp |
+| rust/src/session.rs | agent-webmcp |
+| rust/src/webmcp.rs | agent-webmcp |
+| rust/src/ext.rs | agent-webmcp |
+| rust/src/exec.rs | agent-webmcp |
+| rust/src/tools.rs | agent-webmcp |
+| rust/src/args.rs | agent-webmcp |
+| rust/src/mcp.rs | agent-webmcp |
+| rust/src/verbs/mod.rs | agent-webmcp |
+| rust/src/verbs/core.rs | agent-webmcp |
+| rust/src/verbs/browser.rs | agent-webmcp |
+| rust/src/verbs/act.rs | agent-webmcp |
+| rust/src/verbs/webmcp.rs | agent-webmcp |
+| rust/src/verbs/tools.rs | agent-webmcp |
+| rust/src/verbs/exec.rs | agent-webmcp |
+| rust/Cargo.toml | agent-webmcp |
 
 ## Agents to tell
 

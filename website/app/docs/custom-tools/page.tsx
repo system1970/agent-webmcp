@@ -2,7 +2,7 @@ import { CodeBlock } from "../code-block";
 
 export const metadata = {
   title: "Custom tools · agent-webmcp docs",
-  description: "Deterministic page tools and judgment-backed loop tools, both verified live.",
+  description: "Craft the page's missing tools, verify them, compose them.",
 };
 
 export default function CustomToolsPage() {
@@ -12,57 +12,39 @@ export default function CustomToolsPage() {
         Custom tools
       </h1>
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        Sites rarely expose what you need, so you author it. There are two
-        kinds because pages come in two temperaments.{" "}
-        <strong className="text-ink">Page tools</strong> are JavaScript run
-        inside the page that registers through{" "}
-        <code className="font-mono text-[13px] text-ink">
-          document.modelContext
-        </code>
-        . Use them where the DOM sits still: search boxes, listings, extracts.{" "}
-        <strong className="text-ink">Loop tools</strong> carry a goal template
-        that executes as a bounded Jev run. Use them where the page fights
-        back: wizards, conditional steps, widgets that re-render under you.
-        Page JavaScript cannot reach the loop, so pick by temperament, not
-        taste.
+        When the page lacks tools the task needs, craft them: page
+        JavaScript that registers through the page&apos;s own{" "}
+        <code className="font-mono text-[13px] text-ink">document.modelContext</code>,
+        exactly like a site-native tool. Crafted tools are indistinguishable
+        from found ones at invoke time.
       </p>
-      <h2 className="mt-8 text-xl font-medium text-ink">Author a page tool</h2>
       <CodeBlock
-        code={`# 1. Write JS that feature-detects modelContext, calls
-#    registerTool({name, description, inputSchema, execute}),
-#    guards re-registration, and prints 'ok:<name>'.
-# 2. Register it for a host:
-agent-webmcp tools add ./search.js --for example.com --name example_search --desc "Search the catalog" --fields query
-# 3. Prove it against the live page:
-agent-webmcp tools verify example_search --session work
-# 4. From here it auto-injects on every open of the host:
-agent-webmcp invoke example_search --params '{"query":"AI"}' --session work`}
+        code={`agent-webmcp-rs tools add --file heading.js --for example.com --name page_heading
+agent-webmcp-rs tools verify page_heading --session demo
+agent-webmcp-rs tools list --query heading`}
+        lang="bash"
       />
-      <h2 className="mt-8 text-xl font-medium text-ink">Author a loop tool</h2>
-      <CodeBlock
-        code={`agent-webmcp tools add \\
-  --goal "Fill the signup field with {{email}} and press Continue. Stop when a welcome message is visible." \\
-  --for example.com --name example_signup \\
-  --fields "email" --fill email --max-steps 8 --confirm \\
-  --expect "Welcome" --expect-url example.com/welcome`}
-      />
-      <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        Describe the stopping point in observable terms (“a form with Name
-        and email fields is visible”), never as a step number. Step numbers
-        mean nothing to a judge that only sees the current page. The{" "}
-        <code className="font-mono text-[13px] text-ink">expect</code> markers
-        get asserted in code after the run, so certification never depends on
-        the model grading its own work. Anything unverified never
-        auto-injects.
-      </p>
-      <h2 className="mt-8 text-xl font-medium text-ink">Manage the registry</h2>
-      <CodeBlock
-        code={`agent-webmcp tools list --query "signup"          # search name + description + hosts, no session needed
-agent-webmcp tools load example_search --session work  # explicit inject (open auto-injects verified only)
-agent-webmcp tools verify example_signup --params '{"email":"t@t.co"}' --session work
-agent-webmcp tools remove example_search              # registry only; sessions re-list clean
-agent-webmcp invoke example_signup --params '{"email":"t@t.co"}' --session work   # loop tools run bounded runs, DONE/BLOCKED receipts`}
-      />
+      <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
+        <li>
+          Tools are host-scoped (<code className="font-mono text-[13px] text-ink">--for</code> takes
+          exact hosts, <code className="font-mono text-[13px] text-ink">*.suffix</code>, or{" "}
+          <code className="font-mono text-[13px] text-ink">*</code>) and live
+          under <code className="font-mono text-[13px] text-ink">~/.agent-webmcp/tools/</code>.
+        </li>
+        <li>
+          <code className="font-mono text-[13px] text-ink">verify</code>{" "}
+          reloads, injects, and confirms every registered name in{" "}
+          <code className="font-mono text-[13px] text-ink">list</code>. Only
+          verified tools auto-inject on{" "}
+          <code className="font-mono text-[13px] text-ink">open</code> —
+          unverified tools never run unannounced.
+        </li>
+        <li>
+          The craft loop is discover → craft → verify → compose → expose:
+          page tools and crafted tools become one toolkit over MCP and CLI
+          alike.
+        </li>
+      </ul>
     </article>
   );
 }

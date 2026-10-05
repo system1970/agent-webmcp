@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://agent-webmcp.vercel.app"),
   title: "agent-webmcp · ultra-light WebMCP browser CLI",
   description:
-    "One static Go binary that discovers and invokes WebMCP tools in real Chrome sessions. ~15 ms cold start, ~39 ms round-trips, no daemon.",
+    "A minimal Rust bridge that turns any web page into an agent's toolkit: WebMCP verbs, crafted tools, and codemode over CLI and MCP.",
   icons: {
     icon: "/orkestrate-brand-mark.png",
     apple: "/orkestrate-brand-mark.png",
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "agent-webmcp · ultra-light WebMCP browser CLI",
     description:
-      "One static Go binary that discovers and invokes WebMCP tools in real Chrome sessions. ~15 ms cold start, ~39 ms round-trips, no daemon.",
+      "A minimal Rust bridge that turns any web page into an agent's toolkit: WebMCP verbs, crafted tools, and codemode over CLI and MCP.",
     url: "https://agent-webmcp.vercel.app",
     siteName: "agent-webmcp",
     type: "website",
@@ -44,7 +44,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "agent-webmcp · ultra-light WebMCP browser CLI",
     description:
-      "One static Go binary that discovers and invokes WebMCP tools in real Chrome sessions. ~15 ms cold start, ~39 ms round-trips, no daemon.",
+      "A minimal Rust bridge that turns any web page into an agent's toolkit: WebMCP verbs, crafted tools, and codemode over CLI and MCP.",
     images: ["/opengraph-image"],
   },
 };
