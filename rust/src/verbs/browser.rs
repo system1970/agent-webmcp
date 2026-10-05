@@ -47,6 +47,21 @@ fn eval_value(ws: &str, expr: &str) -> anyhow::Result<serde_json::Value> {
 }
 
 /// Evaluate JS that returns a JSON-stringified object (snapshots).
+fn flag_url(args: &[String]) -> Option<String> {
+    let mut it = args.iter().peekable();
+    while let Some(a) = it.next() {
+        if a == "--url" {
+            if let Some(v) = it.next() {
+                return Some(v.clone());
+            }
+        }
+        if let Some(v) = a.strip_prefix("--url=") {
+            return Some(v.to_string());
+        }
+    }
+    None
+}
+
 fn eval(ws: &str, expr: &str) -> anyhow::Result<serde_json::Value> {
     match eval_value(ws, expr)? {
         serde_json::Value::String(s) => {
@@ -66,11 +81,28 @@ pub fn plugins() -> Vec<Plugin> {
                 name: "open",
                 help: "open <url> [--session NAME] [--profile NAME] [--headed] — reuse profile browser, navigate session tab",
                 run: |ctx, _reg, args| {
-                    let url = args
-                        .iter()
-                        .find(|a| !a.starts_with('-'))
-                        .map(|s| s.as_str())
-                        .unwrap_or("about:blank");
+                    // Positional URL: first bare arg that is not a flag
+                    // value (--session/--profile values are skipped).
+                    // --url works too for MCP-style {url} arguments.
+                    let mut skip = false;
+                    let url = flag_url(args).unwrap_or_else(|| {
+                        args.iter()
+                            .filter(|a| {
+                                if skip {
+                                    skip = false;
+                                    return false;
+                                }
+                                if *a == "--session" || *a == "-s" || *a == "--profile" {
+                                    skip = true;
+                                    return false;
+                                }
+                                !a.starts_with('-')
+                            })
+                            .map(|s| s.as_str())
+                            .next()
+                            .unwrap_or("about:blank")
+                            .to_string()
+                    });
                     let session = ctx.session_for(args);
                     let profile = ctx.profile_for(args);
                     let headed = args.iter().any(|a| a == "--headed");
@@ -82,16 +114,16 @@ pub fn plugins() -> Vec<Plugin> {
                     if url != "about:blank" {
                         crate::cdp::wait_load(&ws)?;
                     }
-                    crate::session::save(&session, &profile, port, url)?;
+                    crate::session::save(&session, &profile, port, &url)?;
                     // Verified host-matched tools inject on every open.
                     // Best-effort: injection never fails the open.
                     let host = url
                         .split("://")
                         .nth(1)
-                        .unwrap_or(url)
+                        .unwrap_or(url.as_str())
                         .split('/')
                         .next()
-                        .unwrap_or(url);
+                        .unwrap_or(url.as_str());
                     let injected = crate::tools::inject_verified(&ws, host);
                     Ok(serde_json::json!({"session": session, "profile": profile, "url": url, "port": port, "reused": reused, "headed": headed, "customTools": injected}))
                 },
@@ -118,10 +150,22 @@ pub fn plugins() -> Vec<Plugin> {
                 name: "eval",
                 help: "eval <js> [--session NAME] — run JavaScript, return value",
                 run: |ctx, _reg, args| {
+                    let mut skip = false;
                     let expr = args
                         .iter()
-                        .find(|a| !a.starts_with('-'))
+                        .filter(|a| {
+                            if skip {
+                                skip = false;
+                                return false;
+                            }
+                            if *a == "--session" || *a == "-s" {
+                                skip = true;
+                                return false;
+                            }
+                            !a.starts_with('-')
+                        })
                         .cloned()
+                        .next()
                         .unwrap_or_default();
                     if expr.is_empty() {
                         anyhow::bail!("usage: eval <js> [--session NAME]");
