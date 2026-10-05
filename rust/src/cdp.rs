@@ -240,39 +240,6 @@ pub fn navigate_and_wait(ws_url: &str, url: &str) -> anyhow::Result<()> {
         }
     }
 }
-pub fn wait_load(ws_url: &str) -> anyhow::Result<()> {
-    let (mut sock, _) = tungstenite::connect(ws_url)?;
-    set_timeout(&mut sock, Duration::from_secs(2))?;
-    sock.send(tungstenite::Message::Text(
-        r#"{"id":1,"method":"Page.enable","params":{}}"#.into(),
-    ))?;
-    let start = std::time::Instant::now();
-    loop {
-        if start.elapsed() > Duration::from_secs(20) {
-            anyhow::bail!("load timeout");
-        }
-        match sock.read() {
-            Err(tungstenite::Error::Io(e))
-                if e.kind() == std::io::ErrorKind::WouldBlock
-                    || e.kind() == std::io::ErrorKind::TimedOut =>
-            {
-                continue;
-            }
-            Err(e) => anyhow::bail!("load: {e}"),
-            Ok(tungstenite::Message::Text(t)) => {
-                if t.contains("Page.loadEventFired") {
-                    return Ok(());
-                }
-            }
-            Ok(tungstenite::Message::Ping(p)) => {
-                sock.send(tungstenite::Message::Pong(p))?;
-            }
-            Ok(tungstenite::Message::Close(_)) => anyhow::bail!("ws closed"),
-            Ok(_) => {}
-        }
-    }
-}
-
 /// Browser-level debugger URL for Target.* calls.
 pub fn browser_ws(port: u16) -> anyhow::Result<String> {
     let v: serde_json::Value = serde_json::from_str(&http_get(port, "/json/version")?)?;
