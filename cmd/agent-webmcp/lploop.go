@@ -244,7 +244,6 @@ func actLP(ctx context.Context, l *lpLoop, goal string, d *decision, saved *snap
 		return map[string]any{"operation": d.Operation, "target": "", "executed": false}, "", nil
 	case "WAIT":
 		time.Sleep(100 * time.Millisecond)
-		appendExecuted(l.session, run, map[string]any{"operation": "WAIT", "target": ""})
 		return map[string]any{"operation": "WAIT", "target": "", "executed": true}, "", nil
 	case "INVOKE":
 		// Refuse rather than pretend. The LP domain does expose WebMCP.invokeTool,
@@ -333,7 +332,6 @@ func actLP(ctx context.Context, l *lpLoop, goal string, d *decision, saved *snap
 	if text != "" {
 		entry["text"] = text
 	}
-	appendExecuted(l.session, run, entry)
 
 	receipt := map[string]any{
 		"operation": d.Operation, "target": d.Target, "executed": true,

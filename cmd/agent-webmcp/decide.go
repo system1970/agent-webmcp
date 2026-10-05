@@ -66,14 +66,6 @@ func opsForKind(kind string) string {
 	return ""
 }
 
-// lastVisited keeps the tail of the visited-URL list for state.
-func lastVisited(v []string, n int) []string {
-	if len(v) <= n {
-		return v
-	}
-	return v[len(v)-n:]
-}
-
 func decideCmd(ctx context.Context, g *globals, rest []string) int {
 	goal, _ := verbFlag(rest, "goal")
 	if strings.TrimSpace(goal) == "" {
@@ -105,17 +97,41 @@ func decideCmd(ctx context.Context, g *globals, rest []string) int {
 // history shapes — never secrets. (Stagehand redacts %variable% the
 // same way, in requests and traces.)
 func buildState(goal string, snap *snapshot, tools []WebMCPTool, history []map[string]any, visited []string) map[string]any {
+	// Which targets have already been tried and changed nothing. The judge is
+	// told this on the element itself rather than only in recent_actions: the
+	// fact belongs next to the choice. Observed live — the judge re-clicked an
+	// already-open panel four times, having been handed "you clicked this,
+	// result unknown" buried in a history window half-made of duplicates.
+	stale := map[string]bool{}
+	for _, m := range history {
+		tgt, _ := m["target"].(string)
+		if tgt == "" {
+			continue
+		}
+		if changed, ok := m["page_changed"].(bool); ok && !changed {
+			stale[tgt] = true
+		}
+	}
 	els := make([]map[string]any, 0, len(snap.Actions))
 	for _, a := range snap.Actions {
 		if a.Kind == "wait" {
 			continue
 		}
+		e := map[string]any{"index": a.ID, "kind": a.Kind, "role": a.Role, "label": a.Label}
 		// filled is presence-without-content: the judge must know a
 		// field already holds text (else it refills forever — observed
 		// live: 3× TYPE_TEXT, 0 changes), but the value itself is a
 		// secret and stays out (Stagehand placeholder discipline).
-		filled := a.Kind == "fill" && a.Value != ""
-		els = append(els, map[string]any{"index": a.ID, "kind": a.Kind, "role": a.Role, "label": a.Label, "filled": filled})
+		//
+		// Only fills can be filled. Carrying "filled": false on every click
+		// was ~85 tokens of noise per decision for nothing.
+		if a.Kind == "fill" {
+			e["filled"] = a.Value != ""
+		}
+		if stale[a.ID] {
+			e["no_change"] = true
+		}
+		els = append(els, e)
 	}
 	toolBrief := make([]map[string]any, 0, len(tools))
 	for _, tl := range tools {
@@ -138,8 +154,35 @@ func buildState(goal string, snap *snapshot, tools []WebMCPTool, history []map[s
 		"elements":       els,
 		"tools":          toolBrief,
 		"recent_actions": recent,
-		"visited":        lastVisited(visited, 12),
+		"visited":        briefVisited(visited, 12),
 	}
+}
+
+// briefVisited shortens the visited list to host+path and drops consecutive
+// repeats. lastVisited passed full URLs: harmless on a bare host, but a site
+// with query strings spends ~270 tokens here, which is a third of the state,
+// to tell the judge something host+path already says.
+func briefVisited(v []string, n int) []string {
+	out := make([]string, 0, len(v))
+	for _, raw := range v {
+		s := raw
+		if i := strings.IndexAny(s, "?#"); i >= 0 {
+			s = s[:i]
+		}
+		s = strings.TrimSuffix(s, "/")
+		if s == "" {
+			continue
+		}
+		// A run of the same page is one visit, not five.
+		if len(out) > 0 && out[len(out)-1] == s {
+			continue
+		}
+		out = append(out, s)
+	}
+	if len(out) > n {
+		out = out[len(out)-n:]
+	}
+	return out
 }
 
 // decideOnce: snapshot + fan-out POST + validate. Shared by decide and tick.

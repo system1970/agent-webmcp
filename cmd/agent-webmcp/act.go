@@ -164,11 +164,33 @@ func checkFresh(saved, fresh *snapshot, node int) error {
 	return nil
 }
 
+// logExecuted records one successful action from a receipt. This is the only
+// writer for the split `act` verb; the fused loop writes its own from
+// tickOnce, where page_changed is known. Exactly one record per action is the
+// point: buildState reads these back as the judge's recent_actions, so a
+// duplicate halves the history window and leaves page_changed null.
+func logExecuted(session string, receipt map[string]any) {
+	entry := map[string]any{"operation": receipt["operation"], "target": receipt["target"]}
+	if receipt["text"] != nil && receipt["text"] != "" {
+		entry["text"] = receipt["text"]
+	}
+	for _, k := range []string{"confidence", "x", "y", "untrusted"} {
+		if v := receipt[k]; v != nil {
+			entry[k] = v
+		}
+	}
+	appendExecuted(session, "", entry)
+}
+
 func appendExecuted(session, run string, entry map[string]any) {
 	entry["kind"] = "executed"
 	if run != "" {
 		entry["run"] = run
 	}
+	// The evidence directory must exist or the write fails silently and the
+	// action goes unrecorded. saveDecision creates it, but this path can be
+	// reached first — `auth login` on a session that was never opened.
+	_ = os.MkdirAll(sessionDir(session), 0o700)
 	b, _ := json.Marshal(entry)
 	f, err := os.OpenFile(decisionsPath(session), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -336,6 +358,11 @@ func actCmd(ctx context.Context, g *globals, rest []string) int {
 	if err != nil {
 		return failErr(code, err)
 	}
+	// One executed record per action, written by whoever knows the outcome.
+	// tickOnce does the same with page_changed filled in; actExecute no longer
+	// writes one of its own, because two records per action halved the judge's
+	// history window and left page_changed null on half of them.
+	logExecuted(g.session, receipt)
 	// Consume once: a saved decision executes at most once. A retry
 	// cannot double-click; it must re-decide. (tick is unaffected:
 	// it decides fresh every step.)
@@ -379,7 +406,6 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 		return map[string]any{"operation": d.Operation, "target": "", "executed": false}, "", nil
 	case "WAIT":
 		time.Sleep(100 * time.Millisecond)
-		appendExecuted(session, run, map[string]any{"operation": "WAIT", "target": ""})
 		return map[string]any{"operation": "WAIT", "target": "", "executed": true}, "", nil
 	case "INVOKE":
 		paramsJSON := strings.TrimSpace(params)
@@ -411,7 +437,6 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 		if json.Unmarshal(raw, &js) == nil {
 			val = js
 		}
-		appendExecuted(session, run, map[string]any{"operation": "INVOKE", "target": d.Target, "untrusted": true})
 		return map[string]any{"operation": "INVOKE", "target": d.Target, "executed": true, "result": val, "untrusted": true}, "", nil
 	}
 	var action *snapAction
@@ -441,8 +466,7 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 		}); err != nil {
 			return fail("act_failed", err)
 		}
-		appendExecuted(session, run, map[string]any{"operation": d.Operation, "target": d.Target})
-		return map[string]any{"operation": d.Operation, "target": d.Target, "executed": true}, "", nil
+			return map[string]any{"operation": d.Operation, "target": d.Target, "executed": true}, "", nil
 	}
 	// Text is agent-supplied (flags); pending text survives a stale retry.
 	if action.Kind == "fill" {
@@ -555,14 +579,6 @@ func actExecute(ctx context.Context, session, goal string, d *decision, saved *s
 	sctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_, _ = evalScript(sctx, t.WebSocketDebuggerURL, settleExpr, 5*time.Second)
-	entry := map[string]any{
-		"operation": d.Operation, "target": d.Target, "confidence": d.Confidence,
-		"x": pt.X, "y": pt.Y,
-	}
-	if text != "" {
-		entry["text"] = text
-	}
-	appendExecuted(session, run, entry)
 	receipt := map[string]any{"operation": d.Operation, "target": d.Target, "executed": true, "x": pt.X, "y": pt.Y}
 	if text != "" {
 		receipt["text"] = text
@@ -606,6 +622,5 @@ func actSelect(ctx context.Context, session, wsURL string, action *snapAction, t
 	if !r.OK {
 		return nil, "select_unconfirmed", fmt.Errorf("dropdown execution was not confirmed: %s", r.Error)
 	}
-	appendExecuted(session, run, map[string]any{"operation": "SELECT", "target": action.ID})
 	return map[string]any{"operation": "SELECT", "target": action.ID, "executed": true}, "", nil
 }
