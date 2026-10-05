@@ -33,7 +33,7 @@ usage:
     agent-webmcp search <terms> [--session NAME] [--namespace HOST] [--limit N] [--offset N] [--json]
   auth (free; logins via your password manager):
     agent-webmcp auth <probe|handoff> [--session NAME] [--json]
-    agent-webmcp auth login <item> [--vault bitwarden] [--session NAME] [--url URL] [--submit] [--totp] [--json]
+    agent-webmcp auth login <item> [--vault bitwarden] [--session NAME] [--url URL] [--submit] [--totp] [--no-open] [--json]
   judge (needs TYPESAFE_API_KEY):
     agent-webmcp decide --goal ".." [--session NAME] [--json]
     agent-webmcp act [--session NAME] [--json]
@@ -53,6 +53,8 @@ global flags:
   --engine chrome|lightpanda     browser engine (default chrome)
   --executable-path PATH         lightpanda binary (default: PATH, ~/.local/bin, ~/.lightpanda)
   --allowed-domains a.com,b.com  refuse navigation outside these hosts (also AGENT_WEBMCP_ALLOWED_DOMAINS)
+  --profile-source DIR         import a Chrome user-data-dir once into a fresh profile
+                               (source browser must be closed; also AGENT_WEBMCP_PROFILE_SOURCE)
 
 lightpanda:
   Runs open, crawl, observe, eval and run. It forgets the page when its CDP
@@ -124,6 +126,13 @@ func parseGlobals(args []string) (globals, []string) {
 			}
 		case strings.HasPrefix(a, "--profile="):
 			g.profile = strings.TrimPrefix(a, "--profile=")
+		case a == "--profile-source":
+			if i+1 < len(args) {
+				i++
+				optProfileSource = args[i]
+			}
+		case strings.HasPrefix(a, "--profile-source="):
+			optProfileSource = strings.TrimPrefix(a, "--profile-source=")
 		case a == "--json":
 			g.json = true
 		case a == "--headed":

@@ -100,7 +100,7 @@ type fillResult struct {
 // runLoginFlow fills a login form from backend credentials: resolve,
 // open, origin-check, pour, bind-check, optional TOTP. Plaintext lives
 // only in this scope and is cleared before return.
-func runLoginFlow(ctx context.Context, g *globals, backend SecretBackend, item, urlOverride string, submit, wantTOTP bool) int {
+func runLoginFlow(ctx context.Context, g *globals, backend SecretBackend, item, urlOverride string, submit, wantTOTP, noOpen bool) int {
 	timeout := time.Duration(g.timeoutMs) * time.Millisecond
 	creds, err := backend.GetLogin(ctx, item)
 	if err != nil {
@@ -118,18 +118,20 @@ func runLoginFlow(ctx context.Context, g *globals, backend SecretBackend, item, 
 			}
 		}
 	}
-	if strings.TrimSpace(targetURL) == "" {
+	if strings.TrimSpace(targetURL) == "" && !noOpen {
 		return fail("usage", fmt.Sprintf("item %q has no URL (pass --url)", creds.Name))
 	}
-	if _, err := openURL(ctx, g.session, targetURL, g.chrome, g.headed, g.allowed, timeout); err != nil {
-		return failErr("open_failed", err)
+	if !noOpen {
+		if _, err := openURL(ctx, g.session, targetURL, g.chrome, g.headed, g.allowed, timeout); err != nil {
+			return failErr("open_failed", err)
+		}
 	}
 	t, err := sessionTarget(g.session, timeout)
 	if err != nil {
 		return failErr("no_page", err)
 	}
 	landed := hostOfURL(t.URL)
-	if landed != hostOfURL(targetURL) {
+	if !noOpen && landed != hostOfURL(targetURL) {
 		return fail("origin_mismatch", fmt.Sprintf("landed %s, expected %s (not filling)", landed, hostOfURL(targetURL)))
 	}
 	allowed := len(creds.URIs) == 0

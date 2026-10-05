@@ -189,7 +189,7 @@ func authCmd(ctx context.Context, g *globals, rest []string) int {
 				return failErr("bad_vault", err)
 			}
 			url, _ := verbFlag(rest, "url")
-			return runLoginFlow(ctx, g, backend, rest[1], url, hasFlag(rest, "submit"), hasFlag(rest, "totp"))
+			return runLoginFlow(ctx, g, backend, rest[1], url, hasFlag(rest, "submit"), hasFlag(rest, "totp"), hasFlag(rest, "no-open"))
 		}
 		return authHandoffCmd(ctx, g, rest[1:])
 	default:
