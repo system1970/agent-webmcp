@@ -130,8 +130,9 @@ fn tools_verify(ctx: &crate::plugin::Ctx, args: &[String]) -> anyhow::Result<ser
         .ok_or_else(|| anyhow::anyhow!("not_found: no custom tool {name}"))?;
     // Reload-then-inject-then-list: a tool that does not survive a
     // fresh page is not verified.
-    let (port, _) = crate::session::load(&ctx.session_for(args))?;
-    let ws = crate::cdp::first_page(port)?;
+    let session = ctx.session_for(args);
+    let (port, _) = crate::session::load(&session)?;
+    let ws = crate::session::session_target(&session, port)?;
     crate::cdp::call(&ws, 1, "Page.reload", "{}")?;
     crate::cdp::wait_load(&ws)?;
     let js = std::fs::read_to_string(crate::tools::root().join(&meta.file))?;

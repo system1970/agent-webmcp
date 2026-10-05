@@ -64,7 +64,7 @@ pub fn plugins() -> Vec<Plugin> {
             permissions: vec![Permission::Spawn, Permission::Network],
             verbs: vec![Verb {
                 name: "open",
-                help: "open <url> [--session NAME] [--headed] — launch Chromium, navigate, wait load",
+                help: "open <url> [--session NAME] [--profile NAME] [--headed] — reuse profile browser, navigate session tab",
                 run: |ctx, _reg, args| {
                     let url = args
                         .iter()
@@ -72,18 +72,17 @@ pub fn plugins() -> Vec<Plugin> {
                         .map(|s| s.as_str())
                         .unwrap_or("about:blank");
                     let session = ctx.session_for(args);
+                    let profile = ctx.profile_for(args);
                     let headed = args.iter().any(|a| a == "--headed");
-                    let port = crate::cdp::free_port();
-                    let child = crate::cdp::launch_chrome(port, headed)?;
-                    crate::cdp::wait_http(port)?;
-                    let ws = crate::cdp::first_page(port)?;
+                    let (port, reused) = crate::session::ensure_browser(&profile, headed)?;
+                    let ws = crate::session::session_target(&session, port)?;
                     crate::cdp::call(&ws, 1, "Page.navigate", &format!(r#"{{"url":{url:?}}}"#))?;
                     // Same page target after navigate. about:blank never
                     // fires load; everything else waits for it.
                     if url != "about:blank" {
                         crate::cdp::wait_load(&ws)?;
                     }
-                    crate::session::save(&session, port, url)?;
+                    crate::session::save(&session, &profile, port, url)?;
                     // Verified host-matched tools inject on every open.
                     // Best-effort: injection never fails the open.
                     let host = url
@@ -94,8 +93,7 @@ pub fn plugins() -> Vec<Plugin> {
                         .next()
                         .unwrap_or(url);
                     let injected = crate::tools::inject_verified(&ws, host);
-                    std::mem::forget(child);
-                    Ok(serde_json::json!({"session": session, "url": url, "port": port, "headed": headed, "customTools": injected}))
+                    Ok(serde_json::json!({"session": session, "profile": profile, "url": url, "port": port, "reused": reused, "headed": headed, "customTools": injected}))
                 },
             }],
             hooks: crate::plugin::Hooks {
@@ -111,7 +109,7 @@ pub fn plugins() -> Vec<Plugin> {
                 help: "observe [--session NAME] — snapshot: stable @eN refs + labels",
                 run: |ctx, _reg, args| {
                     let (port, _) = crate::session::load(&ctx.session_for(args))?;
-                    let ws = crate::cdp::first_page(port)?;
+                    let ws = crate::session::session_target(&ctx.session_for(args), port)?;
                     let snap = eval(&ws, SNAP_JS)?;
                     Ok(snap)
                 },
@@ -129,11 +127,42 @@ pub fn plugins() -> Vec<Plugin> {
                         anyhow::bail!("usage: eval <js> [--session NAME]");
                     }
                     let (port, _) = crate::session::load(&ctx.session_for(args))?;
-                    let ws = crate::cdp::first_page(port)?;
+                    let ws = crate::session::session_target(&ctx.session_for(args), port)?;
                     let v = eval_value(&ws, &expr)?;
                     Ok(serde_json::json!({"value": v, "untrusted": true}))
                 },
             }
+            ],
+            hooks: crate::plugin::Hooks {
+                before: None,
+                after: None,
+            },
+        },
+        Plugin {
+            id: "browser.lifecycle",
+            permissions: vec![Permission::Spawn, Permission::Network],
+            verbs: vec![
+                Verb {
+                    name: "close",
+                    help: "close [--session NAME] [--all] — shut the session tab, or every profile browser",
+                    run: |ctx, _reg, args| {
+                        let all = args.iter().any(|a| a == "--all");
+                        if all {
+                            let killed = crate::session::kill_all();
+                            return Ok(serde_json::json!({"closed": killed}));
+                        }
+                        let session = ctx.session_for(args);
+                        let closed = crate::session::close_session(&session);
+                        Ok(serde_json::json!({"session": session, "closed": closed}))
+                    },
+                },
+                Verb {
+                    name: "sessions",
+                    help: "sessions — known sessions with liveness and urls",
+                    run: |_ctx, _reg, _args| {
+                        Ok(serde_json::json!({"sessions": crate::session::list_all()}))
+                    },
+                },
             ],
             hooks: crate::plugin::Hooks {
                 before: None,
