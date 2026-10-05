@@ -36,14 +36,14 @@ scripts/install-local.sh   # quiesce live servers, atomic replace, verify rev`}
         Verify
       </h2>
       <CodeBlock
-        code={`agent-webmcp-rs version
+        code={`agent-webmcp version
 # {"version":"0.1.0","rev":"<commit>"}
-agent-webmcp-rs plugin list | head -c 300`}
+agent-webmcp plugin list | head -c 300`}
         lang="bash"
       />
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
         The install lands at{" "}
-        <code className="font-mono text-[13px] text-ink">~/.local/bin/agent-webmcp-rs</code>.
+        <code className="font-mono text-[13px] text-ink">~/.local/bin/agent-webmcp</code>.
         The <code className="font-mono text-[13px] text-ink">rev</code> field
         proves which commit serves — compare it after every install.
       </p>

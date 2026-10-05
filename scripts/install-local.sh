@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# install-local: safe local reinstall of agent-webmcp-rs.
+# install-local: safe local reinstall of agent-webmcp.
 #
 # The fragility it replaces: hand-copying the binary over live
-# `agent-webmcp-rs mcp` servers. Linux keeps the overwritten inode
+# `agent-webmcp mcp` servers. Linux keeps the overwritten inode
 # alive, so running servers stay on old code while fresh CLI calls run
 # new code — version skew inside one system.
 #
@@ -25,7 +25,7 @@ for a in "$@"; do
 done
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$HOME/.local/bin/agent-webmcp-rs"
+BIN="$HOME/.local/bin/agent-webmcp"
 CARGO="${CARGO:-$HOME/.cargo/bin/cargo}"
 command -v "$CARGO" >/dev/null || CARGO="cargo"
 TARGET_DIR="$REPO/rust/target/$([ $RELEASE = 1 ] && echo release || echo debug)"
@@ -48,7 +48,7 @@ for d in /proc/[0-9]*; do
     [ "$exe" = "$BIN" ] || continue
     cmd="$(tr '\0' ' ' < "$d/cmdline" 2>/dev/null)" || continue
     case "$cmd" in
-        *"agent-webmcp-rs mcp"*) PIDS="$PIDS $pid" ;;
+        *"agent-webmcp mcp"*) PIDS="$PIDS $pid" ;;
     esac
 done
 # shellcheck disable=SC2086

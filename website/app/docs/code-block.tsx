@@ -9,7 +9,7 @@ import { useState } from "react";
 type Tok = { t: string; k: string };
 
 const KIND_CLASS: Record<string, string> = {
-  plain: "text-ink",
+  plain: "text-[var(--term-plain)]",
   comment: "text-[var(--term-dim)]",
   prompt: "text-[var(--term-dim)]",
   string: "text-[var(--term-str)]",
