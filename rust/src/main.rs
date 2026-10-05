@@ -187,4 +187,23 @@ mod tests {
         assert_eq!(code_of("js: boom"), "tool_failed");
         assert_eq!(code_of(""), "tool_failed");
     }
+
+    #[test]
+    fn version_carries_rev() {
+        let reg = boot_registry();
+        let (_, v) = reg.verb("version").expect("version verb");
+        let out = (v.run)(
+            &crate::plugin::Ctx {
+                session: "default".into(),
+                profile: "shared".into(),
+                json: true,
+            },
+            &reg,
+            "version",
+            &[],
+        )
+        .expect("version runs");
+        assert_eq!(out["version"], serde_json::json!(env!("CARGO_PKG_VERSION")));
+        assert!(out["rev"].as_str().is_some_and(|r| !r.is_empty()));
+    }
 }

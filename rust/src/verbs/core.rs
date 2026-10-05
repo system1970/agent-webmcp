@@ -35,7 +35,12 @@ pub fn plugins() -> Vec<Plugin> {
             verbs: vec![Verb {
                 name: "version",
                 help: "version — print binary version",
-                run: |_ctx, _reg, _verb, _args| Ok(serde_json::json!({"version": env!("CARGO_PKG_VERSION")})),
+                run: |_ctx, _reg, _verb, _args| {
+                    Ok(serde_json::json!({
+                        "version": env!("CARGO_PKG_VERSION"),
+                        "rev": env!("AGENT_WEBMCP_REV"),
+                    }))
+                },
             }],
             hooks: crate::plugin::Hooks {
                 before: None,
