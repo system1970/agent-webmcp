@@ -50,25 +50,15 @@ pub fn plugins() -> Vec<Plugin> {
             },
             Verb {
                 name: "invoke",
-                help: "invoke <tool> [--params JSON] [--frame ID] — call a page tool",
+                help: "invoke <tool> [--params JSON] [--frame ID] [--tool NAME] — call a page tool",
                 run: |ctx, _reg, _verb, args| {
-                    // First positional that is not a flag value: skip --params/--frame and their values.
-                    let mut skip_next = false;
-                    let name = args
-                        .iter()
-                        .filter(|a| {
-                            if skip_next {
-                                skip_next = false;
-                                return false;
-                            }
-                            if *a == "--params" || *a == "--frame" {
-                                skip_next = true;
-                                return false;
-                            }
-                            !a.starts_with('-')
-                        })
-                        .next()
-                        .map(|s| s.as_str())
+                    // Tool name: first positional (shared parser, so flag
+                    // values never leak in), or --tool for MCP-style calls
+                    // where every argument arrives as a flag.
+                    let name = crate::args::positionals(args)
+                        .first()
+                        .cloned()
+                        .or_else(|| crate::args::flag(args, "--tool"))
                         .ok_or_else(|| {
                             anyhow::anyhow!("usage: invoke <tool> [--params JSON] [--frame ID]")
                         })?;
@@ -80,16 +70,16 @@ pub fn plugins() -> Vec<Plugin> {
                     let ws = page_ws(ctx, args)?;
                     let frame = if frame.is_empty() {
                         let tools = crate::webmcp::list_tools(&ws)?;
-                        resolve_frame(&tools, name, "")?
+                        resolve_frame(&tools, &name, "")?
                     } else {
                         frame
                     };
                     let out = if crate::args::has(args, "--detach") {
                         let session = ctx.session_for(args);
-                        let id = crate::webmcp::invoke_detached(&ws, &session, name, &params, &frame)?;
+                        let id = crate::webmcp::invoke_detached(&ws, &session, &name, &params, &frame)?;
                         return Ok(serde_json::json!({"detached": true, "invocation": id}));
                     } else {
-                        crate::webmcp::invoke_tool(&ws, name, &params, &frame)?
+                        crate::webmcp::invoke_tool(&ws, &name, &params, &frame)?
                     };
                     Ok(serde_json::json!({"result": out, "untrusted": true}))
                 },
