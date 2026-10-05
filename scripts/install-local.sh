@@ -12,11 +12,17 @@
 # respawns MCP servers on demand; verification proves none of the old
 # ones remain and the fresh binary reports the built rev.
 #
-# Usage: scripts/install-local.sh [--release]
+# Usage: scripts/install-local.sh [--release] [--force]
 set -euo pipefail
 
 RELEASE=0
-if [ "${1:-}" = "--release" ]; then RELEASE=1; fi
+FORCE=0
+for a in "$@"; do
+    case "$a" in
+        --release) RELEASE=1 ;;
+        --force|-y) FORCE=1 ;;
+    esac
+done
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$HOME/.local/bin/agent-webmcp-rs"
@@ -48,6 +54,20 @@ done
 # shellcheck disable=SC2086
 if [ -n "$PIDS" ]; then
     echo "stopping:$PIDS" >&2
+    if [ $FORCE = 0 ]; then
+        # These servers may be serving live harness sessions (including
+        # the one running this install). Mid-session kills drop the
+        # harness's tools until it respawns: install at a boundary, or
+        # pass --force when the operator owns the interruption.
+        if [ -t 0 ]; then
+            printf 'kill live mcp servers? [y/N] ' >&2
+            read -r ans
+            [ "$ans" = "y" ] || { echo "aborted" >&2; exit 1; }
+        else
+            echo "refusing: live servers and no --force (non-interactive)" >&2
+            exit 1
+        fi
+    fi
     # shellcheck disable=SC2086
     kill $PIDS 2>/dev/null || true
     for _ in $(seq 1 50); do
