@@ -1,4 +1,5 @@
 // CDP transport: sync reqwest + tungstenite. Launch, wait, call, load.
+use std::os::unix::process::CommandExt;
 use std::process::{Child, Command};
 use std::time::Duration;
 
@@ -41,6 +42,19 @@ pub fn launch_chrome(port: u16, headed: bool, profile: &str) -> anyhow::Result<C
     } else {
         cmd.args(["--headless=new", "--hide-scrollbars", "--window-size=1440,900"]);
     }
+    // Own session + process group: kill_profile takes the whole tree
+    // (stray renderers otherwise pile up and wedge the box). The pgid
+    // marker tells kill_profile the group kill is safe; browsers from
+    // before this change lack it and fall back to single-pid kill.
+    // SAFETY: pre_exec runs after fork in the child; setsid is
+    // async-signal-safe and touches no locks.
+    unsafe {
+        cmd.pre_exec(|| {
+            nix::unistd::setsid()
+                .map(|_| ())
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "setsid failed"))
+        });
+    }
     // Chrome's own log goes to the profile dir: a dead browser must
     // leave evidence instead of silence (stdio=null taught us nothing).
     let log_path = format!("{dir}/chrome.log");
@@ -56,7 +70,11 @@ pub fn launch_chrome(port: u16, headed: bool, profile: &str) -> anyhow::Result<C
         .open(&log_path)
         .map(std::process::Stdio::from)
         .unwrap_or(std::process::Stdio::null());
-    Ok(cmd.stdout(out).stderr(err).spawn()?)
+    let child = cmd.stdout(out).stderr(err).spawn()?;
+    // Group-kill marker: this browser owns its process group (setsid
+    // above), so kill_profile may take the whole tree.
+    let _ = std::fs::write(format!("{dir}/pgid"), child.id().to_string());
+    Ok(child)
 }
 
 /// One cheap liveness probe (no wait loop): does the browser answer.
@@ -66,6 +84,15 @@ pub fn http_up(port: u16) -> bool {
         Duration::from_millis(300),
     )
     .is_ok()
+}
+
+/// Functional tab probe: a browser can answer HTTP/CDP while its
+/// renderers are dead. One evaluate round-trip tells the truth.
+/// Failure paths only — never per call (every ms is billed).
+pub fn tab_alive(ws_url: &str) -> bool {
+    call(ws_url, 1, "Runtime.evaluate", r#"{"expression":"1+1","returnByValue":true}"#)
+        .map(|v| v["result"]["result"]["value"] == serde_json::json!(2))
+        .unwrap_or(false)
 }
 
 pub fn wait_http(port: u16) -> anyhow::Result<()> {
@@ -264,4 +291,16 @@ pub fn browser_ws(port: u16) -> anyhow::Result<String> {
         .and_then(|w| w.as_str())
         .map(str::to_string)
         .ok_or_else(|| anyhow::anyhow!("no_browser: no debugger url on {port}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dead_tab_reads_dead() {
+        // Nothing listens on port 9: the probe must fail fast, not hang.
+        assert!(!tab_alive("ws://127.0.0.1:9/nonexistent"));
+        assert!(!http_up(9));
+    }
 }

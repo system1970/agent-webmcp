@@ -16,7 +16,7 @@ Thin intents, JSON always. Flags precede or follow positionals;
 ## WebMCP (the page's own tools)
 
 - `list` → page tools, `untrusted: true`.
-- `invoke <tool> [--params JSON] [--frame ID] [--tool NAME]` → one call.
+- `invoke <tool> [--params JSON] [--frame ID] [--tool NAME] [--detach]` → one call.
 - `result <invocation>` → detached results: pending/ready/error.
 
 ## Craft + compose
