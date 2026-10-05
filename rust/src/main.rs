@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 mod cdp;
 mod plugin;
 mod session;
+mod tools;
 mod verbs;
 mod webmcp;
 
