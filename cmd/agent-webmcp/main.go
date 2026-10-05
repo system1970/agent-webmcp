@@ -44,6 +44,11 @@ usage:
     agent-webmcp doctor [--json]
     agent-webmcp version
 
+examples:
+  agent-webmcp open https://example.com --session demo --json
+  agent-webmcp observe --session demo
+  agent-webmcp auth login my-site --submit --session demo
+
 global flags:
   --engine chrome|lightpanda     browser engine (default chrome)
   --executable-path PATH         lightpanda binary (default: PATH, ~/.local/bin, ~/.lightpanda)

@@ -117,6 +117,9 @@ wrong, check what the code calls per step before blaming the judge.
 
 - Identity: `Pracurser <system1970@users.noreply.github.com>`, repo-local.
   No personal emails in public history.
+- Verbs, flags, and JSON fields are an API contract: agents cache
+  patterns and replay stale examples. Add, never rename; add fields,
+  never remove. Unknown verbs fail hard (no "did you mean").
 - Batch locally, push when a unit is complete — each push burns a deploy
   preview where CI/previews exist. Never force-push `main` (diverged
   histories exist; rewrites strand reviewers and deploys).
