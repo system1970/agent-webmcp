@@ -3,6 +3,9 @@
 use crate::plugin::{Permission, Plugin, Verb};
 
 const SNAP_JS: &str = r#"(() => {
+  // Node registry: snapshot ids resolve to live nodes for act.
+  // Rebuilt every snapshot; ids are per-snapshot, never cached.
+  window.__awmcp = {nodes: {}};
   const vis = e => {
     try {
       const r = e.getBoundingClientRect();
@@ -13,7 +16,11 @@ const SNAP_JS: &str = r#"(() => {
   const roles = 'button,link,checkbox,radio,switch,tab,menuitem,combobox,textbox,searchbox,spinbutton';
   const out = [];
   let n = 0;
-  const push = (kind, role, label) => out.push({id: 'e' + (++n), kind, role, label});
+  const push = (kind, role, label, el) => {
+    const id = 'e' + (++n);
+    window.__awmcp.nodes[id] = el;
+    out.push({id, kind, role, label});
+  };
   document.querySelectorAll('a[href],button,input,select,textarea,[role]').forEach(e => {
     if (e.disabled || !vis(e)) return;
     const tag = e.tagName.toLowerCase();
@@ -22,18 +29,37 @@ const SNAP_JS: &str = r#"(() => {
       const t = (e.type || 'text').toLowerCase();
       if (['hidden', 'submit', 'image'].includes(t)) return;
       if (t === 'password' || t === 'file') return;
-      if (['checkbox', 'radio'].includes(t)) push('click', t, name(e));
-      else if (t === 'submit' || t === 'button') push('click', 'button', name(e));
-      else push('fill', t, name(e));
+      if (['checkbox', 'radio'].includes(t)) push('click', t, name(e), e);
+      else if (t === 'submit' || t === 'button') push('click', 'button', name(e), e);
+      else push('fill', t, name(e), e);
     } else if (tag === 'select') {
-      [...e.options].filter(o => !o.disabled).forEach(o => push('select', 'option', (o.textContent || '').trim().slice(0, 80)));
-    } else if (tag === 'textarea') push('fill', 'textarea', name(e));
-    else if (roles.split(',').includes(role) || tag === 'button' || (tag === 'a' && e.hasAttribute('href'))) push('click', role, name(e));
+      [...e.options].filter(o => !o.disabled).forEach(o => push('select', 'option', (o.textContent || '').trim().slice(0, 80), e));
+    } else if (tag === 'textarea') push('fill', 'textarea', name(e), e);
+    else if (roles.split(',').includes(role) || tag === 'button' || (tag === 'a' && e.hasAttribute('href'))) push('click', role, name(e), e);
   });
   out.push({id: 'scroll_down', kind: 'scroll', role: '', label: 'Scroll down'});
   out.push({id: 'scroll_up', kind: 'scroll', role: '', label: 'Scroll up'});
   return JSON.stringify({url: location.href, title: document.title, count: out.length, actions: out});
 })()"#;
+
+// Resolve a snapshot id to a click point: scroll into view, hit-test
+// with elementFromPoint (occlusion refuses), return center coords.
+// Trusted input happens host-side (CDP); this only measures.
+pub(crate) const RESOLVE_JS: &str = r#"((id) => {
+  const el = window.__awmcp && window.__awmcp.nodes[id];
+  if (!el || !document.contains(el)) return JSON.stringify({ok: false, error: 'stale: re-observe'});
+  try { el.scrollIntoView({block: 'center'}); } catch (err) {}
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height) return JSON.stringify({ok: false, error: 'no geometry'});
+  const x = r.x + r.width / 2, y = r.y + r.height / 2;
+  if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return JSON.stringify({ok: false, error: 'off-viewport'});
+  const hit = document.elementFromPoint(x, y);
+  if (hit && hit !== el && !el.contains(hit)) {
+    const cover = (hit.innerText || hit.tagName || '').trim().slice(0, 60);
+    return JSON.stringify({ok: false, error: 'covered by ' + cover});
+  }
+  return JSON.stringify({ok: true, x, y});
+})('__ID__')"#;
 
 /// Evaluate JS, return the raw value (any JSON type).
 fn eval_value(ws: &str, expr: &str) -> anyhow::Result<serde_json::Value> {

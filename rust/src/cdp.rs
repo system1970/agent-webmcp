@@ -240,6 +240,23 @@ pub fn navigate_and_wait(ws_url: &str, url: &str) -> anyhow::Result<()> {
         }
     }
 }
+/// Trusted mouse click at viewport coords: pressed + released.
+/// CDP-synthesized input counts as a user gesture (popups allowed).
+pub fn mouse_click(ws_url: &str, x: f64, y: f64) -> anyhow::Result<()> {
+    for typ in ["mousePressed", "mouseReleased"] {
+        let p = serde_json::json!({"type": typ, "x": x, "y": y, "button": "left", "clickCount": 1}).to_string();
+        call(ws_url, 1, "Input.dispatchMouseEvent", &p)?;
+    }
+    Ok(())
+}
+
+/// Trusted text entry at the focused control.
+pub fn insert_text(ws_url: &str, text: &str) -> anyhow::Result<()> {
+    let p = serde_json::json!({"text": text}).to_string();
+    call(ws_url, 1, "Input.insertText", &p)?;
+    Ok(())
+}
+
 /// Browser-level debugger URL for Target.* calls.
 pub fn browser_ws(port: u16) -> anyhow::Result<String> {
     let v: serde_json::Value = serde_json::from_str(&http_get(port, "/json/version")?)?;
