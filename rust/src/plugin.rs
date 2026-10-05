@@ -120,6 +120,11 @@ impl Registry {
         on
     }
 
+    /// Enabled plugins, for listings (plugin list, MCP tools/list).
+    pub fn plugins_for_list(&self) -> Vec<&Plugin> {
+        self.plugins.iter().filter(|p| self.enabled(p.id)).collect()
+    }
+
     pub fn verb(&self, name: &str) -> Option<(&Plugin, &Verb)> {
         for p in &self.plugins {
             if !self.enabled(p.id) {
