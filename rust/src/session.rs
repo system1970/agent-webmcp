@@ -60,6 +60,14 @@ pub fn ensure_browser(profile: &str, headed: bool) -> anyhow::Result<(u16, bool)
     Ok((port, false))
 }
 
+/// Recorded headed flag for a profile. What the browser actually is,
+/// not what was last requested.
+pub fn profile_headed(profile: &str) -> bool {
+    std::fs::read_to_string(profile_dir(profile).join("headed"))
+        .map(|h| h.trim() == "1")
+        .unwrap_or(false)
+}
+
 /// Resolve the session's tab: bound target if alive, else a fresh tab
 /// (created + bound). Returns the target's debugger URL.
 pub fn session_target(session: &str, port: u16) -> anyhow::Result<String> {

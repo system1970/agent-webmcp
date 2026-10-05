@@ -106,9 +106,23 @@ pub fn plugins() -> Vec<Plugin> {
                     let headed = args.iter().any(|a| a == "--headed");
                     // Reuse: a session with a live browser keeps it
                     // (own or attached); otherwise ensure the profile's.
+                    // A headed/headless mismatch relaunches: a reused
+                    // browser in the wrong mode is a lie the receipt
+                    // must never tell (same rule as ensure_browser).
                     let (port, reused) = match crate::session::load(&session) {
-                        Ok((port, _)) => (port, true),
-                        Err(_) => crate::session::ensure_browser(&profile, headed)?,
+                        Ok((port, _)) => {
+                            if crate::session::profile_headed(&profile) != headed {
+                                crate::session::kill_profile(&profile);
+                                let (port, _) = crate::session::ensure_browser(&profile, headed)?;
+                                (port, false)
+                            } else {
+                                (port, true)
+                            }
+                        }
+                        Err(_) => {
+                            let (port, _) = crate::session::ensure_browser(&profile, headed)?;
+                            (port, false)
+                        }
                     };
                     let ws = crate::session::session_target(&session, port)?;
                     crate::cdp::call(&ws, 1, "Page.navigate", &format!(r#"{{"url":{url:?}}}"#))?;
@@ -129,7 +143,7 @@ pub fn plugins() -> Vec<Plugin> {
                         .next()
                         .unwrap_or(url.as_str());
                     let injected = crate::tools::inject_verified(&ws, host);
-                    Ok(serde_json::json!({"session": session, "profile": profile, "url": url, "port": port, "reused": reused, "headed": headed, "customTools": injected}))
+                    Ok(serde_json::json!({"session": session, "profile": profile, "url": url, "port": port, "reused": reused, "headed": crate::session::profile_headed(&profile), "customTools": injected}))
                 },
             }],
             hooks: crate::plugin::Hooks {
