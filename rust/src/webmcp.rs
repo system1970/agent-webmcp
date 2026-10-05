@@ -282,6 +282,71 @@ pub fn list_tools(ws_url: &str) -> anyhow::Result<Vec<(serde_json::Value, String
     Ok(seen.into_values().collect())
 }
 
+/// Invoke detached: returns the invocation id immediately while a
+/// background thread holds the connection open for toolResponded and
+/// records the outcome to the session dir. Slow tools stop blocking
+/// the caller; `result` collects.
+pub fn invoke_detached(
+    ws_url: &str,
+    session: &str,
+    name: &str,
+    params: &serde_json::Value,
+    frame: &str,
+) -> anyhow::Result<String> {
+    let mut s = Session::connect(ws_url)?;
+    let _ = s.call("WebMCP.enable", "{}");
+    let p = serde_json::json!({"frameId": frame, "toolName": name, "input": params}).to_string();
+    let raw = match s.call("WebMCP.invokeTool", &p) {
+        Ok(v) => v,
+        Err(e) if is_not_found(&e.to_string()) => s.call("WebMCP.callTool", &p)?,
+        Err(e) => anyhow::bail!("{e:#}"),
+    };
+    let id = raw
+        .get("result")
+        .and_then(|r| r.get("invocationId"))
+        .and_then(|i| i.as_str())
+        .unwrap_or("")
+        .to_string();
+    if id.is_empty() {
+        anyhow::bail!("synchronous result (no detach needed): {raw}");
+    }
+    let dir = invocation_dir(session)?;
+    std::fs::write(
+        dir.join(format!("{id}.json")),
+        serde_json::json!({"status": "pending", "invocation": id}).to_string(),
+    )?;
+    let path = dir.join(format!("{id}.json"));
+    let id_thread = id.clone();
+    // The invoking connection MUST stay open: toolResponded is routed
+    // to it, not to fresh connections (verified: a reconnect waiter
+    // never fires). The thread owns the session until the response.
+    std::thread::spawn(move || {
+        let outcome = s.wait_responded(&id_thread, Duration::from_secs(120));
+        let record = match outcome {
+            Ok(v) => serde_json::json!({"status": "ready", "invocation": id_thread, "result": v}),
+            Err(e) => serde_json::json!({"status": "error", "invocation": id_thread, "error": format!("{e:#}")}),
+        };
+        let _ = std::fs::write(path, record.to_string());
+    });
+    Ok(id)
+}
+
+fn invocation_dir(session: &str) -> anyhow::Result<std::path::PathBuf> {
+    let home = std::env::var("HOME").unwrap_or("/tmp".into());
+    let d = std::path::PathBuf::from(home)
+        .join(".agent-webmcp/rust")
+        .join(session)
+        .join("invocations");
+    std::fs::create_dir_all(&d)?;
+    Ok(d)
+}
+
+/// Read a detached invocation record: pending, ready, or error.
+pub fn read_result(session: &str, id: &str) -> anyhow::Result<serde_json::Value> {
+    let b = std::fs::read_to_string(invocation_dir(session)?.join(format!("{id}.json")))
+        .map_err(|_| anyhow::anyhow!("not_found: no invocation {id} for session {session}"))?;
+    serde_json::from_str(&b).map_err(|_| anyhow::anyhow!("unreadable invocation {id}"))
+}
 /// Invoke a page tool: {frameId, toolName, input} -> invocationId ->
 /// toolResponded. Retries once as callTool on older builds.
 pub fn invoke_tool(

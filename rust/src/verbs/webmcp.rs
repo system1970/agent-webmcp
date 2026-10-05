@@ -84,8 +84,27 @@ pub fn plugins() -> Vec<Plugin> {
                     } else {
                         frame
                     };
-                    let out = crate::webmcp::invoke_tool(&ws, name, &params, &frame)?;
+                    let out = if crate::args::has(args, "--detach") {
+                        let session = ctx.session_for(args);
+                        let id = crate::webmcp::invoke_detached(&ws, &session, name, &params, &frame)?;
+                        return Ok(serde_json::json!({"detached": true, "invocation": id}));
+                    } else {
+                        crate::webmcp::invoke_tool(&ws, name, &params, &frame)?
+                    };
                     Ok(serde_json::json!({"result": out, "untrusted": true}))
+                },
+            },
+            Verb {
+                name: "result",
+                help: "result <invocation> [--session NAME] — collect a detached tool result (pending/ready/error)",
+                run: |ctx, _reg, args| {
+                    let id = crate::args::positionals(args)
+                        .first()
+                        .cloned()
+                        .ok_or_else(|| anyhow::anyhow!("usage: result <invocation> [--session NAME]"))?;
+                    let session = ctx.session_for(args);
+                    let rec = crate::webmcp::read_result(&session, &id)?;
+                    Ok(serde_json::json!({"invocation": rec, "untrusted": true}))
                 },
             },
         ],
