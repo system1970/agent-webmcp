@@ -106,7 +106,7 @@ export default async function Image() {
               padding: "14px 26px",
             }}
           >
-            $ npx skills add system1970/agent-webmcp
+            $ git clone + scripts/install-local.sh
           </div>
           <div style={{ fontFamily: MONO, fontSize: 22, color: "#737373" }}>
             agent-webmcp.vercel.app

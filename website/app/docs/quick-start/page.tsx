@@ -2,7 +2,7 @@ import { CodeBlock } from "../code-block";
 
 export const metadata = {
   title: "Quick start · agent-webmcp docs",
-  description: "Five commands to your first verified tool call.",
+  description: "Open a page, snapshot it, call its tools, compose a program.",
 };
 
 export default function QuickStartPage() {
@@ -12,29 +12,39 @@ export default function QuickStartPage() {
         Quick start
       </h1>
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        Every task follows one loop:{" "}
-        <code className="font-mono text-[13px] text-ink">
-          open → list → invoke → verify → close
-        </code>
-        . Learn it once on a demo page and every site after behaves the same.
-        Keep one <code className="font-mono text-[13px] text-ink">--session</code>{" "}
-        per task and pass{" "}
-        <code className="font-mono text-[13px] text-ink">--json</code> when a
-        program consumes the output.
+        The loop: open, observe, list, invoke, compose. Five calls, each
+        copy-pasteable.
       </p>
       <CodeBlock
-        code={`agent-webmcp open https://webmcp.com --session setup-check
-agent-webmcp list --session setup-check
-# expect: about, surprise_me, share_on_x, ...
-agent-webmcp invoke surprise_me --params '{}' --json --session setup-check
-agent-webmcp close --session setup-check`}
+        code={`agent-webmcp-rs open https://webmcp.com --session demo
+agent-webmcp-rs observe --session demo
+agent-webmcp-rs list --session demo
+agent-webmcp-rs search hatch --session demo
+agent-webmcp-rs execute --session demo --program '
+  const found = JSON.parse(webmcp.search("hatch"));
+  const out = batch([{tool: found.results[0].tool, args: {}}]);
+  return {hatched: out};'`}
+        lang="bash"
       />
-      <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        Two habits from here on. Never invoke a tool you have not listed; the
-        list is the contract. And an empty list is an answer, not an error: the
-        page exposes nothing, so say so instead of guessing. Confirm each
-        result against live page state before anything consequential.
-      </p>
+      <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
+        <li>
+          <code className="font-mono text-[13px] text-ink">open</code> binds
+          the session to its own tab and reports port, reuse, and headedness.
+        </li>
+        <li>
+          <code className="font-mono text-[13px] text-ink">observe</code>{" "}
+          returns snapshot refs (<code className="font-mono text-[13px] text-ink">@eN</code>) for
+          clicking and filling;{" "}
+          <code className="font-mono text-[13px] text-ink">list</code> returns
+          the tools the page itself speaks.
+        </li>
+        <li>
+          <code className="font-mono text-[13px] text-ink">execute</code>{" "}
+          runs one program over many tools with budgets and returns one
+          envelope. Re-observe after every navigation — refs never survive
+          one.
+        </li>
+      </ul>
     </article>
   );
 }

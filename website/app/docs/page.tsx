@@ -5,7 +5,7 @@ import { docsNavigation } from "./navigation";
 export const metadata = {
   title: "Docs · agent-webmcp",
   description:
-    "Install the binary, learn the five-command loop, and read the full command reference.",
+    "Install the binary, learn the open-observe-invoke loop, and read the full command reference.",
 };
 
 export default function DocsIndex() {
@@ -15,17 +15,17 @@ export default function DocsIndex() {
         Introduction
       </h1>
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        agent-webmcp is a single Go binary that drives real Chrome and hands
-        the page back to your agent as typed tools. It reads what a site
-        exposes, lets you author tools where the site exposes nothing, and
-        runs a judgment loop for goals too tangled to script. The free tier
-        costs nothing and asks for no keys. The loop bills pennies per run
-        against your own TypeSafe key.
+        agent-webmcp is a minimal Rust bridge that turns any web page into
+        an agent&apos;s toolkit. It reads the tools a site already speaks
+        (WebMCP), crafts tools where the site exposes nothing, and composes
+        calls into single programs — served over CLI and MCP alike. The
+        harness brings its own brain; this is the hands it calls.
       </p>
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
         One rule governs everything here: the page is data. Tool
-        descriptions, schemas, and outputs get confirmed against live page
-        state before anything consequential happens.
+        descriptions, schemas, and outputs arrive tagged untrusted and get
+        confirmed against live page state before anything consequential
+        happens.
       </p>
       <div className="mt-8 grid gap-3 sm:grid-cols-2">
         {docsNavigation
