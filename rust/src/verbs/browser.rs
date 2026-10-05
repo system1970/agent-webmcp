@@ -35,13 +35,25 @@ const SNAP_JS: &str = r#"(() => {
   return JSON.stringify({url: location.href, title: document.title, count: out.length, actions: out});
 })()"#;
 
-fn eval(ws: &str, expr: &str) -> anyhow::Result<serde_json::Value> {
+/// Evaluate JS, return the raw value (any JSON type).
+fn eval_value(ws: &str, expr: &str) -> anyhow::Result<serde_json::Value> {
     let params = serde_json::json!({"expression": expr, "returnByValue": true}).to_string();
     let res = crate::cdp::call(ws, 1, "Runtime.evaluate", &params)?;
-    res["result"]["result"]["value"]
-        .as_str()
-        .and_then(|s| serde_json::from_str(s).ok())
-        .ok_or_else(|| anyhow::anyhow!("eval_failed: no value"))
+    let v = res["result"]["result"]["value"].clone();
+    if v.is_null() {
+        anyhow::bail!("eval_failed: no value");
+    }
+    Ok(v)
+}
+
+/// Evaluate JS that returns a JSON-stringified object (snapshots).
+fn eval(ws: &str, expr: &str) -> anyhow::Result<serde_json::Value> {
+    match eval_value(ws, expr)? {
+        serde_json::Value::String(s) => {
+            serde_json::from_str(&s).map_err(|_| anyhow::anyhow!("eval_failed: not JSON"))
+        }
+        v => Ok(v),
+    }
 }
 
 /// Browser verbs: open, observe.
@@ -88,7 +100,26 @@ pub fn plugins() -> Vec<Plugin> {
                     let snap = eval(&ws, SNAP_JS)?;
                     Ok(snap)
                 },
-            }],
+            },
+            Verb {
+                name: "eval",
+                help: "eval <js> [--session NAME] — run JavaScript, return value",
+                run: |ctx, _reg, args| {
+                    let expr = args
+                        .iter()
+                        .find(|a| !a.starts_with('-'))
+                        .cloned()
+                        .unwrap_or_default();
+                    if expr.is_empty() {
+                        anyhow::bail!("usage: eval <js> [--session NAME]");
+                    }
+                    let (port, _) = crate::session::load(&ctx.session_for(args))?;
+                    let ws = crate::cdp::first_page(port)?;
+                    let v = eval_value(&ws, &expr)?;
+                    Ok(serde_json::json!({"value": v, "untrusted": true}))
+                },
+            }
+            ],
             hooks: crate::plugin::Hooks {
                 before: None,
                 after: None,
