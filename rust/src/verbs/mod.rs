@@ -2,6 +2,7 @@
 // returning its plugins; mod.rs aggregates them for the registry.
 pub mod browser;
 pub mod core;
+pub mod exec;
 pub mod tools;
 pub mod webmcp;
 
@@ -13,5 +14,6 @@ pub fn all() -> Vec<Plugin> {
     v.extend(browser::plugins());
     v.extend(webmcp::plugins());
     v.extend(tools::plugins());
+    v.extend(exec::plugins());
     v
 }
