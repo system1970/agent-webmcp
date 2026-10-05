@@ -56,21 +56,44 @@ fn main() {
         fail("usage: agent-webmcp <verb> [args]");
     }
     let name = words.remove(0);
+    // Session for evidence: verbs may override it, but the log needs a
+    // name even when dispatch fails. Best-effort parse, same rules.
+    let logged_session = crate::args::flag(&words, "--session")
+        .or_else(|| crate::args::flag(&words, "-s"))
+        .unwrap_or_else(|| ctx.session.clone());
     let reg = boot_registry();
     let (_, v) = match reg.verb(&name) {
         Some(found) => found,
-        None => fail(&format!("unknown verb {name}")),
+        None => {
+            crate::session::log_call(&logged_session, &name, 0, false);
+            fail(&format!("unknown verb {name}"));
+        }
     };
     if let Err(e) = reg.hooks_before(&ctx, &name, &words) {
+        crate::session::log_call(&logged_session, &name, 0, false);
         fail(&format!("hook veto: {e:#}"));
     }
+    let start = std::time::Instant::now();
     let out = match (v.run)(&ctx, &reg, &words) {
         Ok(out) => out,
-        Err(e) => fail(&format!("{e:#}")),
+        Err(e) => {
+            crate::session::log_call(
+                &logged_session,
+                &name,
+                start.elapsed().as_millis() as u64,
+                false,
+            );
+            fail(&format!("{e:#}"))
+        }
     };
+    let ms = start.elapsed().as_millis() as u64;
     if let Err(e) = reg.hooks_after(&ctx, &name, &words, &out) {
         fail(&format!("hook veto: {e:#}"));
     }
+    // Evidence log: every call appends one JSONL row (verb, ms, ok).
+    // The audit verb reads this back: usage, error rate, dead verbs.
+    // HarnessTax rule: measure what actually fires; cut what doesn't.
+    crate::session::log_call(&ctx.session, &name, ms, true);
     // Arcjet rule: pretty for humans (TTY), compact for machines.
     if std::io::IsTerminal::is_terminal(&std::io::stdout()) {
         println!("{}", serde_json::to_string_pretty(&out).unwrap());

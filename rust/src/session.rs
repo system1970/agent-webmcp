@@ -205,6 +205,59 @@ pub fn load(session: &str) -> anyhow::Result<(u16, String)> {
     Ok((port, url.trim().to_string()))
 }
 
+/// Append one evidence row: every verb call lands here (verb, ms,
+/// ok). The audit verb aggregates: usage, error rate, dead verbs.
+/// HarnessTax rule: measure what actually fires; cut what doesn't.
+pub fn log_call(session: &str, verb: &str, ms: u64, ok: bool) {
+    let d = session_dir(session);
+    let _ = std::fs::create_dir_all(&d);
+    let row = serde_json::json!({"verb": verb, "ms": ms, "ok": ok});
+    let mut f = match std::fs::OpenOptions::new().create(true).append(true).open(d.join("log.jsonl")) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    use std::io::Write;
+    let _ = writeln!(f, "{row}");
+}
+
+/// Aggregate evidence across sessions: per-verb calls, errors, mean
+/// ms; verbs never fired are dead weight (cut candidates).
+pub fn audit_all() -> serde_json::Value {
+    use std::collections::HashMap;
+    let mut calls: HashMap<String, (u64, u64, u64)> = HashMap::new(); // verb -> (n, errs, ms_sum)
+    let entries = match std::fs::read_dir(base()) {
+        Ok(e) => e,
+        Err(_) => return serde_json::json!({"verbs": []}),
+    };
+    for e in entries.flatten() {
+        if !e.path().is_dir() {
+            continue;
+        }
+        let log = std::fs::read_to_string(e.path().join("log.jsonl")).unwrap_or_default();
+        for line in log.lines() {
+            let v: serde_json::Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let verb = v.get("verb").and_then(|x| x.as_str()).unwrap_or("?").to_string();
+            let ms = v.get("ms").and_then(|x| x.as_u64()).unwrap_or(0);
+            let ok = v.get("ok").and_then(|x| x.as_bool()).unwrap_or(true);
+            let en = calls.entry(verb).or_insert((0, 0, 0));
+            en.0 += 1;
+            en.1 += u64::from(!ok);
+            en.2 += ms;
+        }
+    }
+    let mut verbs: Vec<serde_json::Value> = calls
+        .into_iter()
+        .map(|(verb, (n, errs, ms))| {
+            serde_json::json!({"verb": verb, "calls": n, "errors": errs, "mean_ms": if n > 0 { ms / n } else { 0 }})
+        })
+        .collect();
+    verbs.sort_by(|a, b| b["calls"].as_u64().cmp(&a["calls"].as_u64()));
+    serde_json::json!({"verbs": verbs})
+}
+
 /// All known sessions with liveness.
 pub fn list_all() -> Vec<serde_json::Value> {
     let mut out = vec![];
