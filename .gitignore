@@ -16,3 +16,4 @@ next-env.d.ts
 .env*.local
 /agent-webmcp
 /cmd/agent-webmcp/agent-webmcp
+rust/target/
