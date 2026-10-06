@@ -4,6 +4,7 @@ pub mod act;
 pub mod browser;
 pub mod core;
 pub mod exec;
+pub mod skills;
 pub mod tools;
 pub mod webmcp;
 
@@ -16,6 +17,7 @@ pub fn all() -> Vec<Plugin> {
     v.extend(act::plugins());
     v.extend(webmcp::plugins());
     v.extend(tools::plugins());
+    v.extend(skills::plugins());
     v.extend(exec::plugins());
     v
 }

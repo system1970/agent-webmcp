@@ -307,7 +307,15 @@ fn load_one(reg: &mut Registry, scope: &str, dir: &PathBuf) {
         .contributes
         .skills
         .iter()
-        .map(|s| dir.join(s).to_string_lossy().to_string())
+        .map(|s| {
+            // Canonical absolute paths: scope dirs are CWD-relative at
+            // boot, and serving must not depend on later CWD.
+            let p = dir.join(s);
+            p.canonicalize()
+                .unwrap_or(p)
+                .to_string_lossy()
+                .to_string()
+        })
         .collect();
     for s in &m.contributes.skills {
         if !dir.join(s).is_file() {
@@ -329,7 +337,13 @@ fn load_one(reg: &mut Registry, scope: &str, dir: &PathBuf) {
         crate::plugin::ExtMeta {
             version: m.version.clone(),
             scope: scope.to_string(),
-            source: dir.to_string_lossy().to_string(),
+            // Canonical: scope dirs are CWD-relative at boot; later calls
+            // must resolve identically regardless of caller CWD.
+            source: dir
+                .canonicalize()
+                .unwrap_or_else(|_| dir.clone())
+                .to_string_lossy()
+                .to_string(),
             skills,
             tools: m.contributes.tools.clone(),
         },

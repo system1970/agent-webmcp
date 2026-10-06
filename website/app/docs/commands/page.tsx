@@ -19,6 +19,7 @@ invoke <tool> [--params JSON] [--frame ID] [--tool NAME] [--detach]
 result <invocation> [--session NAME]`;
 
 const COMPOSE = `tools <add|list|verify>
+skill <list|show|search> [--plugin ID]
 search <terms> [--session NAME] [--limit N] [--offset N]
 execute --program @file|<js> [--session NAME] [--max-calls N]`;
 
@@ -118,6 +119,9 @@ export default function CommandsPage() {
         <li>
           <code className="font-mono text-[13px] text-ink">search</code>{" "}
           discovers progressively (pull definitions, never the catalog);{" "}
+          <code className="font-mono text-[13px] text-ink">skill list/show/search</code>{" "}
+          serves plugin playbooks the same way (names first, content on
+          demand);{" "}
           <code className="font-mono text-[13px] text-ink">execute</code> runs
           one JS program over many tools with budgets. See Codemode.
         </li>
