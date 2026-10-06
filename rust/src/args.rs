@@ -98,3 +98,33 @@ pub fn positionals(args: &[String]) -> Vec<String> {
         .cloned()
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn flag_values_never_leak() {
+        // Documented example: session value is not positional.
+        assert_eq!(positionals(&v(&["open", "--session", "w", "https://x"])), vec!["open".to_string(), "https://x".to_string()]);
+        // --flag=value form: value attached, nothing leaks.
+        assert_eq!(positionals(&v(&["--session=w", "https://x"])), vec!["https://x".to_string()]);
+        assert_eq!(flag(&v(&["--session=w"]), "--session"), Some("w".to_string()));
+        // Bare flags stay out; unknown --flags keep their following value
+        // visible (only declared value flags consume).
+        assert_eq!(positionals(&v(&["a", "--headed", "b"])), vec!["a".to_string(), "b".to_string()]);
+        assert!(has(&v(&["a", "--headed"]), "--headed"));
+        assert!(!has(&v(&["a"]), "--headed"));
+        // Short value flag consumes.
+        assert_eq!(positionals(&v(&["-s", "w", "https://x"])), vec!["https://x".to_string()]);
+        // Manifest-declared flags consume globally once registered.
+        register_value_flags(&["--testdepth".to_string()]);
+        assert_eq!(positionals(&v(&["go", "--testdepth", "2"])), vec!["go".to_string()]);
+        // = form never consumes the next arg.
+        assert_eq!(positionals(&v(&["--query=a b", "c"])), vec!["c".to_string()]);
+    }
+}

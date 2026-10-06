@@ -243,3 +243,32 @@ pub fn all_meta() -> Vec<(String, ExtMeta)> {
     v.sort_by(|a, b| a.0.cmp(&b.0));
     v
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctl(items: &[&str]) -> Registry {
+        Registry::new(items.iter().map(|s| s.to_string()).collect())
+    }
+
+    #[test]
+    fn control_semantics() {
+        // Default: enabled (CLI ships working, control only removes).
+        assert!(ctl(&[]).enabled("browser.act"));
+        // Star enables all; later ids re-enable.
+        assert!(ctl(&["*", "-browser.act"]).enabled("browser.act") == false);
+        assert!(ctl(&["-browser.act"]).enabled("browser.open"));
+        assert!(ctl(&["-browser.act", "browser.act"]).enabled("browser.act"));
+        // Namespace disable; id re-enable wins by order.
+        assert!(ctl(&["-browser.*"]).enabled("browser.act") == false);
+        assert!(ctl(&["-browser.*"]).enabled("core.version"));
+        assert!(ctl(&["-browser.*", "browser.act"]).enabled("browser.act"));
+        assert!(ctl(&["browser.act", "-browser.*"]).enabled("browser.act") == false);
+        // Namespace token also matches the bare namespace itself.
+        assert!(ctl(&["-browser.*"]).enabled("browser") == false);
+        // Policy plugins ignore removals, always.
+        assert!(ctl(&["-core.policy"]).enabled("core.policy"));
+        assert!(ctl(&["*", "-core.receipts"]).enabled("core.receipts"));
+    }
+}
