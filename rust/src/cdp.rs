@@ -115,6 +115,11 @@ pub fn launch_chrome(port: u16, headed: bool, profile: &str) -> anyhow::Result<C
     let dir = format!("{home}/.agent-webmcp/rust/profiles/{profile}");
     std::fs::create_dir_all(&dir)?;
     let mut cmd = Command::new(chrome_exe());
+    // Fail here with a named remedy, not at spawn with raw OS text:
+    // a browserless box must say what's missing, not EACCES/ENOENT.
+    if !std::path::Path::new(&cmd.get_program()).is_file() {
+        anyhow::bail!("no_browser: no Chrome/Chromium found (set AGENT_WEBMCP_CHROME)");
+    }
     cmd.arg(format!("--user-data-dir={dir}"));
     cmd.args([
         "--no-first-run",
