@@ -23,7 +23,7 @@ skill <list|show|search> [--plugin ID]
 search <terms> [--session NAME] [--limit N] [--offset N]
 execute --program @file|<js> [--session NAME] [--max-calls N]`;
 
-const SYSTEM = `plugin <list|new|show|add|remove>
+const SYSTEM = `plugin <list|new|show|add|remove|search|publish>
 audit
 version
 mcp`;

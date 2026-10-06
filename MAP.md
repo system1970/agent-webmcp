@@ -27,6 +27,7 @@ Facts about this repo. Every fact names a file and a line.
 - Runtime errors exit 1 with a derived code (KNOWN_CODES). rust/src/main.rs:129
 - Pretty for TTY, compact when piped; `mcp` owns stdout (no trailing line). rust/src/main.rs:100
 - External manifests: repo/user/project scopes, trust-gated project. rust/src/ext.rs:178
+- Registry index: user file, repo `registry/index.json`, remote URL; search ranks name hits. `plugin search/publish`, name resolution in `add`.
 - External verbs run sandboxed JS with an `args` global over the session catalog. rust/src/ext.rs:347
 - Manifest engine must match the binary (0.x compares minor). rust/src/ext.rs:89
 - `plugin new` scaffolds, `plugin show` inspects. rust/src/ext.rs:422

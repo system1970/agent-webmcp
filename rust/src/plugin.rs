@@ -233,6 +233,63 @@ pub fn meta_for(id: &str) -> Option<ExtMeta> {
     meta_map().lock().ok()?.get(id).cloned()
 }
 
+/// A registry entry: where a plugin lives and what it needs.
+/// The index is data, not code: install re-validates everything.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RegistryEntry {
+    pub id: String,
+    pub version: String,
+    pub engine: String,
+    pub source: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub permissions: Vec<String>,
+    #[serde(default)]
+    pub verbs: Vec<String>,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct RegistryIndex {
+    pub version: u32,
+    #[serde(default)]
+    pub plugins: Vec<RegistryEntry>,
+}
+
+/// Local curated index path (repo ships one; user index overrides).
+fn index_paths() -> Vec<std::path::PathBuf> {
+    let mut out = vec![];
+    if let Ok(home) = std::env::var("HOME") {
+        out.push(std::path::PathBuf::from(home).join(".agent-webmcp/registry.json"));
+    }
+    out.push(std::path::PathBuf::from("registry/index.json"));
+    out.push(std::path::PathBuf::from("../registry/index.json"));
+    out
+}
+
+/// Load the registry index: user file first, then repo, then remote URL
+/// when AGENT_WEBMCP_REGISTRY_URL is set. First hit wins; absent index
+/// is empty, never an error.
+pub fn load_index() -> Vec<RegistryEntry> {
+    for p in index_paths() {
+        if let Ok(raw) = std::fs::read_to_string(&p) {
+            if let Ok(idx) = serde_json::from_str::<RegistryIndex>(&raw) {
+                return idx.plugins;
+            }
+        }
+    }
+    if let Ok(url) = std::env::var("AGENT_WEBMCP_REGISTRY_URL") {
+        if let Ok(resp) = reqwest::blocking::get(&url) {
+            if let Ok(raw) = resp.text() {
+                if let Ok(idx) = serde_json::from_str::<RegistryIndex>(&raw) {
+                    return idx.plugins;
+                }
+            }
+        }
+    }
+    vec![]
+}
+
 /// All manifest metadata (id, meta), sorted by id. Powers skill
 /// serving: playbooks live with their plugins, not in a registry.
 pub fn all_meta() -> Vec<(String, ExtMeta)> {

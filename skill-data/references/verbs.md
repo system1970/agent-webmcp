@@ -30,7 +30,7 @@ Thin intents, JSON always. Flags precede or follow positionals;
 
 ## System
 
-- `plugin list` / `plugin new <id> [--here]` / `plugin show <id>` / `plugin add <dir|git-url> [--here]` / `plugin remove <id>`
+- `plugin list` / `plugin new <id> [--here]` / `plugin show <id>` / `plugin add <dir|git-url|name> [--here]` / `plugin remove <id>` / `plugin search <terms>` / `plugin publish <dir> [--here]`
 - `skill list [--plugin ID]` / `skill show <plugin-id>` / `skill search <terms>`
 - `version`, `audit`, `mcp` (stdio JSON-RPC; same registry as CLI).
 - Control: `AGENT_WEBMCP_PLUGINS="*,-ns.*"`. `core.*` immune.

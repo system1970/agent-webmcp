@@ -67,6 +67,25 @@ export default function PluginsPage() {
         plugins. Plugin tools are listed, never auto-installed.
       </p>
       <h2 className="mt-8 text-xl font-medium text-ink">
+        Registry
+      </h2>
+      <CodeBlock
+        code={`agent-webmcp plugin search compare
+agent-webmcp plugin add acme.compare
+agent-webmcp plugin publish ./acme-compare --here`}
+        lang="bash"
+      />
+      <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        The index is data, not code:{" "}
+        <code className="font-mono text-[13px] text-ink">registry/index.json</code> in
+        the repo (user override at{" "}
+        <code className="font-mono text-[13px] text-ink">~/.agent-webmcp/registry.json</code>,
+        remote via <code className="font-mono text-[13px] text-ink">AGENT_WEBMCP_REGISTRY_URL</code>).
+        Search ranks name hits first; add by name resolves through it and
+        re-validates the clone; publish upserts an entry (a PR carries it to
+        everyone).
+      </p>
+      <h2 className="mt-8 text-xl font-medium text-ink">
         Authoring
       </h2>
       <CodeBlock
