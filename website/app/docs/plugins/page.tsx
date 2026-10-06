@@ -72,7 +72,9 @@ export default function PluginsPage() {
       <CodeBlock
         code={`agent-webmcp plugin new acme.compare    # user scope
 agent-webmcp plugin new acme.compare --here  # repo dev
-agent-webmcp plugin show acme.compare`}
+agent-webmcp plugin add ./acme-compare --here
+agent-webmcp plugin show acme.compare
+agent-webmcp plugin remove acme.compare`}
         lang="bash"
       />
       <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
