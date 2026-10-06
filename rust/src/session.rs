@@ -136,6 +136,9 @@ pub fn kill_profile(profile: &str) {
     let pid = std::fs::read_to_string(dir.join("pid"))
         .ok()
         .and_then(|p| p.trim().parse::<u32>().ok());
+    // Marker read before removal: it records setsid-at-launch, which
+    // makes the group kill below safe.
+    #[cfg(unix)]
     let grouped = dir.join("pgid").is_file();
     let _ = std::fs::remove_file(dir.join("port"));
     let _ = std::fs::remove_file(dir.join("pid"));
@@ -148,10 +151,13 @@ pub fn kill_profile(profile: &str) {
             return;
         }
         #[cfg(unix)]
-        if grouped {
-            use nix::sys::signal::{killpg, Signal};
-            if killpg(nix::unistd::Pid::from_raw(pid as i32), Signal::SIGKILL).is_ok() {
-                return;
+        {
+            // Marker means setsid at launch: the group is ours to take.
+            if grouped {
+                use nix::sys::signal::{killpg, Signal};
+                if killpg(nix::unistd::Pid::from_raw(pid as i32), Signal::SIGKILL).is_ok() {
+                    return;
+                }
             }
         }
         crate::cdp::kill_pid(pid);
@@ -170,10 +176,14 @@ fn pid_is_ours(pid: u32, profile: &str) -> bool {
     }
     #[cfg(windows)]
     {
+        // tasklist shows the image only: chrome-named processes pass.
+        // Weaker than the unix cmdline check — taskkill targets one pid,
+        // and the pid file is rewritten on every launch, bounding reuse.
+        let _ = profile;
         let out = std::process::Command::new("tasklist")
             .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
             .output();
-        let text = out.map(|o| String::from_utf8_lossy(o.stdout).to_string()).unwrap_or_default();
+        let text = out.map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
         return text.to_lowercase().contains("chrom");
     }
     #[cfg(not(any(unix, windows)))]
