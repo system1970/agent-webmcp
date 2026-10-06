@@ -83,7 +83,11 @@ agent-webmcp plugin remove acme.compare`}
         or <code className="font-mono text-[13px] text-ink">-acme.compare</code> (id).
         Only <code className="font-mono text-[13px] text-ink">core.policy</code> and{" "}
         <code className="font-mono text-[13px] text-ink">core.receipts</code> ignore
-        removals. The repo ships <code className="font-mono text-[13px] text-ink">hello-echo</code> as
+        removals. Playbooks serve progressively:{" "}
+        <code className="font-mono text-[13px] text-ink">skill list</code> names,{" "}
+        <code className="font-mono text-[13px] text-ink">skill show</code> reads,{" "}
+        <code className="font-mono text-[13px] text-ink">skill search</code> greps —
+        confined to the plugin dir, capped at 32KB. The repo ships <code className="font-mono text-[13px] text-ink">hello-echo</code> as
         a copy-pasteable example.
       </p>
     </article>

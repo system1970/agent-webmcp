@@ -232,3 +232,14 @@ pub fn register_meta(id: &str, meta: ExtMeta) {
 pub fn meta_for(id: &str) -> Option<ExtMeta> {
     meta_map().lock().ok()?.get(id).cloned()
 }
+
+/// All manifest metadata (id, meta), sorted by id. Powers skill
+/// serving: playbooks live with their plugins, not in a registry.
+pub fn all_meta() -> Vec<(String, ExtMeta)> {
+    let mut v: Vec<(String, ExtMeta)> = meta_map()
+        .lock()
+        .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+        .unwrap_or_default();
+    v.sort_by(|a, b| a.0.cmp(&b.0));
+    v
+}
