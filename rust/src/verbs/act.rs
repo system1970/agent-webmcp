@@ -114,13 +114,11 @@ pub fn plugins() -> Vec<Plugin> {
                             .replace("__ID__", id)
                             .replace("__VAL__", &serde_json::json!(text).to_string());
                         let params = serde_json::json!({"expression": expr, "returnByValue": true}).to_string();
-                        if let Ok(res) = crate::cdp::call(&ws, 1, "Runtime.evaluate", &params) {
-                            if let Some(raw) = res["result"]["result"]["value"].as_str() {
-                                if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
+                        if let Ok(res) = crate::cdp::call(&ws, 1, "Runtime.evaluate", &params)
+                            && let Some(raw) = res["result"]["result"]["value"].as_str()
+                                && let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
                                     verified = v.get("ok").and_then(|o| o.as_bool()).unwrap_or(false);
                                 }
-                            }
-                        }
                     }
                     if !verified {
                         anyhow::bail!("fill_failed: read-back mismatch (re-observe)");

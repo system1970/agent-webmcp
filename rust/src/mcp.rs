@@ -47,7 +47,7 @@ fn handle(reg: &Registry, ctx: &Ctx, line: &str) -> String {
                 "serverInfo": {"name": "agent-webmcp", "version": env!("CARGO_PKG_VERSION")},
             }),
         ),
-        "notifications/initialized" => return String::new(),
+        "notifications/initialized" => String::new(),
         "tools/list" => {
             let mut tools = vec![];
             for p in &reg.plugins_for_list() {

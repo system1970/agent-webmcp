@@ -129,8 +129,8 @@ pub fn plugins() -> Vec<Plugin> {
                     // Same tab after navigate. about:blank never
                     // fires load; everything else enables-then-navigates
                     // on one connection so fast loads can't slip through.
-                    if url != "about:blank" {
-                        if let Err(e) = crate::cdp::navigate_and_wait(&ws, &url) {
+                    if url != "about:blank"
+                        && let Err(e) = crate::cdp::navigate_and_wait(&ws, &url) {
                             // Wedged renderers heal by relaunch, exactly
                             // once: a dead tab (evaluate fails) on a reused
                             // browser gets a fresh browser + retry. A live
@@ -150,7 +150,6 @@ pub fn plugins() -> Vec<Plugin> {
                             ws = crate::session::session_target(&session, port)?;
                             crate::cdp::navigate_and_wait(&ws, &url)?;
                         }
-                    }
                     crate::session::save(&session, &profile, port, &url)?;
                     // Verified host-matched tools inject on every open.
                     // Best-effort: injection never fails the open.

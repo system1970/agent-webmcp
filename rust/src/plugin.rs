@@ -34,10 +34,15 @@ pub struct Verb {
     pub run: fn(&Ctx, &Registry, &str, &[String]) -> anyhow::Result<serde_json::Value>,
 }
 
-/// Hooks run around verbs. `before` may veto by returning Err.
+/// Hooks run around verbs. `before` may veto by returning Err. Both
+/// receive the owning plugin id first, so one shared handler can serve
+/// many external plugins (same trick as Verb.run with verb names).
+pub type HookBefore = fn(&Ctx, &str, &str, &[String]) -> anyhow::Result<()>;
+pub type HookAfter = fn(&Ctx, &str, &str, &[String], &serde_json::Value) -> anyhow::Result<()>;
+
 pub struct Hooks {
-    pub before: Option<fn(&Ctx, &str, &[String]) -> anyhow::Result<()>>,
-    pub after: Option<fn(&Ctx, &str, &[String], &serde_json::Value) -> anyhow::Result<()>>,
+    pub before: Option<HookBefore>,
+    pub after: Option<HookAfter>,
 }
 
 /// Host context handed to every verb: session, profile, output mode.
@@ -150,7 +155,7 @@ impl Registry {
                 continue;
             }
             if let Some(f) = p.hooks.before {
-                f(ctx, verb, args)?;
+                f(ctx, p.id, verb, args)?;
             }
         }
         Ok(())
@@ -168,7 +173,7 @@ impl Registry {
                 continue;
             }
             if let Some(f) = p.hooks.after {
-                f(ctx, verb, args, out)?;
+                f(ctx, p.id, verb, args, out)?;
             }
         }
         Ok(())
@@ -258,13 +263,11 @@ pub struct RegistryIndex {
 
 /// Local curated index path (repo ships one; user index overrides).
 fn index_paths() -> Vec<std::path::PathBuf> {
-    let mut out = vec![];
-    if let Ok(home) = std::env::var("HOME") {
-        out.push(std::path::PathBuf::from(home).join(".agent-webmcp/registry.json"));
-    }
-    out.push(std::path::PathBuf::from("registry/index.json"));
-    out.push(std::path::PathBuf::from("../registry/index.json"));
-    out
+    vec![
+        crate::session::home().join(".agent-webmcp/registry.json"),
+        std::path::PathBuf::from("registry/index.json"),
+        std::path::PathBuf::from("../registry/index.json"),
+    ]
 }
 
 /// Load the registry index: user file first, then repo, then remote URL
@@ -272,21 +275,17 @@ fn index_paths() -> Vec<std::path::PathBuf> {
 /// is empty, never an error.
 pub fn load_index() -> Vec<RegistryEntry> {
     for p in index_paths() {
-        if let Ok(raw) = std::fs::read_to_string(&p) {
-            if let Ok(idx) = serde_json::from_str::<RegistryIndex>(&raw) {
+        if let Ok(raw) = std::fs::read_to_string(&p)
+            && let Ok(idx) = serde_json::from_str::<RegistryIndex>(&raw) {
                 return idx.plugins;
             }
-        }
     }
-    if let Ok(url) = std::env::var("AGENT_WEBMCP_REGISTRY_URL") {
-        if let Ok(resp) = reqwest::blocking::get(&url) {
-            if let Ok(raw) = resp.text() {
-                if let Ok(idx) = serde_json::from_str::<RegistryIndex>(&raw) {
+    if let Ok(url) = std::env::var("AGENT_WEBMCP_REGISTRY_URL")
+        && let Ok(resp) = reqwest::blocking::get(&url)
+            && let Ok(raw) = resp.text()
+                && let Ok(idx) = serde_json::from_str::<RegistryIndex>(&raw) {
                     return idx.plugins;
                 }
-            }
-        }
-    }
     vec![]
 }
 

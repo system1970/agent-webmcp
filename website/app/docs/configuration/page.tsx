@@ -19,8 +19,10 @@ export default function ConfigurationPage() {
         code={`AGENT_WEBMCP_PLUGINS="*,-browser.act"   # control: *, -id, -ns.*
 AGENT_WEBMCP_SESSION="work"              # default session
 AGENT_WEBMCP_PROFILE="shared"            # default cookie jar
+AGENT_WEBMCP_CHROME="/usr/bin/chromium"  # browser override (else auto-found)
 AGENT_WEBMCP_TRUST_PROJECT=1             # load <wd>/.agent-webmcp/plugins/
-AGENT_WEBMCP_PLUGINS_DIR="./extra"       # extra plugin scope dirs`}
+AGENT_WEBMCP_PLUGINS_DIR="./extra"       # extra plugin scope dirs
+AGENT_WEBMCP_REGISTRY_URL="https://…"    # remote plugin index`}
         lang="bash"
       />
       <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">

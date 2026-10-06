@@ -1,7 +1,93 @@
 // CDP transport: sync reqwest + tungstenite. Launch, wait, call, load.
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::process::{Child, Command};
 use std::time::Duration;
+
+/// Chrome executable, every OS: explicit override first, then the
+/// usual install spots, then PATH names, then the historical default.
+/// Warns (never refuses) below 149 — WebMCP needs the origin trial.
+pub fn chrome_exe() -> String {
+    if let Ok(p) = std::env::var("AGENT_WEBMCP_CHROME")
+        && !p.trim().is_empty() {
+            return p;
+        }
+    #[cfg(windows)]
+    {
+        for p in [
+            "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+            "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+        ] {
+            if std::path::Path::new(p).is_file() {
+                return p.to_string();
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        for p in [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ] {
+            if std::path::Path::new(p).is_file() {
+                return p.to_string();
+            }
+        }
+    }
+    for name in ["chromium", "google-chrome", "chrome", "chrome.exe"] {
+        if let Some(p) = scan_path(name) {
+            check_version(&p);
+            return p;
+        }
+    }
+    let fallback = "/usr/bin/chromium".to_string();
+    check_version(&fallback);
+    fallback
+}
+
+/// Find a binary on PATH.
+fn scan_path(name: &str) -> Option<String> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let p = dir.join(name);
+        if p.is_file() {
+            return Some(p.to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
+/// Best-effort version check: `--version` major below 149 warns.
+/// Refusals would brick future majors; staleness only warns.
+fn check_version(exe: &str) {
+    let out = std::process::Command::new(exe).arg("--version").output();
+    let text = out.map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+    let major = text
+        .split(|c: char| !c.is_ascii_digit()).find(|s| !s.is_empty())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+    if major != 0 && major < 149 {
+        eprintln!("agent-webmcp: {exe} reports {major}; WebMCP wants 149+");
+    }
+}
+
+/// Kill one pid, portable: taskkill takes the tree on Windows (/T);
+/// unix single-kill (group kills go through killpg with a marker).
+pub fn kill_pid(pid: u32) {
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .output();
+    }
+    #[cfg(not(windows))]
+    {
+        // Unix-only by design (Linux-first CLI): SIGKILL via kill(1).
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .output();
+    }
+}
 
 pub fn free_port() -> u16 {
     for port in 18711..18731 {
@@ -25,7 +111,7 @@ pub fn launch_chrome(port: u16, headed: bool, profile: &str) -> anyhow::Result<C
     let home = std::env::var("HOME").unwrap_or("/tmp".into());
     let dir = format!("{home}/.agent-webmcp/rust/profiles/{profile}");
     std::fs::create_dir_all(&dir)?;
-    let mut cmd = Command::new("/usr/bin/chromium");
+    let mut cmd = Command::new(chrome_exe());
     cmd.arg(format!("--user-data-dir={dir}"));
     cmd.args([
         "--no-first-run",
@@ -42,17 +128,19 @@ pub fn launch_chrome(port: u16, headed: bool, profile: &str) -> anyhow::Result<C
     } else {
         cmd.args(["--headless=new", "--hide-scrollbars", "--window-size=1440,900"]);
     }
-    // Own session + process group: kill_profile takes the whole tree
-    // (stray renderers otherwise pile up and wedge the box). The pgid
-    // marker tells kill_profile the group kill is safe; browsers from
-    // before this change lack it and fall back to single-pid kill.
+    // Own session + process group on unix: kill_profile takes the
+    // whole tree (stray renderers otherwise pile up and wedge the box).
+    // The pgid marker tells kill_profile the group kill is safe; browsers
+    // from before this change lack it and fall back to single-pid kill.
+    // Windows skips this: taskkill /T already takes the tree at kill time.
     // SAFETY: pre_exec runs after fork in the child; setsid is
     // async-signal-safe and touches no locks.
+    #[cfg(unix)]
     unsafe {
         cmd.pre_exec(|| {
             nix::unistd::setsid()
                 .map(|_| ())
-                .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "setsid failed"))
+                .map_err(|_| std::io::Error::other("setsid failed"))
         });
     }
     // Chrome's own log goes to the profile dir: a dead browser must
@@ -71,8 +159,9 @@ pub fn launch_chrome(port: u16, headed: bool, profile: &str) -> anyhow::Result<C
         .map(std::process::Stdio::from)
         .unwrap_or(std::process::Stdio::null());
     let child = cmd.stdout(out).stderr(err).spawn()?;
-    // Group-kill marker: this browser owns its process group (setsid
-    // above), so kill_profile may take the whole tree.
+    // Group-kill marker (unix only: setsid above): this browser owns its
+    // process group, so kill_profile may take the whole tree.
+    #[cfg(unix)]
     let _ = std::fs::write(format!("{dir}/pgid"), child.id().to_string());
     Ok(child)
 }
@@ -302,5 +391,20 @@ mod tests {
         // Nothing listens on port 9: the probe must fail fast, not hang.
         assert!(!tab_alive("ws://127.0.0.1:9/nonexistent"));
         assert!(!http_up(9));
+    }
+
+    #[test]
+    fn chrome_resolves() {
+        // SAFETY: single mutation; no other test reads this var.
+        unsafe {
+            std::env::set_var("AGENT_WEBMCP_CHROME", "/tmp/fake-chrome");
+        }
+        // Override wins when set.
+        assert_eq!(chrome_exe(), "/tmp/fake-chrome".to_string());
+        unsafe {
+            std::env::remove_var("AGENT_WEBMCP_CHROME");
+        }
+        // Default resolution never empty on a dev box with a browser.
+        assert!(!chrome_exe().is_empty());
     }
 }

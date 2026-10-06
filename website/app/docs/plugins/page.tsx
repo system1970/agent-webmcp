@@ -67,6 +67,27 @@ export default function PluginsPage() {
         plugins. Plugin tools are listed, never auto-installed.
       </p>
       <h2 className="mt-8 text-xl font-medium text-ink">
+        Hooks and config
+      </h2>
+      <CodeBlock
+        code={`"config": {"allow": ["hi"]},
+"hooks": {"before": "./hooks.js", "after": "./audit.js"}`}
+        lang="json"
+      />
+      <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        <code className="font-mono text-[13px] text-ink">config</code> is
+        free-form data, visible as{" "}
+        <code className="font-mono text-[13px] text-ink">config</code> in every
+        verb and hook. Hooks run before every verb (all plugins&apos;, not
+        just your own) with{" "}
+        <code className="font-mono text-[13px] text-ink">hook = {"{plugin, verb, args}"}</code> (plus{" "}
+        <code className="font-mono text-[13px] text-ink">out</code> after):
+        throw or return <code className="font-mono text-[13px] text-ink">false</code> to
+        veto (<code className="font-mono text-[13px] text-ink">policy_denied</code>),
+        anything else passes — guards fail closed. A guard covers plugin
+        management too: disable a guard plugin before removing it.
+      </p>
+      <h2 className="mt-8 text-xl font-medium text-ink">
         Registry
       </h2>
       <CodeBlock

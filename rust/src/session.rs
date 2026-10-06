@@ -17,9 +17,16 @@
 // - close shuts the session tab; close --all kills profile browsers.
 use std::path::PathBuf;
 
+/// Home dir, portable: user profile on every OS, temp only as a last
+/// resort (the old HOME-or-/tmp broke Windows where HOME is unset).
+pub fn home() -> PathBuf {
+    dirs::home_dir()
+        .or_else(|| std::env::var("HOME").ok().map(PathBuf::from))
+        .unwrap_or_else(std::env::temp_dir)
+}
+
 fn base() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or("/tmp".into());
-    PathBuf::from(home).join(".agent-webmcp/rust")
+    home().join(".agent-webmcp/rust")
 }
 
 fn session_dir(session: &str) -> PathBuf {
@@ -36,8 +43,8 @@ fn profile_dir(profile: &str) -> PathBuf {
 pub fn ensure_browser(profile: &str, headed: bool) -> anyhow::Result<(u16, bool)> {
     let d = profile_dir(profile);
     std::fs::create_dir_all(&d)?;
-    if let Ok(port) = std::fs::read_to_string(d.join("port")) {
-        if let Ok(port) = port.trim().parse::<u16>() {
+    if let Ok(port) = std::fs::read_to_string(d.join("port"))
+        && let Ok(port) = port.trim().parse::<u16>() {
             // Liveness: one cheap HTTP probe, not a wait loop.
             if crate::cdp::http_up(port) {
                 let was_headed = std::fs::read_to_string(d.join("headed"))
@@ -49,7 +56,6 @@ pub fn ensure_browser(profile: &str, headed: bool) -> anyhow::Result<(u16, bool)
                 kill_profile(profile);
             }
         }
-    }
     let port = crate::cdp::free_port();
     let child = crate::cdp::launch_chrome(port, headed, profile)?;
     crate::cdp::wait_http(port)?;
@@ -82,13 +88,11 @@ pub fn session_target(session: &str, port: u16) -> anyhow::Result<String> {
                 for t in arr {
                     let id = t.get("id").and_then(|i| i.as_str()).unwrap_or("");
                     let is_page = t.get("type").and_then(|k| k.as_str()) == Some("page");
-                    if is_page && id == bound {
-                        if let Some(ws) = t.get("webSocketDebuggerUrl").and_then(|w| w.as_str()) {
-                            if !ws.is_empty() {
+                    if is_page && id == bound
+                        && let Some(ws) = t.get("webSocketDebuggerUrl").and_then(|w| w.as_str())
+                            && !ws.is_empty() {
                                 return Ok(ws.to_string());
                             }
-                        }
-                    }
                 }
             }
         }
@@ -107,13 +111,11 @@ pub fn session_target(session: &str, port: u16) -> anyhow::Result<String> {
             serde_json::from_str(&crate::cdp::http_get(port, "/json/list")?)?;
         if let Some(arr) = list.as_array() {
             for t in arr {
-                if t.get("id").and_then(|i| i.as_str()) == Some(id.as_str()) {
-                    if let Some(ws) = t.get("webSocketDebuggerUrl").and_then(|w| w.as_str()) {
-                        if !ws.is_empty() {
+                if t.get("id").and_then(|i| i.as_str()) == Some(id.as_str())
+                    && let Some(ws) = t.get("webSocketDebuggerUrl").and_then(|w| w.as_str())
+                        && !ws.is_empty() {
                             return Ok(ws.to_string());
                         }
-                    }
-                }
             }
         }
         std::thread::sleep(std::time::Duration::from_millis(200));
@@ -123,11 +125,12 @@ pub fn session_target(session: &str, port: u16) -> anyhow::Result<String> {
 
 /// Kill one profile browser (tabs die; cookies persist for relaunch).
 /// Uses the recorded pid; the port file goes regardless so a dead
-/// browser never reads as live. Browsers launched with a pgid marker
-/// own their process group (setsid at launch): the whole tree dies,
-/// so stray renderers can't pile up and wedge the box. Unmarked
+/// browser never reads as live. Unix browsers launched with a pgid
+/// marker own their process group (setsid at launch): the whole tree
+/// dies, so stray renderers can't pile up and wedge the box. Unmarked
 /// (pre-marker) browsers fall back to single-pid kill — killpg on a
-/// foreign group could take the caller's own shell.
+/// foreign group could take the caller's own shell. Windows always
+/// tree-kills via taskkill /T.
 pub fn kill_profile(profile: &str) {
     let dir = profile_dir(profile);
     let pid = std::fs::read_to_string(dir.join("pid"))
@@ -140,22 +143,43 @@ pub fn kill_profile(profile: &str) {
     let _ = std::fs::remove_file(dir.join("pgid"));
     if let Some(pid) = pid {
         // PID reuse guard: only signal a process that is still our
-        // profile's browser (cmdline carries the user-data-dir).
-        let cmd =
-            std::fs::read_to_string(format!("/proc/{pid}/cmdline")).unwrap_or_default().replace('\0', " ");
-        if !(cmd.contains("chrom") && cmd.contains(&format!("profiles/{profile}"))) {
+        // profile's browser.
+        if !pid_is_ours(pid, profile) {
             return;
         }
+        #[cfg(unix)]
         if grouped {
             use nix::sys::signal::{killpg, Signal};
             if killpg(nix::unistd::Pid::from_raw(pid as i32), Signal::SIGKILL).is_ok() {
                 return;
             }
         }
-        // Unix-only by design (Linux-first CLI): SIGKILL via kill(1).
-        let _ = std::process::Command::new("kill")
-            .args(["-9", &pid.to_string()])
+        crate::cdp::kill_pid(pid);
+    }
+}
+
+/// True when pid still runs our profile's browser: cmdline carries the
+/// profile's user-data-dir (unix /proc) or the image is chrome
+/// (Windows tasklist). Precise enough to stop PID reuse from hitting
+/// strangers; profile names match as path segments, not substrings.
+fn pid_is_ours(pid: u32, profile: &str) -> bool {
+    #[cfg(unix)]
+    {
+        let cmd = std::fs::read_to_string(format!("/proc/{pid}/cmdline")).unwrap_or_default().replace('\0', " ");
+        cmd.contains("chrom") && cmd.contains(&format!("profiles/{profile}"))
+    }
+    #[cfg(windows)]
+    {
+        let out = std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
             .output();
+        let text = out.map(|o| String::from_utf8_lossy(o.stdout).to_string()).unwrap_or_default();
+        return text.to_lowercase().contains("chrom");
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (pid, profile);
+        return true;
     }
 }
 
@@ -279,7 +303,7 @@ pub fn audit_all() -> serde_json::Value {
     let mut verbs: Vec<serde_json::Value> = calls
         .into_iter()
         .map(|(verb, (n, errs, ms))| {
-            serde_json::json!({"verb": verb, "calls": n, "errors": errs, "mean_ms": if n > 0 { ms / n } else { 0 }})
+            serde_json::json!({"verb": verb, "calls": n, "errors": errs, "mean_ms": ms.checked_div(n).unwrap_or(0)})
         })
         .collect();
     verbs.sort_by(|a, b| b["calls"].as_u64().cmp(&a["calls"].as_u64()));

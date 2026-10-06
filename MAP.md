@@ -21,6 +21,8 @@ Facts about this repo. Every fact names a file and a line.
 - Verb handlers receive (&Ctx, &Registry, verb-name, args). rust/src/plugin.rs:31
 - Permissions: Browser, Network, Secrets, Fs, Spawn — requested in manifests. rust/src/plugin.rs:19
 - Control syntax from env AGENT_WEBMCP_PLUGINS: `*`, `-id`, `-ns.*`, later ID re-enables. rust/src/plugin.rs:107
+- Hooks carry the owning plugin id; external before/after run sandboxed manifest JS (veto = throw/false, guards fail closed). rust/src/ext.rs: veto/fail-closed in ext_before
+- Manifest `config` is free-form data visible as `config` in verbs and hooks.
 - `core.policy` and `core.receipts` ignore removals. rust/src/plugin.rs:109
 - Hooks wrap every call: before may veto, after observes. Registry owns both.
 - Unknown verbs fail hard with a `bad_verb` envelope, exit 2. rust/src/main.rs:60
@@ -45,6 +47,7 @@ Facts about this repo. Every fact names a file and a line.
 ### WebMCP (core, not a feature)
 
 - Launch always carries WebMCP flags; no opt-out exists. rust/src/cdp.rs:34
+- Chrome resolves per OS (`AGENT_WEBMCP_CHROME` override, install spots, PATH); portable home dir, portable kills. rust/src/cdp.rs: chrome_exe
 - Discovery: enable, listTools fast path, event drain fallback. rust/src/webmcp.rs:230
 - Invocation: invokeTool, callTool fallback, async toolResponded wait. `invoke` takes positional or `--tool`. rust/src/verbs/webmcp.rs:54
 - Detached waits fork a daemon holding the routed socket; `result` polls the file. rust/src/webmcp.rs:295
