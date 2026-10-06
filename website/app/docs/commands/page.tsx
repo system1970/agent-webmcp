@@ -22,7 +22,7 @@ const COMPOSE = `tools <add|list|verify>
 search <terms> [--session NAME] [--limit N] [--offset N]
 execute --program @file|<js> [--session NAME] [--max-calls N]`;
 
-const SYSTEM = `plugin <list|new|show>
+const SYSTEM = `plugin <list|new|show|add|remove>
 audit
 version
 mcp`;
@@ -129,9 +129,12 @@ export default function CommandsPage() {
       <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
         <li>
           <code className="font-mono text-[13px] text-ink">plugin list</code>{" "}
-          shows registry state; <code className="font-mono text-[13px] text-ink">new</code> scaffolds
-          a plugin, <code className="font-mono text-[13px] text-ink">show</code> inspects
-          one. <code className="font-mono text-[13px] text-ink">audit</code> aggregates
+          shows registry state; <code className="font-mono text-[13px] text-ink">new</code> scaffolds,{" "}
+          <code className="font-mono text-[13px] text-ink">show</code> inspects,{" "}
+          <code className="font-mono text-[13px] text-ink">add</code> installs from
+          a dir or git URL (validated before copying, live next invocation),{" "}
+          <code className="font-mono text-[13px] text-ink">remove</code> uninstalls
+          (built-ins refuse). <code className="font-mono text-[13px] text-ink">audit</code> aggregates
           the evidence log: usage, error rate, mean ms per verb.
         </li>
         <li>

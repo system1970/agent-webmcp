@@ -52,7 +52,7 @@ pub fn plugins() -> Vec<Plugin> {
             permissions: vec![],
             verbs: vec![Verb {
                 name: "plugin",
-                help: "plugin <list|new|show> — list plugins, scaffold one, show one",
+                help: "plugin <list|new|show|add|remove> — list, scaffold, show, install, uninstall",
                 run: |_ctx, reg, _verb, args| match args.first().map(|s| s.as_str()) {
                     Some("list") => Ok(reg.list()),
                     Some("new") => {
@@ -69,7 +69,21 @@ pub fn plugins() -> Vec<Plugin> {
                             .ok_or_else(|| anyhow::anyhow!("usage: plugin show <id>"))?;
                         crate::ext::show(reg, &id)
                     }
-                    _ => anyhow::bail!("usage: plugin <list|new|show>"),
+                    Some("add") => {
+                        let src = crate::args::positionals(args)
+                            .into_iter()
+                            .find(|a| a != "add")
+                            .ok_or_else(|| anyhow::anyhow!("usage: plugin add <dir|git-url> [--here]"))?;
+                        crate::ext::add(reg, &src, crate::args::has(args, "--here"))
+                    }
+                    Some("remove") => {
+                        let id = crate::args::positionals(args)
+                            .into_iter()
+                            .find(|a| a != "remove")
+                            .ok_or_else(|| anyhow::anyhow!("usage: plugin remove <id>"))?;
+                        crate::ext::remove(&id)
+                    }
+                    _ => anyhow::bail!("usage: plugin <list|new|show|add|remove>"),
                 },
             },
             Verb {

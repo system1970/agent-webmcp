@@ -226,6 +226,9 @@ pub fn register_meta(id: &str, meta: ExtMeta) {
     }
 }
 
-fn meta_for(id: &str) -> Option<ExtMeta> {
+/// Manifest metadata for one plugin id, if it was manifest-loaded.
+/// Built-ins (compiled in) have none — which is how `plugin remove`
+/// tells them apart and refuses.
+pub fn meta_for(id: &str) -> Option<ExtMeta> {
     meta_map().lock().ok()?.get(id).cloned()
 }

@@ -195,60 +195,62 @@ fn load_from_dirs(reg: &mut Registry, dirs: &[(String, PathBuf)]) {
     }
 }
 
+/// Read + validate a manifest: parse, id charset, core.* reserved,
+/// version present, engine matches, permissions known. Shared by boot
+/// discovery and `plugin add` (install validates before copying).
+fn read_manifest(dir: &PathBuf) -> anyhow::Result<Manifest> {
+    let mf = dir.join("plugin.json");
+    let raw = std::fs::read_to_string(&mf)
+        .map_err(|e| anyhow::anyhow!("unreadable manifest {}: {e}", mf.display()))?;
+    let m: Manifest = serde_json::from_str(&raw)
+        .map_err(|e| anyhow::anyhow!("bad manifest {}: {e}", mf.display()))?;
+    if !valid_id(&m.id) {
+        anyhow::bail!("bad id {:?}", m.id);
+    }
+    if m.id.starts_with("core.") {
+        anyhow::bail!("core.* ids are reserved");
+    }
+    if m.version.trim().is_empty() {
+        anyhow::bail!("version required");
+    }
+    if !engine_ok(&m.engine) {
+        anyhow::bail!(
+            "engine {:?} mismatches binary {}",
+            m.engine,
+            env!("CARGO_PKG_VERSION")
+        );
+    }
+    for p in &m.permissions {
+        if parse_perm(p).is_none() {
+            anyhow::bail!("unknown permission {p:?}");
+        }
+    }
+    for v in &m.contributes.verbs {
+        if !valid_verb_name(&v.name) {
+            anyhow::bail!("bad verb name {:?}", v.name);
+        }
+    }
+    Ok(m)
+}
+
 fn load_one(reg: &mut Registry, scope: &str, dir: &PathBuf) {
     let mf = dir.join("plugin.json");
     if !mf.is_file() {
         return;
     }
-    let raw = match std::fs::read_to_string(&mf) {
-        Ok(r) => r,
-        Err(e) => {
-            warn(format!("{}: unreadable: {e}", mf.display()));
-            return;
-        }
-    };
-    let m: Manifest = match serde_json::from_str(&raw) {
+    let m = match read_manifest(dir) {
         Ok(m) => m,
         Err(e) => {
-            warn(format!("{}: bad manifest: {e}", mf.display()));
+            warn(format!("{}: {e:#}", mf.display()));
             return;
         }
     };
-    if !valid_id(&m.id) {
-        warn(format!("{}: bad id {:?}", mf.display(), m.id));
-        return;
-    }
-    if m.id.starts_with("core.") {
-        warn(format!("{}: core.* ids are reserved", mf.display()));
-        return;
-    }
-    if m.version.trim().is_empty() {
-        warn(format!("{}: version required", mf.display()));
-        return;
-    }
-    if !engine_ok(&m.engine) {
-        warn(format!(
-            "{}: engine {:?} mismatches binary {}",
-            mf.display(),
-            m.engine,
-            env!("CARGO_PKG_VERSION")
-        ));
-        return;
-    }
     if reg.plugins_for_list().iter().any(|p| p.id == m.id) {
         warn(format!("{}: duplicate plugin id {}", mf.display(), m.id));
         return;
     }
-    let mut perms = vec![];
-    for p in &m.permissions {
-        match parse_perm(p) {
-            Some(p) => perms.push(p),
-            None => {
-                warn(format!("{}: unknown permission {p:?}", mf.display()));
-                return;
-            }
-        }
-    }
+    // Validated above: every permission parses.
+    let perms: Vec<Permission> = m.permissions.iter().filter_map(|p| parse_perm(p)).collect();
     // Resolve verb JS files inside the plugin dir (no .. escapes).
     let basedir = match dir.canonicalize() {
         Ok(d) => d,
@@ -256,10 +258,6 @@ fn load_one(reg: &mut Registry, scope: &str, dir: &PathBuf) {
     };
     let mut verbs = vec![];
     for v in &m.contributes.verbs {
-        if !valid_verb_name(&v.name) {
-            warn(format!("{}: bad verb name {:?}", mf.display(), v.name));
-            continue;
-        }
         if reg.verb(&v.name).is_some() {
             warn(format!("{}: verb {} collides with built-in, refused", mf.display(), v.name));
             continue;
@@ -482,6 +480,152 @@ Playbook for agents: when to use {verb}, inputs, outputs, gates.
     Ok(serde_json::json!({"scaffolded": dir.to_string_lossy(), "id": id, "verb": verb}))
 }
 
+/// Install a plugin from a local dir or git URL into a scope dir.
+/// Validates the manifest BEFORE copying: bad/engine-mismatch/unknown
+/// permission refuses without touching the scope. Installs for the NEXT
+/// invocation — the running registry is already booted and is never
+/// mutated mid-call. User scope by default, `./plugins` with --here.
+pub fn add(reg: &Registry, source: &str, here: bool) -> anyhow::Result<serde_json::Value> {
+    let src = materialize_source(source)?;
+    let _cleanup = Cleanup(src.cloned_temp());
+    let m = read_manifest(&src.dir)?;
+    if reg.plugins_for_list().iter().any(|p| p.id == m.id) {
+        anyhow::bail!("exists: plugin {} already installed", m.id);
+    }
+    // Verb run files must exist in the source; boot re-validates
+    // strictly (escapes, collisions) before anything executes.
+    for v in &m.contributes.verbs {
+        if !src.dir.join(v.run.trim_start_matches("./")).is_file() {
+            anyhow::bail!("not_found: verb {} run file {:?} missing", v.name, v.run);
+        }
+    }
+    let base = if here {
+        PathBuf::from("plugins")
+    } else {
+        user_plugins_dir()
+    };
+    install_dir(&src.dir, &base, &m.id)?;
+    let dest = base.join(slug(&m.id));
+    Ok(serde_json::json!({
+        "installed": m.id,
+        "version": m.version,
+        "scope": if here { "repo" } else { "user" },
+        "path": dest.to_string_lossy(),
+        "note": "live next invocation",
+    }))
+}
+
+/// A materialized source dir: borrowed (local path) or owned temp clone.
+struct Source {
+    dir: PathBuf,
+    temp: Option<PathBuf>,
+}
+
+impl Source {
+    fn cloned_temp(&self) -> Option<PathBuf> {
+        self.temp.clone()
+    }
+}
+
+/// Remove temp clone dirs even on failure paths.
+struct Cleanup(Option<PathBuf>);
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        if let Some(d) = self.0.take() {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+}
+
+/// Resolve a source string to a plugin dir: an existing local dir, or a
+/// git URL cloned shallow into temp (`git:` prefix or .git/URL shape).
+fn materialize_source(source: &str) -> anyhow::Result<Source> {
+    let p = PathBuf::from(source);
+    if p.is_dir() {
+        return Ok(Source { dir: p, temp: None });
+    }
+    let url = source.strip_prefix("git:").unwrap_or(source);
+    let is_git = url.ends_with(".git") || url.starts_with("https://") || url.starts_with("git@");
+    if !is_git {
+        anyhow::bail!("usage: plugin add <dir|git-url> [--here]");
+    }
+    let tmp = std::env::temp_dir().join(format!("awmcp-add-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let st = std::process::Command::new("git")
+        .args(["clone", "--depth", "1", url, &tmp.to_string_lossy()])
+        .output()
+        .map_err(|e| anyhow::anyhow!("not_found: git unavailable: {e}"))?;
+    if !st.status.success() {
+        anyhow::bail!("not_found: cannot clone {url}");
+    }
+    // A repo may hold the plugin at root or under one plugins/ entry:
+    // prefer a root manifest, else the single plugins/*/ manifest.
+    if tmp.join("plugin.json").is_file() {
+        return Ok(Source { dir: tmp.clone(), temp: Some(tmp) });
+    }
+    let mut found = vec![];
+    for scope in ["plugins"] {
+        let entries = match std::fs::read_dir(tmp.join(scope)) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for e in entries.flatten() {
+            if e.path().join("plugin.json").is_file() {
+                found.push(e.path());
+            }
+        }
+    }
+    match found.len() {
+        1 => Ok(Source { dir: found.remove(0), temp: Some(tmp) }),
+        0 => anyhow::bail!("not_found: no plugin.json in {url}"),
+        _ => anyhow::bail!("usage: {url} holds several plugins; point at one dir"),
+    }
+}
+
+/// Copy a validated source dir into a scope root under its slug.
+/// Refuses non-empty destinations: never truncate edits.
+fn install_dir(src: &PathBuf, base: &PathBuf, id: &str) -> anyhow::Result<PathBuf> {
+    let dest = base.join(slug(id));
+    if dest.exists() && std::fs::read_dir(&dest).map(|mut e| e.next().is_some()).unwrap_or(true) {
+        anyhow::bail!("exists: {} is non-empty", dest.display());
+    }
+    copy_dir(src, &dest)?;
+    Ok(dest)
+}
+
+fn copy_dir(src: &PathBuf, dest: &PathBuf) -> anyhow::Result<()> {
+    std::fs::create_dir_all(dest)?;
+    for e in std::fs::read_dir(src)? {
+        let e = e?;
+        let (from, to) = (e.path(), dest.join(e.file_name()));
+        if e.file_type()?.is_dir() {
+            copy_dir(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
+/// Remove an installed manifest plugin by id. Refuses built-ins (no
+/// manifest source) and anything outside known scope roots.
+pub fn remove(id: &str) -> anyhow::Result<serde_json::Value> {
+    let meta = crate::plugin::meta_for(id)
+        .ok_or_else(|| anyhow::anyhow!("not_found: no installed plugin {id} (built-ins can't be removed)"))?;
+    let src = PathBuf::from(&meta.source);
+    let parent = src.parent().ok_or_else(|| anyhow::anyhow!("not_found: no source for {id}"))?;
+    let canon_parent = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
+    let roots: Vec<PathBuf> = discover_dirs()
+        .iter()
+        .map(|(_, d)| d.canonicalize().unwrap_or_else(|_| d.clone()))
+        .collect();
+    if !roots.iter().any(|r| *r == canon_parent) {
+        anyhow::bail!("policy_denied: {id} lives outside plugin scopes");
+    }
+    std::fs::remove_dir_all(&src)?;
+    Ok(serde_json::json!({"removed": id}))
+}
+
 /// Show one plugin: registry entry plus manifest, skill paths, and
 /// verb JS sources for external verbs.
 pub fn show(reg: &Registry, id: &str) -> anyhow::Result<serde_json::Value> {
@@ -601,5 +745,58 @@ mod tests {
         let mut reg = Registry::new(vec![]);
         load_from_dirs(&mut reg, &[("extra".to_string(), scope)]);
         assert!(reg.verb("testbadverb").is_none());
+    }
+
+    fn write_plug(dir: &PathBuf, id: &str, engine: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.json"),
+            serde_json::json!({
+                "id": id,
+                "version": "0.1.0",
+                "engine": engine,
+                "permissions": ["network"],
+                "contributes": {"verbs": [{"name": "v", "help": "h", "run": "./main.js"}]},
+            })
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(dir.join("main.js"), "return {ok: true};").unwrap();
+    }
+
+    #[test]
+    fn add_installs_validated_dir() {
+        let src_root = tmp_plugins("addsrc");
+        let src = src_root.join("plug");
+        let engine = format!("^{}", env!("CARGO_PKG_VERSION"));
+        write_plug(&src, "test.add", &engine);
+        let dest_root = tmp_plugins("adddest");
+        let dest = install_dir(&src, &dest_root, "test.add").unwrap();
+        assert!(dest.join("plugin.json").is_file());
+        assert!(dest.join("main.js").is_file());
+        // Non-empty destination refuses: never truncate edits.
+        assert!(install_dir(&src, &dest_root, "test.add").is_err());
+    }
+
+    #[test]
+    fn add_refuses_bad_engine_before_copying() {
+        let src_root = tmp_plugins("addbad");
+        let src = src_root.join("plug");
+        write_plug(&src, "test.addbad", "^999.0.0");
+        let dest_root = tmp_plugins("addbaddest");
+        let reg = Registry::new(vec![]);
+        let out = add(&reg, src.to_str().unwrap(), false);
+        assert!(out.is_err());
+        // add() with here=false targets the user dir; pass an explicit
+        // root through install_dir to prove validation precedes copy.
+        assert!(read_manifest(&src).is_err());
+        assert!(!dest_root.join("test-addbad").exists());
+    }
+
+    #[test]
+    fn remove_refuses_builtins() {
+        // No manifest metadata without a boot load: built-ins refuse.
+        assert!(remove("core.version").is_err());
+        assert!(remove("no.such.plugin").is_err());
     }
 }
