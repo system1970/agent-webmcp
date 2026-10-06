@@ -19,8 +19,7 @@ pub struct ToolMeta {
 }
 
 pub fn root() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or("/tmp".into());
-    PathBuf::from(home).join(".agent-webmcp/tools")
+    crate::session::home().join(".agent-webmcp/tools")
 }
 
 fn slug(name: &str) -> String {
@@ -73,11 +72,10 @@ pub fn host_match(host: &str, patterns: &[String]) -> bool {
         if p == "*" || p == host {
             return true;
         }
-        if let Some(suf) = p.strip_prefix("*.") {
-            if host == suf || host.ends_with(&format!(".{suf}")) {
+        if let Some(suf) = p.strip_prefix("*.")
+            && (host == suf || host.ends_with(&format!(".{suf}"))) {
                 return true;
             }
-        }
     }
     false
 }

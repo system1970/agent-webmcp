@@ -325,62 +325,74 @@ pub fn invoke_detached(
     Ok(id)
 }
 
-/// Fork the waiter into a daemon. The parent returns at once (dropping
-/// its socket copy; the daemon's stays open). The grandchild detaches
-/// into its own session, waits up to 120s, writes ready/error, exits.
-fn daemonize_waiter(
-    mut s: Session,
-    id: &str,
-    path: &std::path::Path,
-) -> anyhow::Result<()> {
-    use nix::unistd::{fork, ForkResult};
-    let id = id.to_string();
-    let path = path.to_path_buf();
-    // SAFETY: fork in a sync single-threaded CLI/MCP dispatch path (no
-    // locks held, no threads spawned yet on this path). The child only
-    // reads one socket, writes one file, and exits.
-    match unsafe { fork() } {
-        Ok(ForkResult::Parent { child: a }) => {
-            // Reap A, which exits right after the second fork.
-            let _ = nix::sys::wait::waitpid(a, None);
-            Ok(())
-        }
-        Ok(ForkResult::Child) => match unsafe { fork() } {
-            Ok(ForkResult::Parent { .. }) => std::process::exit(0),
-            Ok(ForkResult::Child) => {
-                let _ = nix::unistd::setsid();
-                let outcome = s.wait_responded(&id, Duration::from_secs(120));
-                let ok = outcome.is_ok();
-                let record = match &outcome {
-                    Ok(v) => serde_json::json!({"status": "ready", "invocation": id, "result": v}),
-                    Err(e) => serde_json::json!({"status": "error", "invocation": id, "error": format!("{e:#}")}),
-                };
-                let _ = std::fs::write(&path, record.to_string());
-                std::process::exit(if ok { 0 } else { 1 });
+/// Fork the waiter into a daemon (unix). The parent returns at once
+/// (dropping its socket copy; the daemon's stays open). The grandchild
+/// detaches into its own session, waits up to 120s, writes ready/error,
+/// exits. Elsewhere, and when fork fails: thread fallback, which works
+/// while the parent outlives the wait (MCP server) and dies with a CLI
+/// parent — degraded, never silent.
+fn daemonize_waiter(s: Session, id: &str, path: &std::path::Path) -> anyhow::Result<()> {
+    #[cfg(unix)]
+    {
+        use nix::unistd::{fork, ForkResult};
+        let id = id.to_string();
+        let path = path.to_path_buf();
+        // SAFETY: fork in a sync single-threaded dispatch path (no locks
+        // held, no threads spawned yet on this path). The child only
+        // reads one socket, writes one file, and exits.
+        match unsafe { fork() } {
+            Ok(ForkResult::Parent { child: a }) => {
+                // Reap A, which exits right after the second fork.
+                let _ = nix::sys::wait::waitpid(a, None);
+                Ok(())
             }
-            Err(_) => std::process::exit(1),
-        },
-        Err(_) => {
-            // Fork failed on a wedged box: thread fallback. It works
-            // while the parent outlives the wait (MCP server) and dies
-            // with a CLI parent — degraded, never silent.
-            eprintln!("agent-webmcp: fork failed, thread fallback for {id}");
-            std::thread::spawn(move || {
-                let outcome = s.wait_responded(&id, Duration::from_secs(120));
-                let record = match outcome {
-                    Ok(v) => serde_json::json!({"status": "ready", "invocation": id, "result": v}),
-                    Err(e) => serde_json::json!({"status": "error", "invocation": id, "error": format!("{e:#}")}),
-                };
-                let _ = std::fs::write(path, record.to_string());
-            });
-            Ok(())
+            Ok(ForkResult::Child) => match unsafe { fork() } {
+                Ok(ForkResult::Parent { .. }) => std::process::exit(0),
+                Ok(ForkResult::Child) => {
+                    let _ = nix::unistd::setsid();
+                    let mut s = s;
+                    let outcome = s.wait_responded(&id, Duration::from_secs(120));
+                    let ok = outcome.is_ok();
+                    let record = match &outcome {
+                        Ok(v) => serde_json::json!({"status": "ready", "invocation": id, "result": v}),
+                        Err(e) => serde_json::json!({"status": "error", "invocation": id, "error": format!("{e:#}")}),
+                    };
+                    let _ = std::fs::write(&path, record.to_string());
+                    std::process::exit(if ok { 0 } else { 1 });
+                }
+                Err(_) => std::process::exit(1),
+            },
+            Err(_) => {
+                eprintln!("agent-webmcp: fork failed, thread fallback for {id}");
+                thread_waiter(s, &id, &path);
+                Ok(())
+            }
         }
+    }
+    #[cfg(not(unix))]
+    {
+        thread_waiter(s, id, path);
+        Ok(())
     }
 }
 
+/// Thread waiter: holds the connection open for toolResponded, records
+/// the outcome. Primary path off unix, fallback on it.
+fn thread_waiter(mut s: Session, id: &str, path: &std::path::Path) {
+    let id = id.to_string();
+    let path = path.to_path_buf();
+    std::thread::spawn(move || {
+        let outcome = s.wait_responded(&id, Duration::from_secs(120));
+        let record = match outcome {
+            Ok(v) => serde_json::json!({"status": "ready", "invocation": id, "result": v}),
+            Err(e) => serde_json::json!({"status": "error", "invocation": id, "error": format!("{e:#}")}),
+        };
+        let _ = std::fs::write(path, record.to_string());
+    });
+}
+
 fn invocation_dir(session: &str) -> anyhow::Result<std::path::PathBuf> {
-    let home = std::env::var("HOME").unwrap_or("/tmp".into());
-    let d = std::path::PathBuf::from(home)
+    let d = crate::session::home()
         .join(".agent-webmcp/rust")
         .join(session)
         .join("invocations");

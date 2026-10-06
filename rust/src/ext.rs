@@ -46,6 +46,11 @@ struct Manifest {
     permissions: Vec<String>,
     #[serde(default)]
     contributes: Contributes,
+    /// Free-form plugin config, handed to every verb as `config`.
+    #[serde(default)]
+    config: serde_json::Value,
+    #[serde(default)]
+    hooks: ManifestHooks,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -56,6 +61,14 @@ struct Contributes {
     tools: Vec<String>,
     #[serde(default)]
     skills: Vec<String>,
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+struct ManifestHooks {
+    #[serde(default)]
+    before: Option<String>,
+    #[serde(default)]
+    after: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -128,6 +141,7 @@ fn parse_perm(s: &str) -> Option<Permission> {
 struct ExtImpl {
     plugin_id: String,
     js: PathBuf,
+    config: serde_json::Value,
 }
 
 fn impls() -> &'static std::sync::Mutex<HashMap<String, ExtImpl>> {
@@ -136,11 +150,102 @@ fn impls() -> &'static std::sync::Mutex<HashMap<String, ExtImpl>> {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+/// External hook programs, keyed (plugin id, before|after). The shared
+/// ext_before/ext_after handlers resolve through this map.
+fn hooks() -> &'static std::sync::Mutex<HashMap<(String, String), PathBuf>> {
+    static MAP: std::sync::OnceLock<std::sync::Mutex<HashMap<(String, String), PathBuf>>> =
+        std::sync::OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// Per-plugin manifest config for hooks (verbs read theirs from their
+/// own ExtImpl). Keyed by plugin id.
+fn configs() -> &'static std::sync::Mutex<HashMap<String, serde_json::Value>> {
+    static MAP: std::sync::OnceLock<std::sync::Mutex<HashMap<String, serde_json::Value>>> =
+        std::sync::OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn plugin_config(plugin: &str) -> serde_json::Value {
+    configs()
+        .lock()
+        .ok()
+        .and_then(|c| c.get(plugin).cloned())
+        .unwrap_or(serde_json::Value::Null)
+}
+
+/// Shared before-hook for external plugins: runs the manifest JS with
+/// {plugin, verb, args}. Throwing or returning false vetoes the call;
+/// guards fail closed (a crashing guard denies). Pure sandbox: args
+/// only, no page tools — hooks judge, they don't act.
+fn ext_before(_ctx: &Ctx, plugin: &str, verb: &str, args: &[String]) -> anyhow::Result<()> {
+    let js = {
+        let h = hooks().lock().map_err(|_| anyhow::anyhow!("ext busy"))?;
+        match h.get(&(plugin.to_string(), "before".to_string())) {
+            Some(js) => js.clone(),
+            None => return Ok(()),
+        }
+    };
+    match run_hook(&js, plugin, verb, args, None) {
+        Ok(v) if v != serde_json::json!(false) => Ok(()),
+        Ok(_) => anyhow::bail!("policy_denied: {plugin} vetoed {verb}"),
+        Err(e) => anyhow::bail!("policy_denied: {plugin} guard failed on {verb}: {e:#}"),
+    }
+}
+
+/// Shared after-hook: same sandbox plus the verb output as `out`.
+/// Return value ignored; failures warn on stderr — after-hooks observe,
+/// never veto, never fail the call.
+fn ext_after(_ctx: &Ctx, plugin: &str, verb: &str, args: &[String], out: &serde_json::Value) -> anyhow::Result<()> {
+    let js = {
+        let h = hooks().lock().map_err(|_| anyhow::anyhow!("ext busy"))?;
+        match h.get(&(plugin.to_string(), "after".to_string())) {
+            Some(js) => js.clone(),
+            None => return Ok(()),
+        }
+    };
+    if let Err(e) = run_hook(&js, plugin, verb, args, Some(out)) {
+        eprintln!("agent-webmcp: after-hook {plugin}/{verb} failed: {e:#}");
+    }
+    Ok(())
+}
+
+/// Run one hook program. No explicit return required: falling off the
+/// end passes (`return true`), `return false` or a throw vetoes.
+fn run_hook(
+    js: &PathBuf,
+    plugin: &str,
+    verb: &str,
+    args: &[String],
+    out: Option<&serde_json::Value>,
+) -> anyhow::Result<serde_json::Value> {
+    let code = std::fs::read_to_string(js)
+        .map_err(|e| anyhow::anyhow!("ext {plugin}: cannot read {}: {e}", js.display()))?;
+    if code.trim().is_empty() {
+        return Ok(serde_json::json!(true));
+    }
+    let hook = serde_json::json!({
+        "plugin": plugin, "verb": verb,
+        "args": args_json(args),
+        "out": out.cloned().unwrap_or(serde_json::Value::Null),
+    });
+    let program = format!(
+        "const hook = {hook};\nconst config = {};\n{code}\nreturn true;",
+        plugin_config(plugin)
+    );
+    let catalog = crate::exec::Catalog {
+        leaves: HashMap::new(),
+        calls: 0,
+        max: 4,
+        deadline: std::time::Instant::now() + Duration::from_secs(5),
+    };
+    crate::exec::run_program(catalog, &program, Duration::from_secs(5))
+}
+
 // ---- discovery ----
 
 fn user_plugins_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or("/tmp".into());
-    PathBuf::from(home).join(".agent-webmcp/plugins")
+    crate::session::home().join(".agent-webmcp/plugins")
 }
 
 /// Scope dirs to scan: (scope, dir holding plugin subdirs).
@@ -198,7 +303,7 @@ fn load_from_dirs(reg: &mut Registry, dirs: &[(String, PathBuf)]) {
 /// Read + validate a manifest: parse, id charset, core.* reserved,
 /// version present, engine matches, permissions known. Shared by boot
 /// discovery and `plugin add` (install validates before copying).
-fn read_manifest(dir: &PathBuf) -> anyhow::Result<Manifest> {
+fn read_manifest(dir: &std::path::Path) -> anyhow::Result<Manifest> {
     let mf = dir.join("plugin.json");
     let raw = std::fs::read_to_string(&mf)
         .map_err(|e| anyhow::anyhow!("unreadable manifest {}: {e}", mf.display()))?;
@@ -233,7 +338,7 @@ fn read_manifest(dir: &PathBuf) -> anyhow::Result<Manifest> {
     Ok(m)
 }
 
-fn load_one(reg: &mut Registry, scope: &str, dir: &PathBuf) {
+fn load_one(reg: &mut Registry, scope: &str, dir: &std::path::Path) {
     let mf = dir.join("plugin.json");
     if !mf.is_file() {
         return;
@@ -254,7 +359,7 @@ fn load_one(reg: &mut Registry, scope: &str, dir: &PathBuf) {
     // Resolve verb JS files inside the plugin dir (no .. escapes).
     let basedir = match dir.canonicalize() {
         Ok(d) => d,
-        Err(_) => dir.clone(),
+        Err(_) => dir.to_path_buf(),
     };
     let mut verbs = vec![];
     for v in &m.contributes.verbs {
@@ -292,6 +397,7 @@ fn load_one(reg: &mut Registry, scope: &str, dir: &PathBuf) {
                 ExtImpl {
                     plugin_id: m.id.clone(),
                     js,
+                    config: m.config.clone(),
                 },
             );
         }
@@ -322,14 +428,42 @@ fn load_one(reg: &mut Registry, scope: &str, dir: &PathBuf) {
             warn(format!("{}: skill {s:?} missing", mf.display()));
         }
     }
+    // Manifest hooks resolve like verb files: inside the dir or refused.
+    let hook_file = |rel: &Option<String>, kind: &str| -> Option<PathBuf> {
+        let rel = rel.as_ref()?;
+        let js = basedir.join(rel.trim_start_matches("./"));
+        if !js.is_file() {
+            warn(format!("{}: hook {kind} file {rel:?} missing", mf.display()));
+            return None;
+        }
+        if js.canonicalize().map(|j| j.starts_with(&basedir)).unwrap_or(false) {
+            Some(js)
+        } else {
+            warn(format!("{}: hook {kind} escapes plugin dir", mf.display()));
+            None
+        }
+    };
+    let has_before = hook_file(&m.hooks.before, "before");
+    let has_after = hook_file(&m.hooks.after, "after");
+    if let Ok(mut h) = hooks().lock() {
+        if let Some(js) = has_before.clone() {
+            h.insert((m.id.clone(), "before".to_string()), js);
+        }
+        if let Some(js) = has_after.clone() {
+            h.insert((m.id.clone(), "after".to_string()), js);
+        }
+    }
+    if let Ok(mut c) = configs().lock() {
+        c.insert(m.id.clone(), m.config.clone());
+    }
     let plugin_id = leak(&m.id);
     reg.register(Plugin {
         id: plugin_id,
         permissions: perms,
         verbs,
         hooks: crate::plugin::Hooks {
-            before: None,
-            after: None,
+            before: has_before.is_some().then_some(ext_before as fn(&Ctx, &str, &str, &[String]) -> anyhow::Result<()>),
+            after: has_after.is_some().then_some(ext_after as fn(&Ctx, &str, &str, &[String], &serde_json::Value) -> anyhow::Result<()>),
         },
     });
     crate::plugin::register_meta(
@@ -341,7 +475,7 @@ fn load_one(reg: &mut Registry, scope: &str, dir: &PathBuf) {
             // must resolve identically regardless of caller CWD.
             source: dir
                 .canonicalize()
-                .unwrap_or_else(|_| dir.clone())
+                .unwrap_or_else(|_| dir.to_path_buf())
                 .to_string_lossy()
                 .to_string(),
             skills,
@@ -357,10 +491,10 @@ fn load_one(reg: &mut Registry, scope: &str, dir: &PathBuf) {
 /// the session page-tool catalog when --session resolves, else an
 /// empty catalog: external verbs without a session still run.
 fn run_ext(ctx: &Ctx, _reg: &Registry, verb: &str, args: &[String]) -> anyhow::Result<serde_json::Value> {
-    let (plugin_id, js) = {
+    let (plugin_id, js, config) = {
         let im = impls().lock().map_err(|_| anyhow::anyhow!("ext busy"))?;
         let imp = im.get(verb).ok_or_else(|| anyhow::anyhow!("not_found: no external verb {verb}"))?;
-        (imp.plugin_id.clone(), imp.js.clone())
+        (imp.plugin_id.clone(), imp.js.clone(), imp.config.clone())
     };
     let code = std::fs::read_to_string(&js)
         .map_err(|e| anyhow::anyhow!("ext {plugin_id}: cannot read {}: {e}", js.display()))?;
@@ -378,7 +512,7 @@ fn run_ext(ctx: &Ctx, _reg: &Registry, verb: &str, args: &[String]) -> anyhow::R
             deadline: std::time::Instant::now() + timeout,
         },
     };
-    let program = format!("const args = {};\n{code}", args_json(args));
+    let program = format!("const args = {};\nconst config = {config};\n{code}", args_json(args));
     crate::exec::run_program(catalog, &program, timeout)
 }
 
@@ -455,6 +589,7 @@ pub fn scaffold(id: &str, here: bool) -> anyhow::Result<serde_json::Value> {
         "version": "0.1.0",
         "engine": engine,
         "permissions": ["network"],
+        "config": {},
         "contributes": {
             "verbs": [{"name": verb, "help": format!("{verb} — {id} verb"), "run": "./main.js"}],
             "tools": ["./tools/*.js"],
@@ -463,7 +598,8 @@ pub fn scaffold(id: &str, here: bool) -> anyhow::Result<serde_json::Value> {
     });
     std::fs::write(dir.join("plugin.json"), serde_json::to_string_pretty(&manifest)?)?;
     let main_js = format!(
-        r#"// {id} — {verb} verb. `args` is {{all, positional, flags}}.
+        r#"// {id} — {verb} verb. `args` is {{all, positional, flags}},
+// `config` is the manifest config object.
 // Page tools arrive as tools.*; discover with webmcp.search,
 // fan out with batch (cap 8). Must return a value explicitly.
 return {{
@@ -635,7 +771,7 @@ fn materialize_source(source: &str) -> anyhow::Result<Source> {
 
 /// Copy a validated source dir into a scope root under its slug.
 /// Refuses non-empty destinations: never truncate edits.
-fn install_dir(src: &PathBuf, base: &PathBuf, id: &str) -> anyhow::Result<PathBuf> {
+fn install_dir(src: &std::path::Path, base: &std::path::Path, id: &str) -> anyhow::Result<PathBuf> {
     let dest = base.join(slug(id));
     if dest.exists() && std::fs::read_dir(&dest).map(|mut e| e.next().is_some()).unwrap_or(true) {
         anyhow::bail!("exists: {} is non-empty", dest.display());
@@ -644,7 +780,7 @@ fn install_dir(src: &PathBuf, base: &PathBuf, id: &str) -> anyhow::Result<PathBu
     Ok(dest)
 }
 
-fn copy_dir(src: &PathBuf, dest: &PathBuf) -> anyhow::Result<()> {
+fn copy_dir(src: &std::path::Path, dest: &std::path::Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(dest)?;
     for e in std::fs::read_dir(src)? {
         let e = e?;
@@ -670,7 +806,7 @@ pub fn remove(id: &str) -> anyhow::Result<serde_json::Value> {
         .iter()
         .map(|(_, d)| d.canonicalize().unwrap_or_else(|_| d.clone()))
         .collect();
-    if !roots.iter().any(|r| *r == canon_parent) {
+    if !roots.contains(&canon_parent) {
         anyhow::bail!("policy_denied: {id} lives outside plugin scopes");
     }
     std::fs::remove_dir_all(&src)?;
@@ -734,8 +870,7 @@ pub fn publish(dir: &str, here: bool) -> anyhow::Result<serde_json::Value> {
     let path = if here {
         PathBuf::from("registry/index.json")
     } else {
-        let home = std::env::var("HOME").unwrap_or("/tmp".into());
-        PathBuf::from(home).join(".agent-webmcp/registry.json")
+        crate::session::home().join(".agent-webmcp/registry.json")
     };
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -927,6 +1062,34 @@ mod tests {
         // No manifest metadata without a boot load: built-ins refuse.
         assert!(remove("core.version").is_err());
         assert!(remove("no.such.plugin").is_err());
+    }
+
+    #[test]
+    fn hooks_veto_pass_crash() {
+        let dir = std::env::temp_dir().join("awmcp-hooktest");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let js = |name: &str, code: &str| {
+            let p = dir.join(name);
+            std::fs::write(&p, code).unwrap();
+            p
+        };
+        let noargs: Vec<String> = vec![];
+        // Explicit false vetoes.
+        let f = js("veto.js", "return false;");
+        assert!(run_hook(&f, "p", "v", &noargs, None).unwrap() == serde_json::json!(false));
+        // Falling off passes.
+        let p = js("pass.js", "const x = hook.verb;");
+        assert!(run_hook(&p, "p", "v", &noargs, None).unwrap() == serde_json::json!(true));
+        // Throwing fails (ext_before maps to policy_denied).
+        let t = js("throw.js", "throw 'tool_error: nope';");
+        assert!(run_hook(&t, "p", "v", &noargs, None).is_err());
+        // hook carries plugin/verb/args/out.
+        let o = js("shape.js", "return hook.plugin + '/' + hook.verb + '/' + hook.args.all.length + '/' + hook.out;");
+        let a1: Vec<String> = ["x"].iter().map(|s| s.to_string()).collect();
+        let v = run_hook(&o, "plug", "verb", &a1, Some(&serde_json::json!(7))).unwrap();
+        assert_eq!(v, serde_json::json!("plug/verb/1/7"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

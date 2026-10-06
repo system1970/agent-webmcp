@@ -14,7 +14,7 @@ pub fn plugins() -> Vec<Plugin> {
                 before: None,
                 // Receipts carry an untrusted marker on page-derived data.
                 // Today: no-op guard proving the hook path runs.
-                after: Some(|_ctx, _verb, _args, out| {
+                after: Some(|_ctx, _plugin, _verb, _args, out| {
                     let _ = out;
                     Ok(())
                 }),

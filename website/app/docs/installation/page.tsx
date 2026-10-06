@@ -46,6 +46,12 @@ agent-webmcp plugin list | head -c 300`}
         <code className="font-mono text-[13px] text-ink">~/.local/bin/agent-webmcp</code>.
         The <code className="font-mono text-[13px] text-ink">rev</code> field
         proves which commit serves — compare it after every install.
+        Chrome resolves per OS (override with{" "}
+        <code className="font-mono text-[13px] text-ink">AGENT_WEBMCP_CHROME</code>);
+        on Windows install manually:{" "}
+        <code className="font-mono text-[13px] text-ink">cargo build</code>,
+        copy <code className="font-mono text-[13px] text-ink">target\debug\agent-webmcp.exe</code> onto
+        PATH.
       </p>
     </article>
   );

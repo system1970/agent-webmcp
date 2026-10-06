@@ -31,11 +31,13 @@ fn jserr(ctx: &rquickjs::Ctx<'_>, msg: String) -> rquickjs::Error {
 }
 
 /// One callable tool: name, description, required args, executor.
+pub type ToolFn = dyn Fn(&serde_json::Value) -> anyhow::Result<serde_json::Value> + Send + Sync;
+
 pub struct Leaf {
     pub name: String,
     pub desc: String,
     pub required: Vec<String>,
-    pub run: Box<dyn Fn(&serde_json::Value) -> anyhow::Result<serde_json::Value> + Send + Sync>,
+    pub run: Box<ToolFn>,
 }
 
 /// The session's callable set for one execution.

@@ -75,7 +75,7 @@ fn main() {
     };
     if let Err(e) = reg.hooks_before(&ctx, &name, &words) {
         crate::session::log_call(&logged_session, &name, 0, false);
-        fail_runtime(&format!("policy_denied: {e:#}"));
+        fail_runtime(&format!("{e:#}"));
     }
     let start = std::time::Instant::now();
     let out = match (v.run)(&ctx, &reg, &name, &words) {
@@ -92,7 +92,7 @@ fn main() {
     };
     let ms = start.elapsed().as_millis() as u64;
     if let Err(e) = reg.hooks_after(&ctx, &name, &words, &out) {
-        fail_runtime(&format!("policy_denied: {e:#}"));
+        fail_runtime(&format!("{e:#}"));
     }
     // Evidence log: every call appends one JSONL row (verb, ms, ok).
     // The audit verb reads this back: usage, error rate, dead verbs.
