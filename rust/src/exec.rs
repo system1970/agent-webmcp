@@ -100,6 +100,61 @@ impl Catalog {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn leaf(name: &str, desc: &str) -> Leaf {
+        Leaf {
+            name: name.to_string(),
+            desc: desc.to_string(),
+            required: vec![],
+            run: Box::new(|_| Ok(serde_json::json!({}))),
+        }
+    }
+
+    fn catalog() -> Catalog {
+        let mut leaves = HashMap::new();
+        leaves.insert("cart_add_item".to_string(), leaf("cart_add_item", "Add a product to the basket"));
+        leaves.insert("cart_get".to_string(), leaf("cart_get", "Read the basket lines and subtotal"));
+        leaves.insert(
+            "search_products".to_string(),
+            leaf("search_products", "Full-text search of the catalogue"),
+        );
+        Catalog { leaves, calls: 0, max: 10, deadline: Instant::now() + Duration::from_secs(60) }
+    }
+
+    #[test]
+    fn search_ands_sorts_paginates() {
+        let c = catalog();
+        // AND of terms across name+description.
+        let (page, total) = c.search("cart basket", 10, 0);
+        assert_eq!(total, 2);
+        let names: Vec<&str> = page.iter().map(|v| v["tool"].as_str().unwrap()).collect();
+        assert_eq!(names, vec!["cart_add_item", "cart_get"]);
+        // Single term, paginated.
+        let (p1, t) = c.search("cart", 1, 0);
+        let (p2, _) = c.search("cart", 1, 1);
+        assert_eq!((t, p1.len(), p2.len()), (2, 1, 1));
+        assert_ne!(p1[0]["tool"], p2[0]["tool"]);
+        assert_eq!(c.search("cart", 10, 5).0.len(), 0);
+        // No match, no panic.
+        assert_eq!(c.search("zzz-nope", 10, 0).1, 0);
+        // Describe round-trips; unknown is not_found.
+        assert!(catalog().describe("cart_get").is_ok());
+        assert!(catalog().describe("nope").is_err());
+    }
+
+    #[test]
+    fn budget_claims() {
+        let mut c = catalog();
+        for _ in 0..10 {
+            c.claim().unwrap();
+        }
+        assert!(c.claim().is_err());
+    }
+}
+
 type Shared = Arc<Mutex<Catalog>>;
 
 /// Convert a QuickJS value to serde via JSON.stringify.
