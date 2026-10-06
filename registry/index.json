@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": "hello.echo",
+      "version": "0.1.0",
+      "engine": "^0.1.0",
+      "source": "dir:plugins/hello-echo",
+      "description": "echo <words> — example external verb: returns its args as JSON",
+      "permissions": ["network"],
+      "verbs": ["echo"]
+    }
+  ]
+}

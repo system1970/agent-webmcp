@@ -52,9 +52,8 @@ pub fn plugins() -> Vec<Plugin> {
             permissions: vec![],
             verbs: vec![Verb {
                 name: "plugin",
-                help: "plugin <list|new|show|add|remove> — list, scaffold, show, install, uninstall",
-                run: |_ctx, reg, _verb, args| match args.first().map(|s| s.as_str()) {
-                    Some("list") => Ok(reg.list()),
+                help: "plugin <list|new|show|add|remove|search|publish> — manage the plugin commons",
+                run: |_ctx, reg, _verb, args| match args.first().map(|s| s.as_str()) {                    Some("list") => Ok(reg.list()),
                     Some("new") => {
                         let id = crate::args::positionals(args)
                             .into_iter()
@@ -73,7 +72,7 @@ pub fn plugins() -> Vec<Plugin> {
                         let src = crate::args::positionals(args)
                             .into_iter()
                             .find(|a| a != "add")
-                            .ok_or_else(|| anyhow::anyhow!("usage: plugin add <dir|git-url> [--here]"))?;
+                            .ok_or_else(|| anyhow::anyhow!("usage: plugin add <dir|git-url|name> [--here]"))?;
                         crate::ext::add(reg, &src, crate::args::has(args, "--here"))
                     }
                     Some("remove") => {
@@ -83,7 +82,25 @@ pub fn plugins() -> Vec<Plugin> {
                             .ok_or_else(|| anyhow::anyhow!("usage: plugin remove <id>"))?;
                         crate::ext::remove(&id)
                     }
-                    _ => anyhow::bail!("usage: plugin <list|new|show|add|remove>"),
+                    Some("search") => {
+                        let q = crate::args::positionals(args)
+                            .into_iter()
+                            .filter(|a| a != "search")
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        if q.trim().is_empty() {
+                            anyhow::bail!("usage: plugin search <terms>");
+                        }
+                        Ok(crate::ext::search_index(&q))
+                    }
+                    Some("publish") => {
+                        let dir = crate::args::positionals(args)
+                            .into_iter()
+                            .find(|a| a != "publish")
+                            .ok_or_else(|| anyhow::anyhow!("usage: plugin publish <dir> [--here]"))?;
+                        crate::ext::publish(&dir, crate::args::has(args, "--here"))
+                    }
+                    _ => anyhow::bail!("usage: plugin <list|new|show|add|remove|search|publish>"),
                 },
             },
             Verb {

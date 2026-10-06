@@ -500,7 +500,8 @@ Playbook for agents: when to use {verb}, inputs, outputs, gates.
 /// invocation — the running registry is already booted and is never
 /// mutated mid-call. User scope by default, `./plugins` with --here.
 pub fn add(reg: &Registry, source: &str, here: bool) -> anyhow::Result<serde_json::Value> {
-    let src = materialize_source(source)?;
+    let resolved = resolve_index_source(source)?;
+    let src = materialize_source(&resolved)?;
     let _cleanup = Cleanup(src.cloned_temp());
     let m = read_manifest(&src.dir)?;
     if reg.plugins_for_list().iter().any(|p| p.id == m.id) {
@@ -551,9 +552,45 @@ impl Drop for Cleanup {
     }
 }
 
+/// Resolve an add source: existing dirs and git URLs pass through;
+/// anything else is an index name (`id` or `id@version`). Install
+/// re-validates the cloned manifest, so the index is a pointer only.
+fn resolve_index_source(source: &str) -> anyhow::Result<String> {
+    if let Some(local) = source.strip_prefix("dir:") {
+        return Ok(local.to_string());
+    }
+    if PathBuf::from(source).is_dir() {
+        return Ok(source.to_string());
+    }
+    let url = source.strip_prefix("git:").unwrap_or(source);
+    if url.ends_with(".git") || url.starts_with("https://") || url.starts_with("git@") {
+        return Ok(source.to_string());
+    }
+    let (want_id, want_ver) = match source.split_once('@') {
+        Some((i, v)) => (i, Some(v)),
+        None => (source, None),
+    };
+    let mut found: Option<crate::plugin::RegistryEntry> = None;
+    for e in crate::plugin::load_index() {
+        if e.id == want_id {
+            found = Some(e);
+            break;
+        }
+    }
+    let e = found.ok_or_else(|| anyhow::anyhow!("not_found: no plugin {want_id} (try plugin search)"))?;
+    if let Some(v) = want_ver
+        && v != e.version
+    {
+        anyhow::bail!("not_found: {want_id}@{v} (index has {})", e.version);
+    }
+    Ok(e.source.clone())
+}
+
 /// Resolve a source string to a plugin dir: an existing local dir, or a
 /// git URL cloned shallow into temp (`git:` prefix or .git/URL shape).
 fn materialize_source(source: &str) -> anyhow::Result<Source> {
+    // Index entries may point at local dirs via dir:.
+    let source = source.strip_prefix("dir:").unwrap_or(source);
     let p = PathBuf::from(source);
     if p.is_dir() {
         return Ok(Source { dir: p, temp: None });
@@ -638,6 +675,84 @@ pub fn remove(id: &str) -> anyhow::Result<serde_json::Value> {
     }
     std::fs::remove_dir_all(&src)?;
     Ok(serde_json::json!({"removed": id}))
+}
+
+/// Search the registry index by AND of terms over id, description,
+/// verbs. Name hits outrank description-only.
+pub fn search_index(query: &str) -> serde_json::Value {
+    let terms: Vec<String> = query.split_whitespace().map(|t| t.to_lowercase()).collect();
+    let mut hits = vec![];
+    for e in crate::plugin::load_index() {
+        let name_hay = format!("{} {}", e.id, e.verbs.join(" ")).to_lowercase();
+        let full_hay = format!("{name_hay} {}", e.description).to_lowercase();
+        if !terms.iter().all(|t| full_hay.contains(t)) {
+            continue;
+        }
+        let score = if terms.iter().all(|t| name_hay.contains(t)) { 2 } else { 1 };
+        hits.push((score, serde_json::json!({
+            "id": e.id, "version": e.version, "engine": e.engine,
+            "source": e.source, "description": e.description,
+            "verbs": e.verbs,
+        })));
+    }
+    hits.sort_by(|a, b| b.0.cmp(&a.0).then(a.1["id"].as_str().cmp(&b.1["id"].as_str())));
+    let items: Vec<serde_json::Value> = hits.into_iter().map(|(_, v)| v).collect();
+    serde_json::json!({"results": items, "total": items.len()})
+}
+
+/// Publish a local plugin dir into an index file: validates the
+/// manifest, then upserts the entry (matched by id). Writes pretty
+/// JSON. Target: user registry by default, `--here` for the repo index
+/// (a PR then carries it to everyone).
+pub fn publish(dir: &str, here: bool) -> anyhow::Result<serde_json::Value> {
+    let d = PathBuf::from(dir);
+    if !d.is_dir() {
+        anyhow::bail!("usage: plugin publish <dir> [--here]");
+    }
+    let m = read_manifest(&d)?;
+    let verbs: Vec<String> = m.contributes.verbs.iter().map(|v| v.name.clone()).collect();
+    let desc = verbs
+        .iter()
+        .filter_map(|n| {
+            m.contributes
+                .verbs
+                .iter()
+                .find(|v| &v.name == n)
+                .map(|v| v.help.clone())
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let entry = crate::plugin::RegistryEntry {
+        id: m.id.clone(),
+        version: m.version.clone(),
+        engine: m.engine.clone(),
+        source: format!("dir:{}", d.to_string_lossy()),
+        description: desc,
+        permissions: m.permissions.clone(),
+        verbs,
+    };
+    let path = if here {
+        PathBuf::from("registry/index.json")
+    } else {
+        let home = std::env::var("HOME").unwrap_or("/tmp".into());
+        PathBuf::from(home).join(".agent-webmcp/registry.json")
+    };
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut plugins = if path.is_file() {
+        let raw = std::fs::read_to_string(&path)?;
+        serde_json::from_str::<crate::plugin::RegistryIndex>(&raw)
+            .map(|i| i.plugins)
+            .unwrap_or_default()
+    } else {
+        vec![]
+    };
+    plugins.retain(|e| e.id != entry.id);
+    plugins.push(entry.clone());
+    plugins.sort_by(|a, b| a.id.cmp(&b.id));
+    std::fs::write(&path, serde_json::to_string_pretty(&serde_json::json!({"version": 1, "plugins": plugins}))?)?;
+    Ok(serde_json::json!({"published": entry.id, "index": path.to_string_lossy()}))
 }
 
 /// Show one plugin: registry entry plus manifest, skill paths, and
@@ -812,5 +927,24 @@ mod tests {
         // No manifest metadata without a boot load: built-ins refuse.
         assert!(remove("core.version").is_err());
         assert!(remove("no.such.plugin").is_err());
+    }
+
+    #[test]
+    fn index_search_ranks_names_first() {
+        let out = search_index("hello echo");
+        assert_eq!(out["total"], serde_json::json!(1));
+        assert_eq!(out["results"][0]["id"], serde_json::json!("hello.echo"));
+        assert_eq!(search_index("zzz-nope")["total"], serde_json::json!(0));
+    }
+
+    #[test]
+    fn name_resolution_needs_index_hit() {
+        assert!(resolve_index_source("no.such.plugin").is_err());
+        assert!(resolve_index_source("no.such.plugin@9.9.9").is_err());
+        // dir: prefix resolves locally without any index.
+        assert_eq!(
+            resolve_index_source("dir:/tmp").unwrap(),
+            "/tmp".to_string()
+        );
     }
 }
