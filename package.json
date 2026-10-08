@@ -14,6 +14,7 @@
     "test": "bun test src",
     "review": "bun ./scripts/review.ts",
     "eval:transport": "bun ./scripts/eval-transport.ts",
+    "eval:sessions": "bun ./scripts/eval-sessions.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

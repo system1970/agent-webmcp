@@ -4,7 +4,7 @@ import { Schema } from "effect"
 // the fix. The fix is the point: a novel string has zero model priors, so
 // the error must imply the next action (errno discipline, not CDP codes).
 export class TransportFailed extends Schema.TaggedError<TransportFailed>()("TransportFailed", {
-  reason: Schema.Literals(["no-browser", "flags-missing", "timeout", "protocol"]),
+  reason: Schema.Literals(["no-browser", "flags-missing", "timeout", "protocol", "navigated"]),
   operation: Schema.String,
   message: Schema.String,
   // Numeric CDP refusal code when the failure is a browser refusal

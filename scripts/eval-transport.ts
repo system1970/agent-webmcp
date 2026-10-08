@@ -2,7 +2,7 @@
 // Usage: `bun run eval:transport`. Not run in CI (no browser there).
 // Three evals, zero tokens: bad endpoint, unflagged 152, live list+invoke.
 import { Console, Effect, Schema } from "effect"
-import { dial, attachPage, navigate, collectTools, invokeTool, closePage } from "../src/transport/client.ts"
+import { dial, attachPage, navigate, collectTools, invokeTool, closePage, sessionTools } from "../src/transport/client.ts"
 import type { Connection } from "../src/transport/client.ts"
 import { launchChromium } from "../src/transport/launch.ts"
 import { TransportFailed } from "../src/transport/errors.ts"
@@ -58,10 +58,10 @@ const evalTwoPages = Effect.fn("eval.twoPages")(function* () {
         // fix this by holding the subscription open from attach.)
         const a = yield* attachPage(conn)
         yield* navigate(conn, a.sessionId, DEMO)
-        const toolsA = yield* collectTools(conn, a.sessionId, 4000)
+        const toolsA = yield* sessionTools(conn, a.sessionId, 4000)
         const b = yield* attachPage(conn)
         yield* navigate(conn, b.sessionId, DEMO)
-        const toolsB = yield* collectTools(conn, b.sessionId, 4000)
+        const toolsB = yield* sessionTools(conn, b.sessionId, 4000)
         yield* Console.log(`eval2 two-pages -> A=[${toolsA.map((t) => t.name).join(",")}] B=[${toolsB.map((t) => t.name).join(",")}]`)
         const framesDiffer = toolsA.some((t) =>
           t.name === "searchFlights" &&
@@ -82,7 +82,7 @@ const evalLive = Effect.fn("eval.live")(function* () {
       Effect.gen(function* () {
         const page = yield* attachPage(conn)
         yield* navigate(conn, page.sessionId, DEMO)
-        const tools = yield* collectTools(conn, page.sessionId, 4000)
+        const tools = yield* sessionTools(conn, page.sessionId, 4000)
         yield* Console.log(`eval3 live -> tools=[${tools.map((t) => t.name).join(", ")}]`)
         const search = tools.find((t) => t.name === "searchFlights")
         if (search === undefined) {
@@ -97,7 +97,7 @@ const evalLive = Effect.fn("eval.live")(function* () {
         yield* Console.log(`eval3 live -> status=${result.status} (want Completed)`)
         // The catalog keeps moving after a search (per-state registration):
         // the post-search surface must include the results tools.
-        const after = yield* collectTools(conn, page.sessionId, 4000)
+        const after = yield* sessionTools(conn, page.sessionId, 4000)
         yield* Console.log(`eval3 live -> after=[${after.map((t) => t.name).join(", ")}]`)
         const reshaped = after.some((t) => t.name === "listFlights")
         yield* Console.log(`eval3 live -> stats=${JSON.stringify(conn.stats)}`)

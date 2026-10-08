@@ -70,7 +70,10 @@ const WireTool = Schema.Struct({
   description: Schema.optional(Schema.String),
   inputSchema: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   annotations: Schema.optional(WireAnnotations),
-  frameId: Schema.String
+  // Present on CDP toolsAdded events, absent from the page surface
+  // (snapshotTools attributes the main frame). Merge quarantines
+  // frameless entries; snapshot fills them.
+  frameId: Schema.optional(Schema.String)
 })
 
 const ToolsEnvelope = Schema.Struct({ tools: Schema.Array(Schema.Unknown) })
@@ -280,10 +283,27 @@ export const attachPage = Effect.fn("transport.attachPage")(function* (
     yield* conn.call("Target.attachToTarget", { targetId, flatten: true })
   ).pipe(Effect.mapError((issue) => decodeFailed("Target.attachToTarget", "{sessionId}", issue)))
   const sessionId = attached.sessionId
+  yield* enableSession(conn, sessionId)
+  return { targetId, sessionId }
+})
+
+// One place for the per-session enable pair (attach + reattach share it).
+const enableSession = Effect.fn("transport.enableSession")(function* (
+  conn: Connection,
+  sessionId: string
+) {
   yield* conn.call("Page.enable", {}, sessionId)
+  yield* enableWebMcp(conn, sessionId)
+})
+
+// Enable the WebMCP domain on a session. Older builds answer -32601
+// (method not found): below the floor, with the floor fix attached.
+const enableWebMcp = Effect.fn("transport.enableWebMcp")(function* (
+  conn: Connection,
+  sessionId: string
+) {
   yield* conn.call("WebMCP.enable", {}, sessionId).pipe(
     Effect.catch((failure) => {
-      // Older builds answer -32601 (method not found) without the flags.
       if (failure instanceof TransportFailed && failure.code === -32601) {
         return Effect.fail(new TransportFailed({
           reason: "flags-missing",
@@ -295,9 +315,38 @@ export const attachPage = Effect.fn("transport.attachPage")(function* (
       return Effect.fail(failure)
     })
   )
-  return { targetId, sessionId }
 })
 
+// Reattach to a recorded target: the session behind a persisted handle.
+// A fresh flattened session each call (sessionIds die with the socket).
+// Attach-phase failure means one thing: the target is gone (closed,
+// navigated-away container, browser restarted) — reason navigated, never
+// a generic protocol shrug.
+export const reattach = Effect.fn("transport.reattach")(function* (
+  conn: Connection,
+  targetId: string
+) {
+  const raw = yield* conn.call("Target.attachToTarget", { targetId, flatten: true }).pipe(
+    Effect.catch((failure) => Effect.fail(
+      // Verified live: dead targets answer -32602 ("No target with given
+      // id"). Anything else (timeout, socket death) is itself — rethrown.
+      failure instanceof TransportFailed && failure.code === -32602
+        ? new TransportFailed({
+          reason: "navigated",
+          operation: "Target.attachToTarget",
+          message: `target ${targetId} is gone (closed, or its browser restarted)`,
+          fix: "close the dead handle and open the page again."
+        })
+        : failure
+    ))
+  )
+  const attached = yield* Schema.decodeUnknownEffect(SessionAttached)(raw).pipe(
+    Effect.mapError((issue) => decodeFailed("Target.attachToTarget", "{sessionId}", issue))
+  )
+  const sessionId = attached.sessionId
+  yield* enableSession(conn, sessionId)
+  return { targetId, sessionId }
+})
 // Wait for one matching event. Interrupt-safe: the listener unregisters when
 // the wait ends for any reason (match, timeout, interruption).
 export const waitForEvent = Effect.fn("transport.waitForEvent")(function* (
@@ -364,7 +413,121 @@ export interface MergeResult {
   readonly quarantined: number
 }
 
+// Snapshot the page's current tools from the page surface. Proven live:
+// WebMCP.enable does NOT backfill already-registered tools on a fresh
+// session (reattached sessions see nothing), so a reattach must seed from
+// document.modelContext directly. Events remain the live-update path.
+const EvalSnapshot = Schema.Struct({
+  result: Schema.Struct({ value: Schema.Unknown })
+})
+
+const FrameTree = Schema.Struct({
+  frameTree: Schema.Struct({ frame: Schema.Struct({ id: Schema.String }) })
+})
+
+// Snapshot the page's current tools from the page surface. Proven live:
+// WebMCP.enable does NOT backfill already-registered tools on a fresh
+// session (reattached sessions see nothing), so a reattach must seed from
+// document.modelContext directly. Events remain the live-update path —
+// sessionTools merges both, events winning on name+frame.
+export const snapshotTools = Effect.fn("transport.snapshotTools")(function* (
+  conn: Connection,
+  sessionId: string
+) {
+  const tree = yield* Schema.decodeUnknownEffect(FrameTree)(
+    yield* conn.call("Page.getFrameTree", {}, sessionId)
+  ).pipe(
+    Effect.mapError((issue) => decodeFailed("Page.getFrameTree", "{frameTree.frame.id}", issue))
+  )
+  const mainFrame = tree.frameTree.frame.id
+  const reply = yield* conn.call(
+    "Runtime.evaluate",
+    {
+      // Await INSIDE: stringifying the bare promise yields "{}".
+      expression: `(async () => { try {
+        const tools = await document.modelContext.getTools()
+        return JSON.stringify({ tools: tools.map((t) => ({
+          name: t.name,
+          description: t.description ?? "",
+          inputSchema: typeof t.inputSchema === "string" ? JSON.parse(t.inputSchema) : (t.inputSchema ?? {}),
+          annotations: t.annotations ?? {}
+        })) })
+      } catch (e) { return JSON.stringify({ error: String(e) }) } })()`,
+      awaitPromise: true,
+      returnByValue: true
+    },
+    sessionId
+  )
+  const evaluated = yield* Schema.decodeUnknownEffect(EvalSnapshot)(reply).pipe(
+    Effect.mapError((issue) => decodeFailed("Runtime.evaluate", "{result.value}", issue))
+  )
+  if (typeof evaluated.result.value !== "string") {
+    return yield* Effect.fail(decodeFailed("Runtime.evaluate", "JSON string", evaluated.result.value))
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(evaluated.result.value)
+  } catch {
+    return yield* Effect.fail(decodeFailed("Runtime.evaluate", "JSON string", "unparseable"))
+  }
+  // Main-frame attribution: the page surface names no frames, and this
+  // session reads the main frame. Iframe tools get the main frame id —
+  // invoking one targets the wrong frame and the browser refuses as a
+  // TransportFailed (exit 1), not page data. Live-subscription sessions
+  // (daemon) carry true frameIds from toolsAdded.
+  if (typeof parsed === "object" && parsed !== null && "error" in parsed) {
+    return yield* Effect.fail(new TransportFailed({
+      reason: "flags-missing",
+      operation: "snapshotTools",
+      message: `page surface broken: ${String((parsed as { error: unknown }).error)}`,
+      fix: webmcpFloorFix
+    }))
+  }
+  const tools: Array<PageTool> = []
+  let quarantined = 0
+  if (typeof parsed === "object" && parsed !== null && Array.isArray((parsed as { tools: unknown }).tools)) {
+    for (const raw of (parsed as { tools: Array<unknown> }).tools) {
+      try {
+        const tool = Schema.decodeUnknownSync(WireTool)(raw)
+        tools.push({
+          name: tool.name,
+          description: tool.description ?? "",
+          inputSchema: tool.inputSchema,
+          annotations: tool.annotations ?? {},
+          frameId: mainFrame
+        })
+      } catch {
+        quarantined++
+      }
+    }
+  }
+  if (quarantined > 0) {
+    yield* Console.log(`transport: snapshot quarantined ${quarantined} malformed tool entries (skipped, catalog intact)`)
+  }
+  return tools
+})
+
+// Full catalog for a reattached session: seed from the surface, fold in
+// whatever the live window catches (late registrants carry true frameIds
+// and win on name+frame). Either source alone lies by omission.
+export const sessionTools = Effect.fn("transport.sessionTools")(function* (
+  conn: Connection,
+  sessionId: string,
+  windowMs = 2000
+) {
+  const seeded = yield* snapshotTools(conn, sessionId)
+  const live = yield* collectTools(conn, sessionId, windowMs)
+  const catalog = new Map<string, PageTool>()
+  for (const tool of seeded) catalog.set(`${tool.frameId}::${tool.name}`, tool)
+  for (const tool of live) catalog.set(`${tool.frameId}::${tool.name}`, tool)
+  return [...catalog.values()]
+})
 // Merge one WebMCP toolsAdded/toolsRemoved event into the catalog. Pure.
+// Policy twin to snapshotTools (which fills mainFrame): events CARRY
+// frameIds, so a frameless event entry is corrupt data → quarantine.
+// The surface NAMES no frames, so snapshot attribution is the only
+// reading available. Same omission, opposite evidence — hence opposite
+// defaults, both counted, never silent.
 // Every entry is Schema-decoded; malformed entries are quarantined
 // (skipped and counted), never keyed as `undefined::undefined`.
 // Quarantine, not failure: this runs on a live subscription where one bad
@@ -389,6 +552,10 @@ export const mergeToolEvent = (
       for (const raw of tools) {
         try {
           const tool = Schema.decodeUnknownSync(WireTool)(raw)
+          if (tool.frameId === undefined) {
+            quarantined++
+            continue
+          }
           next.set(`${tool.frameId}::${tool.name}`, {
             name: tool.name,
             description: tool.description ?? "",

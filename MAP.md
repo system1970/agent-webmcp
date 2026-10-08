@@ -205,6 +205,47 @@ when the code moves. Only this region's agent writes this file.
   flightsearch demo, zero stray browsers (SIGKILL close).
   `scripts/eval-transport.ts:49`
 
+### Sessions + verbs (Unit 2)
+
+- Sessions persist as re-attachable handles on disk
+  (`/tmp/opencode/agent-webmcp-sessions/<handle>.json`), not live
+  sockets: every verb dials, reattaches the recorded target, works,
+  closes. Tmp dies on reboot, as do browsers — records never outlive
+  the machine. `src/sessions/store.ts:1`
+- `open [--cdp URL [--target SUB]] [--port N] [--json] <url>` launches
+  detached (survives the CLI; `close` kills) or borrows a foreign tab
+  (navigates it — stated in help; never closes/kills foreign). Refuses
+  below-floor pages where the probe fails. `src/commands/open.ts:14`
+- `list <handle> [tool] [--json]`: stat-like rows (name, desc bits,
+  schema size); full schema on demand; tool-less pages print a fact,
+  exit 0. `src/commands/list.ts:1`
+- `invoke <handle> <tool> '<json>'`: Completed-with-Error is data;
+  output always delimited + origin-labeled + untrusted; ambiguous
+  same-name frames fail with candidates. `src/commands/invoke.ts:9`
+- `close <handle|--all>`: closes targets, kills owned browsers +
+  profiles, drops records. Dead browsers are not errors.
+  `src/commands/close.ts:1`
+- `CliFailure` is the middle lane: clean stderr + exit 1. Usage stays
+  exit 2, defects stay dumps. `src/commands/failure.ts:1`
+- Proven live: `WebMCP.enable` does NOT backfill on fresh sessions —
+  reattached catalogs seed from `snapshotTools` (page surface) merged
+  with the live window (`sessionTools`, events win).
+  `src/transport/client.ts:424`
+- `reattach` maps attach-phase failure to `navigated` (verified live:
+  dead targets answer -32602; anything else rethrows).
+  `src/transport/client.ts:317`
+- Handles are jailed (`^s_[a-z0-9]+$`): traversal refused, removal
+  failures loud. Verb budgets live in one block (`budgets.ts`).
+  Annotations print only what the page claims (no capability defaults).
+- Known limit: snapshot tools attribute the main frame (the surface
+  names none). Iframe tools mis-invoke as TransportFailed, honestly but
+  wrongly; held-subscription sessions (daemon) will carry true frameIds.
+  Event entries without frameIds quarantine instead — opposite evidence,
+  opposite default, both counted.
+- `eval:sessions` runs 9 checks across separate CLI processes
+  (open/list/invoke/unknown-tool/tool-less/close/usage-2/foreign-target/
+  foreign-alive), all green 2026-10-08. `scripts/eval-sessions.ts:1`
+
 ### Research
 
 - `docs/research/webmcp-codemode.md` records the WebMCP spec surface
@@ -241,10 +282,10 @@ when the code moves. Only this region's agent writes this file.
 |---|---|---|
 | `AGENTS.md` | `0e4adb726623` | agent-webmcp |
 | `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
-| `package.json` | `ae10daead5ea` | agent-webmcp |
+| `package.json` | `f3db92aa2aba` | agent-webmcp |
 | `tsconfig.json` | `3443c8284415` | agent-webmcp |
-| `src/main.ts` | `00b779f4df5d` | agent-webmcp |
-| `src/cli.ts` | `70f836ac5db1` | agent-webmcp |
+| `src/main.ts` | `732525a39f85` | agent-webmcp |
+| `src/cli.ts` | `c8b2a1c7c40c` | agent-webmcp |
 | `src/version.ts` | `1067c7fbdd05` | agent-webmcp |
 | `src/commands/doctor.ts` | `1ca98d076742` | agent-webmcp |
 | `src/commands/mcp-list.ts` | `dec84e5ad272` | agent-webmcp |
@@ -262,11 +303,22 @@ when the code moves. Only this region's agent writes this file.
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
 | `scripts/compile.ts` | `abe2cc9c570f` | agent-webmcp |
-| `src/transport/errors.ts` | `a2f7ef737aef` | agent-webmcp |
-| `src/transport/client.ts` | `82bd9a031571` | agent-webmcp |
-| `src/transport/launch.ts` | `bbeb377b54e4` | agent-webmcp |
-| `src/transport/transport.test.ts` | `5ca754fe2c60` | agent-webmcp |
-| `scripts/eval-transport.ts` | `de52577ea757` | agent-webmcp |
+| `src/transport/errors.ts` | `fd6d83e4adf2` | agent-webmcp |
+| `src/transport/client.ts` | `16e5820f0bf9` | agent-webmcp |
+| `src/transport/launch.ts` | `0c4799244fb1` | agent-webmcp |
+| `src/transport/transport.test.ts` | `2ec1e6d0f24e` | agent-webmcp |
+| `scripts/eval-transport.ts` | `3282f5671797` | agent-webmcp |
+| `src/commands/failure.ts` | `8ae289e420fb` | agent-webmcp |
+| `src/commands/open.ts` | `4b583ebaa47e` | agent-webmcp |
+| `src/commands/list.ts` | `fe38d2aaaecb` | agent-webmcp |
+| `src/commands/invoke.ts` | `51081cf7399f` | agent-webmcp |
+| `src/commands/close.ts` | `4b92ee8c9d2f` | agent-webmcp |
+| `src/sessions/store.ts` | `ad83d18374cb` | agent-webmcp |
+| `src/sessions/connect.ts` | `07af85055e7e` | agent-webmcp |
+| `src/sessions/store.test.ts` | `ec2d9c5274da` | agent-webmcp |
+| `src/transport/devtools.ts` | `d387cffadc5d` | agent-webmcp |
+| `scripts/eval-sessions.ts` | `0122cd5b177a` | agent-webmcp |
+| `src/commands/budgets.ts` | `06886f355e2a` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |
 | `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
 

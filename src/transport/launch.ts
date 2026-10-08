@@ -8,20 +8,16 @@ import { TransportFailed } from "./errors.ts"
 export interface Launched {
   readonly httpEndpoint: string
   readonly close: Effect.Effect<void>
+  readonly pid: number
+  readonly port: number
 }
 
 const findExecutable = Effect.fn("transport.findExecutable")(function* () {
   const candidates = ["chromium", "google-chrome", "google-chrome-stable"]
   for (const bin of candidates) {
-    const proc = Bun.spawnSync(["which", bin])
-    const out = yield* Effect.sync(() => Buffer.from(proc.stdout).toString("utf8")).pipe(
-      Effect.mapError(() => new TransportFailed({
-        reason: "no-browser",
-        operation: "launch",
-        message: "PATH lookup itself failed",
-        fix: "set CHROMIUM_PATH to the binary directly."
-      }))
-    )
+    const proc = yield* Effect.sync(() => Bun.spawnSync(["which", bin]))
+    if (proc.exitCode !== 0) continue
+    const out = yield* Effect.sync(() => new TextDecoder().decode(proc.stdout))
     const path = out.trim().split("\n")[0]?.trim() ?? ""
     if (path !== "") return path
   }
@@ -34,7 +30,8 @@ const findExecutable = Effect.fn("transport.findExecutable")(function* () {
 })
 
 export const launchChromium = Effect.fn("transport.launchChromium")(function* (
-  port = 9333
+  port = 9333,
+  detached = false
 ) {
   if (!Number.isInteger(port) || port < 1024 || port > 65535) {
     return yield* Effect.fail(new TransportFailed({
@@ -59,10 +56,16 @@ export const launchChromium = Effect.fn("transport.launchChromium")(function* (
     "--no-default-browser-check",
     "about:blank"
   ]
-  const proc = yield* Effect.sync(() => Bun.spawn([exe, ...args], {
-    stdout: "ignore",
-    stderr: "pipe"
-  }))
+  const proc = yield* Effect.sync(() => {
+    const spawned = Bun.spawn([exe, ...args], {
+      stdout: "ignore",
+      stderr: "pipe"
+    })
+    // Detached (open verb): the browser outlives this CLI process. The
+    // session record (pid + port) is the only handle back to it.
+    if (detached) spawned.unref()
+    return spawned
+  })
   const httpEndpoint = `http://localhost:${port}`
   const kill = Effect.sync(() => {
     try {
@@ -82,7 +85,7 @@ export const launchChromium = Effect.fn("transport.launchChromium")(function* (
     const up = yield* Effect.tryPromise(
       () => fetch(`${httpEndpoint}/json/version`).then((res) => res.ok)
     ).pipe(Effect.catch(() => Effect.succeed(false)))
-    if (up) return { httpEndpoint, close: kill }
+    if (up) return { httpEndpoint, close: kill, pid: proc.pid, port }
     const now = yield* Effect.sync(() => Date.now())
     if (now > deadline) {
       // No raw timers: the stderr drain races the read against a timeout,

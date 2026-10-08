@@ -1,21 +1,23 @@
-import { Console, Data, Effect } from "effect"
+import { Console, Effect } from "effect"
+import { CliFailure, UsageError } from "./commands/failure.ts"
 import { doctor } from "./commands/doctor.ts"
 import { mcpList } from "./commands/mcp-list.ts"
 import { mcpServe } from "./commands/mcp-serve.ts"
+import { open } from "./commands/open.ts"
+import { list } from "./commands/list.ts"
+import { invoke } from "./commands/invoke.ts"
+import { close } from "./commands/close.ts"
 import { getVersion } from "./version.ts"
 
 // Pi-shaped dispatch: a flat table of commands, each a name plus an Effect.
 // No framework: parsing is prefix matching on argv, errors are tagged values
 // mapped to exit codes in `main.ts`. Adding a command means adding one row.
-export class UsageError extends Data.TaggedError("UsageError")<{
-  readonly message: string
-}> {}
 
 interface Command {
   readonly name: string
   readonly description: string
   readonly usage: string
-  readonly run: (args: ReadonlyArray<string>) => Effect.Effect<void, Error>
+  readonly run: (args: ReadonlyArray<string>) => Effect.Effect<void, UsageError | CliFailure | Error>
 }
 
 const commands: ReadonlyArray<Command> = [
@@ -37,6 +39,30 @@ const commands: ReadonlyArray<Command> = [
         new UsageError({ message: `mcp expects 'list' or 'serve', got '${sub ?? "(nothing)"}'` })
       )
     }
+  },
+  {
+    name: "open",
+    description: "Attach a page and record a session handle. Own browser by default; --cdp borrows (and navigates) a tab of a foreign browser.",
+    usage: "open [--cdp URL [--target SUB]] [--port N] [--json] <url>",
+    run: open
+  },
+  {
+    name: "list",
+    description: "Show a session's page tools (stat-like rows; full schema on demand).",
+    usage: "list <handle> [tool] [--json]",
+    run: list
+  },
+  {
+    name: "invoke",
+    description: "Call one page tool by name with JSON args.",
+    usage: "invoke <handle> <tool> '<json>' [--timeout ms] [--json]",
+    run: invoke
+  },
+  {
+    name: "close",
+    description: "Release a session (kills browsers we launched, never foreign ones).",
+    usage: "close <handle|--all>",
+    run: close
   }
 ]
 
@@ -49,7 +75,7 @@ const helpText = (version: string): string => [
   ``
 ].join("\n")
 
-export const dispatch = (argv: ReadonlyArray<string>): Effect.Effect<void, UsageError | Error> =>
+export const dispatch = (argv: ReadonlyArray<string>): Effect.Effect<void, UsageError | CliFailure | Error> =>
   Effect.gen(function*() {
     const version = yield* getVersion
     const [name, ...rest] = argv

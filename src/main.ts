@@ -1,4 +1,5 @@
 import { Console, Effect } from "effect"
+import { CliFailure, UsageError } from "./commands/failure.ts"
 import { dispatch } from "./cli.ts"
 
 // Thin entry: parse, run, resolve to an exit code. 0 is success, 2 is a
@@ -6,9 +7,10 @@ import { dispatch } from "./cli.ts"
 // go through `Console`; past `runPromiseExit` the runtime has settled, so
 // the edge uses raw process I/O (stderr + exit code) by design.
 const handled = dispatch(Bun.argv.slice(2)).pipe(
-  Effect.catchTag("UsageError", (error) =>
-    Console.error(`usage error: ${error.message}`).pipe(Effect.as(2))
-  )
+  Effect.catchTags({
+    UsageError: (error) => Console.error(`usage error: ${error.message}`).pipe(Effect.as(2)),
+    CliFailure: (error) => Console.error(`error: ${error.message}`).pipe(Effect.as(1))
+  })
 )
 
 const exit = await Effect.runPromiseExit(handled)
