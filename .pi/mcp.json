@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "webmcp": {
+      "command": "bun",
+      "args": [
+        "/home/pracurser/Projects/agent-webmcp/src/main.ts",
+        "mcp",
+        "serve"
+      ],
+      "description": "agent-webmcp engine tools (this repo)"
+    }
+  }
+}

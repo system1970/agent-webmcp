@@ -44,6 +44,12 @@ when the code moves. Only this region's agent writes this file.
 - Commands are `doctor` and `mcp`. `src/cli.ts:22`
 - `doctor` reports bun, platform, effect, tools. `--json` for scripts.
   `src/commands/doctor.ts:6`
+- `.pi/mcp.json` registers this repo as pi server `webmcp` (project scope).
+  `.pi/mcp.json:3`
+- The server command is `bun <repo>/src/main.ts mcp serve`.
+  `.pi/mcp.json:4`
+- Project scope needs one human trust approval inside pi before pi loads it.
+  `.pi/mcp.json:1`
 - `mcp list` prints the registry. `--json` for scripts.
   `src/commands/mcp-list.ts:6`
 - `mcp serve` exposes the registry over stdio. `src/commands/mcp-serve.ts:20`
@@ -115,6 +121,7 @@ when the code moves. Only this region's agent writes this file.
 | `src/tools/definition.ts` | `f02062268d0c` | agent-webmcp |
 | `src/tools/registry.ts` | `4181183a145d` | agent-webmcp |
 | `src/tools/web-fetch.ts` | `9b70a59031ac` | agent-webmcp |
+| `.pi/mcp.json` | `43c169a03c09` | agent-webmcp, pi |
 | `LICENSE` | `6c253b662168` | agent-webmcp |
 | `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
 
@@ -128,3 +135,6 @@ tell when this file changes. Use `agent-webmcp` for this repo.
   version string, and browser floor in that repo's copy-blocks describe this
   engine's surface. A change to CLI name, install path, or verbs is a fact
   about that surface.
+- `pi` — the harness. `.pi/mcp.json` registers this repo's tools as the
+  `webmcp` server. A change to tool names or the serve command needs
+  `pi mcp list` re-checked.
