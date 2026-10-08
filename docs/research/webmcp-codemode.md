@@ -52,6 +52,14 @@ const result = await document.modelContext.executeTool(tool, { ...args }) // str
   **stringified** result, omits input to mean `{}`. Cancel via
   `AbortSignal`. Lifecycle events: `toolchange`, `toolactivated`,
   `toolcancel`. ([index.bs](https://github.com/webmachinelearning/webmcp/blob/main/index.bs))
+- Engine finding (Chromium 152, headless, 2026-10-08): pass input as a **JSON
+  string**, not an object — `executeTool(t, '{"k":"v"}')`. An object
+  argument fails with `UnknownError: Failed to parse input arguments`
+  (the impl appears to JSON-parse the input); a string succeeds. Also:
+  `getTools()` returns `inputSchema` as a **string**, and this build
+  requires both arguments (omit nothing — pass `"{}"` for no input).
+  Verified live against pawelkubiak.dev (`list_pages`, `find_blog_posts`,
+  `find_relevant_experience`) over CDP `Runtime.evaluate`.
 - Annotations on tools: `readOnlyHint` (default false),
   `untrustedContentHint`, `consequentialHint`, `debugging`. Note the
   vocabulary differs from MCP's (`readOnlyHint`, `destructiveHint`,

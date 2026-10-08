@@ -170,7 +170,7 @@ when the code moves. Only this region's agent writes this file.
 | `src/tools/web-fetch.ts` | `b3840252c85b` | agent-webmcp |
 | `scripts/gen-versions.ts` | `dcdb00e74882` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
-| `docs/research/webmcp-codemode.md` | `fa4dbaa5b27e` | agent-webmcp |
+| `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
 | `scripts/compile.ts` | `abe2cc9c570f` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |
 | `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
