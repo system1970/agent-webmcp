@@ -124,6 +124,8 @@ when the code moves. Only this region's agent writes this file.
 - `bun run review` sends the working-tree diff to the standing
   code-reviewer subagent; BLOCKING findings gate commits. The diff and
   status both exclude `repos/` (vendored Effect would flood the reviewer).
+  Both runners proven against the same model (pi verified end-to-end
+  2026-10-08; opencode earlier). Works wherever OPENCODE_API_KEY resolves.
   `AGENTS.md:15`, `scripts/review.ts:29`
 - Input is validated with `Schema.decodeUnknownEffect`, v4 API.
   `src/tools/search.ts:33`
@@ -189,7 +191,7 @@ when the code moves. Only this region's agent writes this file.
 | `src/tools/composition.test.ts` | `713325a991a1` | agent-webmcp |
 | `docs/sessions.md` | `6bb389e93bda` | agent-webmcp |
 | `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
-| `scripts/review.ts` | `614044337599` | agent-webmcp |
+| `scripts/review.ts` | `e3a2c5b6c411` | agent-webmcp |
 | `skills/agent-webmcp/SKILL.md` | `ad2ac26007b7` | agent-webmcp, pi |
 | `.github/workflows/check.yml` | `f1810150d3df` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |

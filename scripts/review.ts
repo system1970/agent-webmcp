@@ -12,6 +12,9 @@
 export {}
 
 const REVIEW_MODEL = process.env.CODEREVIEW_MODEL ?? "opencode-go/muse-spark-1.3-contributor"
+// Auth resolves from process env at spawn (OPENCODE_API_KEY); never persist
+// it. Pass values bare — wrapping the key in literal quotes breaks auth
+// with 401s that look like an invalid key.
 
 const stagedOnly = Bun.argv.includes("--staged")
 const runnerIdx = Bun.argv.indexOf("--runner")
