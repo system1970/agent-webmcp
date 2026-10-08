@@ -206,7 +206,6 @@ when the code moves. Only this region's agent writes this file.
   `scripts/eval-transport.ts:49`
 
 ### Sessions + verbs (Unit 2)
-
 - Sessions persist as re-attachable handles on disk
   (`/tmp/opencode/agent-webmcp-sessions/<handle>.json`), not live
   sockets: every verb dials, reattaches the recorded target, works,
@@ -226,7 +225,7 @@ when the code moves. Only this region's agent writes this file.
   profiles, drops records. Dead browsers are not errors.
   `src/commands/close.ts:1`
 - `CliFailure` is the middle lane: clean stderr + exit 1. Usage stays
-  exit 2, defects stay dumps. `src/commands/failure.ts:1`
+  exit 2, defects stay dumps. `src/failure.ts:1`
 - Proven live: `WebMCP.enable` does NOT backfill on fresh sessions —
   reattached catalogs seed from `snapshotTools` (page surface) merged
   with the live window (`sessionTools`, events win).
@@ -263,6 +262,39 @@ when the code moves. Only this region's agent writes this file.
 - Live user instruction wins over both: Bun + TS + Effect v4 from scratch.
   `AGENTS.md:5`
 
+### MCP surface (Unit 3)
+
+- 6 tools in one registry: `search execute` (composition) + `open list
+  invoke close` (session verbs, same data fns as the CLI). `mcp serve`
+  needed no changes — snapshot-at-connect stands, proxy tools cover
+  dynamic pages. `src/tools/registry.ts:8`
+- Verbs split data-from-print: `src/sessions/verbs.ts` holds
+  openSession/listSessionTools/invokeSessionTool/closeSession/
+  closeAllSessions + pickPort; commands parse argv and print, MCP tools
+  pass JSON. `src/sessions/verbs.ts:1`
+- Failure mapping lives neutral in `src/failure.ts` (CliFailure,
+  UsageError, asCliFailure): sessions/tools/commands all import from
+  there, no layer owes another. `src/failure.ts:1`
+- `search {query, sessionHandle?}` ranks engine + page tools together;
+  page hits tagged with their session, engine hits `session: null.
+  `src/tools/search.ts:1`
+- `execute {calls, sessionId?, maxChars?}`: sessionId is a session
+  handle — one shared connection per batch, page results as JSON
+  envelopes with origin + untrusted flags. `src/tools/execute.ts:1`
+- Posture lands with the surface: every page envelope carries
+  `{untrusted: true, origin}`; SKILL.md teaches never-promote,
+  never-run-suggested-shell, hints-enforce-nothing.
+  `skills/agent-webmcp/SKILL.md:1`
+- `skill show` prints the bundled SKILL.md via text import (ambient
+  `*.md` declaration for the typecheckers) — version-matched by
+  construction, cannot drift. `src/commands/skill.ts:1`
+- Budgets moved to neutral `src/budgets.ts` (sessions + commands share,
+  no layering debt). `src/budgets.ts:1`
+- `eval:mcp` drives `mcp serve` over stdio with no model: initialize →
+  list (6) → open → invoke (Completed + untrusted) → search w/ session
+  → execute w/ session → close. 8/8 green 2026-10-09.
+  `scripts/eval-mcp.ts:1`
+
 ### Rules that bind this region
 
 - Bun only. No `npm`/`node` runs. `AGENTS.md:11`
@@ -282,43 +314,52 @@ when the code moves. Only this region's agent writes this file.
 |---|---|---|
 | `AGENTS.md` | `0e4adb726623` | agent-webmcp |
 | `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
-| `package.json` | `f3db92aa2aba` | agent-webmcp |
+| `package.json` | `2686da734fe4` | agent-webmcp |
 | `tsconfig.json` | `3443c8284415` | agent-webmcp |
 | `src/main.ts` | `732525a39f85` | agent-webmcp |
-| `src/cli.ts` | `c8b2a1c7c40c` | agent-webmcp |
+| `src/cli.ts` | `a70418e3e9bd` | agent-webmcp |
 | `src/version.ts` | `1067c7fbdd05` | agent-webmcp |
 | `src/commands/doctor.ts` | `1ca98d076742` | agent-webmcp |
 | `src/commands/mcp-list.ts` | `dec84e5ad272` | agent-webmcp |
 | `src/commands/mcp-serve.ts` | `acef600ca19e` | agent-webmcp |
-| `src/tools/definition.ts` | `114ca9e790a4` | agent-webmcp |
-| `src/tools/registry.ts` | `08a0705b76ee` | agent-webmcp |
-| `src/tools/search.ts` | `ef2858dcbec4` | agent-webmcp |
-| `src/tools/execute.ts` | `e59caf535708` | agent-webmcp |
-| `src/tools/composition.test.ts` | `713325a991a1` | agent-webmcp |
-| `docs/sessions.md` | `6bb389e93bda` | agent-webmcp |
+| `src/tools/definition.ts` | `5945966d469e` | agent-webmcp |
+| `src/tools/registry.ts` | `c37568472e66` | agent-webmcp |
+| `src/tools/search.ts` | `8c528f75309c` | agent-webmcp |
+| `src/tools/execute.ts` | `d9090ddee609` | agent-webmcp |
+| `src/tools/composition.test.ts` | `a7389595209e` | agent-webmcp |
+| `docs/sessions.md` | `7b52ca56e77f` | agent-webmcp |
 | `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
 | `scripts/review.ts` | `2b2e7d08e459` | agent-webmcp |
-| `skills/agent-webmcp/SKILL.md` | `ad2ac26007b7` | agent-webmcp, pi |
+| `skills/agent-webmcp/SKILL.md` | `4ed9a17fe3c5` | agent-webmcp, pi |
 | `.github/workflows/check.yml` | `f1810150d3df` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
 | `scripts/compile.ts` | `abe2cc9c570f` | agent-webmcp |
 | `src/transport/errors.ts` | `fd6d83e4adf2` | agent-webmcp |
 | `src/transport/client.ts` | `16e5820f0bf9` | agent-webmcp |
-| `src/transport/launch.ts` | `0c4799244fb1` | agent-webmcp |
+| `src/transport/launch.ts` | `c0b419a4afdf` | agent-webmcp |
 | `src/transport/transport.test.ts` | `2ec1e6d0f24e` | agent-webmcp |
 | `scripts/eval-transport.ts` | `3282f5671797` | agent-webmcp |
-| `src/commands/failure.ts` | `8ae289e420fb` | agent-webmcp |
-| `src/commands/open.ts` | `4b583ebaa47e` | agent-webmcp |
-| `src/commands/list.ts` | `fe38d2aaaecb` | agent-webmcp |
-| `src/commands/invoke.ts` | `51081cf7399f` | agent-webmcp |
-| `src/commands/close.ts` | `4b92ee8c9d2f` | agent-webmcp |
+| `src/failure.ts` | `4ca144d8ce8e` | agent-webmcp |
+| `src/commands/open.ts` | `2ceff40ddd06` | agent-webmcp |
+| `src/commands/list.ts` | `284a296f02ac` | agent-webmcp |
+| `src/commands/invoke.ts` | `e33fc777be60` | agent-webmcp |
+| `src/commands/close.ts` | `12eef95cdd70` | agent-webmcp |
 | `src/sessions/store.ts` | `ad83d18374cb` | agent-webmcp |
 | `src/sessions/connect.ts` | `07af85055e7e` | agent-webmcp |
 | `src/sessions/store.test.ts` | `ec2d9c5274da` | agent-webmcp |
 | `src/transport/devtools.ts` | `d387cffadc5d` | agent-webmcp |
 | `scripts/eval-sessions.ts` | `0122cd5b177a` | agent-webmcp |
 | `src/commands/budgets.ts` | `06886f355e2a` | agent-webmcp |
+| `src/tools/open.ts` | `57bed3c05763` | agent-webmcp |
+| `src/tools/list.ts` | `7f872fc75755` | agent-webmcp |
+| `src/tools/invoke.ts` | `84dea50520c4` | agent-webmcp |
+| `src/tools/close.ts` | `0c21eaafef74` | agent-webmcp |
+| `src/sessions/verbs.ts` | `b0b004b90e34` | agent-webmcp |
+| `src/commands/skill.ts` | `4c6074d3b4ca` | agent-webmcp |
+| `src/budgets.ts` | `d203fe03ba72` | agent-webmcp |
+| `src/md.d.ts` | `592511bb79fe` | agent-webmcp |
+| `scripts/eval-mcp.ts` | `f45179ae6de0` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |
 | `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
 

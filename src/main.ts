@@ -1,5 +1,5 @@
 import { Console, Effect } from "effect"
-import { CliFailure, UsageError } from "./commands/failure.ts"
+import { CliFailure, UsageError } from "./failure.ts"
 import { dispatch } from "./cli.ts"
 
 // Thin entry: parse, run, resolve to an exit code. 0 is success, 2 is a

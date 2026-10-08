@@ -1,6 +1,7 @@
 import { Duration, Effect } from "effect"
 import { rmSync } from "node:fs"
 import { TransportFailed } from "./errors.ts"
+import { PORT_MIN, PORT_MAX } from "../budgets.ts"
 
 // Launch a Chromium we own: headless, remote debugging on, WebMCP flags on.
 // Returns the browser HTTP endpoint (for /json/*) plus close. The caller
@@ -33,11 +34,11 @@ export const launchChromium = Effect.fn("transport.launchChromium")(function* (
   port = 9333,
   detached = false
 ) {
-  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+  if (!Number.isInteger(port) || port < PORT_MIN || port > PORT_MAX) {
     return yield* Effect.fail(new TransportFailed({
       reason: "no-browser",
       operation: "launch",
-      message: `refusing to launch on port ${port}: want an integer in 1024-65535`,
+      message: `refusing to launch on port ${port}: want an integer in ${PORT_MIN}-${PORT_MAX}`,
       fix: "pass a free unprivileged port explicitly."
     }))
   }

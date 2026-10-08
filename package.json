@@ -15,6 +15,7 @@
     "review": "bun ./scripts/review.ts",
     "eval:transport": "bun ./scripts/eval-transport.ts",
     "eval:sessions": "bun ./scripts/eval-sessions.ts",
+    "eval:mcp": "bun ./scripts/eval-mcp.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

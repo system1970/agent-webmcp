@@ -1,11 +1,13 @@
 import { Effect, Schema } from "effect"
 import type { WebmcpTool } from "./definition.ts"
-import { ToolFailed, toInputSchema } from "./definition.ts"
+import { ToolFailed, toInputSchema, catchSession } from "./definition.ts"
 import { allTools } from "./registry.ts"
+import { listSessionTools } from "../sessions/verbs.ts"
 
 const Input = Schema.Struct({
   query: Schema.String,
-  limit: Schema.optional(Schema.Number)
+  limit: Schema.optional(Schema.Number),
+  handle: Schema.optional(Schema.String)
 })
 
 const tokens = (text: string): Array<string> =>
@@ -37,7 +39,7 @@ const score = (terms: Array<string>, tool: { name: string; description: string }
 
 export const search: WebmcpTool = {
   name: "search",
-  description: "Find tools by words in their name or description. Returns matching tools as JSON. Use before execute when unsure what exists.",
+  description: "Find tools by words in their name or description. Returns matching tools as JSON. Pass handle to include that session's page tools. Use before execute when unsure what exists.",
   inputSchema: toInputSchema(Input),
   execute: (args) =>
     Effect.gen(function*() {
@@ -49,12 +51,23 @@ export const search: WebmcpTool = {
         return yield* Effect.fail(new ToolFailed({ tool: "search", message: "query is empty" }))
       }
       const limit = clampLimit(input.limit)
-      const ranked = allTools
+      const local = allTools.map((tool) => ({ name: tool.name, description: tool.description, session: null as string | null }))
+      const sessionCatalog = input.handle === undefined
+        ? null
+        : yield* listSessionTools(input.handle).pipe(catchSession("search"))
+      const catalog = sessionCatalog === null
+        ? local
+        : local.concat(sessionCatalog.tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          session: sessionCatalog.handle as string | null
+        })))
+      const ranked = catalog
         .map((tool) => ({ tool, rank: score(terms, tool) }))
         .filter((entry) => entry.rank > 0)
         .sort((a, b) => b.rank - a.rank)
         .slice(0, limit)
-        .map(({ tool }) => ({ name: tool.name, description: tool.description }))
+        .map(({ tool }) => tool)
       return { content: JSON.stringify({ query: input.query, tools: ranked }) }
     })
 }

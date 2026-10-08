@@ -1,5 +1,5 @@
 import { Console, Effect } from "effect"
-import { CliFailure, UsageError } from "./commands/failure.ts"
+import { CliFailure, UsageError } from "./failure.ts"
 import { doctor } from "./commands/doctor.ts"
 import { mcpList } from "./commands/mcp-list.ts"
 import { mcpServe } from "./commands/mcp-serve.ts"
@@ -7,6 +7,7 @@ import { open } from "./commands/open.ts"
 import { list } from "./commands/list.ts"
 import { invoke } from "./commands/invoke.ts"
 import { close } from "./commands/close.ts"
+import { skill } from "./commands/skill.ts"
 import { getVersion } from "./version.ts"
 
 // Pi-shaped dispatch: a flat table of commands, each a name plus an Effect.
@@ -63,6 +64,12 @@ const commands: ReadonlyArray<Command> = [
     description: "Release a session (kills browsers we launched, never foreign ones).",
     usage: "close <handle|--all>",
     run: close
+  },
+  {
+    name: "skill",
+    description: "Print the bundled agent skill (version-matched to this binary).",
+    usage: "skill [show]",
+    run: skill
   }
 ]
 

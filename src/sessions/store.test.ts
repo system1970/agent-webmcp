@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { rmSync } from "node:fs"
-import { CliFailure } from "../commands/failure.ts"
+import { CliFailure } from "../failure.ts"
 import { listSessions, loadSession, newHandle, removeSession, saveSession } from "./store.ts"
 import type { SessionRecord } from "./store.ts"
 

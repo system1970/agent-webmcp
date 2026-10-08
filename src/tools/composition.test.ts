@@ -19,8 +19,15 @@ const names = (content: string): Array<string> =>
   (JSON.parse(content) as { tools: Array<{ name: string }> }).tools.map((t) => t.name)
 
 describe("registry", () => {
-  test("lists search and execute", () => {
-    expect(allTools.map((t) => t.name).sort()).toEqual(["execute", "search"])
+  test("lists all six tools", () => {
+    expect(allTools.map((t) => t.name).sort()).toEqual([
+      "close",
+      "execute",
+      "invoke",
+      "list",
+      "open",
+      "search"
+    ].sort())
   })
 
   test("findTool misses cleanly", () => {
@@ -41,8 +48,32 @@ describe("search", () => {
     expect(names(await ok(search, { query: "tool", limit: 1 }))).toHaveLength(1)
   })
 
+  test("engine results carry session:null", async () => {
+    const tools = (JSON.parse(await ok(search, { query: "find tools" })) as {
+      tools: Array<{ name: string; session: string | null }>
+    }).tools
+    expect(tools.length).toBeGreaterThan(0)
+    expect(tools.every((t) => t.session === null)).toBe(true)
+  })
+
   test("unknown words match nothing", async () => {
     expect(names(await ok(search, { query: "zzzqqq" }))).toEqual([])
+  })
+
+  test("rejects malformed session handles fast", async () => {
+    const failure = await err(execute, {
+      calls: [{ tool: "search", args: { query: "x" } }],
+      sessionId: "abc"
+    })
+    expect((failure as ToolFailed).message).toMatch(/invalid session handle/)
+  })
+
+  test("unknown well-formed sessions fail as unknown", async () => {
+    const failure = await err(execute, {
+      calls: [{ tool: "search", args: { query: "x" } }],
+      sessionId: "s_deadbeef01"
+    })
+    expect((failure as ToolFailed).message).toMatch(/unknown session/)
   })
 
   test("empty query fails", async () => {
@@ -128,14 +159,6 @@ describe("execute", () => {
   test("rejects empty batches", async () => {
     const failure = await err(execute, { calls: [] })
     expect((failure as ToolFailed).message).toMatch(/no calls/)
-  })
-
-  test("rejects sessions (unwired)", async () => {
-    const failure = await err(execute, {
-      calls: [{ tool: "search", args: { query: "x" } }],
-      sessionId: "abc"
-    })
-    expect((failure as ToolFailed).message).toMatch(/unknown session/)
   })
 
   test("rejects malformed batches", async () => {

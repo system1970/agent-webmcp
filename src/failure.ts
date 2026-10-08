@@ -1,5 +1,5 @@
 import { Data } from "effect"
-import { TransportFailed } from "../transport/errors.ts"
+import type { TransportFailed } from "./transport/errors.ts"
 
 // Usage mistakes: exit 2 with the usage line. Lives here (not cli.ts) so
 // commands can raise it without importing the dispatcher.

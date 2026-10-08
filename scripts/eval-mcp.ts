@@ -1,0 +1,210 @@
+// Unit 3 eval: the MCP surface over stdio, no model. Usage:
+// `bun run eval:mcp`. Manual (needs network + chromium).
+// initialize -> tools/list (6 tools), 8 checks -> call open -> call
+// invoke (Completed, untrusted:true) -> call search w/ sessionHandle ->
+// call close.
+import { Console, Effect } from "effect"
+
+const DEMO = "https://googlechromelabs.github.io/webmcp-tools/demos/react-flightsearch/"
+
+// Minimal JSON-RPC client over a spawned `mcp serve`. One writer, one
+// line-reader; responses matched by id.
+interface McpServer {
+  readonly call: (method: string, params: unknown) => Promise<unknown>
+  readonly notify: (method: string, params: unknown) => void
+  readonly stop: () => void
+  readonly errTail: Array<string>
+}
+
+const startServer = (): McpServer => {
+  // Resolved from the script's own dir: the eval must run from any cwd.
+  const entry = `${import.meta.dir}/../src/main.ts`
+  const proc = Bun.spawn(["bun", entry, "mcp", "serve"], {
+    stdout: "pipe",
+    stderr: "pipe",
+    stdin: "pipe"
+  })
+  let nextId = 1
+  const pending = new Map<number, (msg: unknown) => void>()
+  const lines: Array<string> = []
+  const errTail: Array<string> = []
+  let buffer = ""
+  // Fire-and-forget pump by design: it only appends to locals the fiber
+  // reads after awaits. The manual timer below (not Effect.timeout) owns
+  // map hygiene — an outer interrupt cannot clean a callback map.
+  const pump = (async () => {
+    const reader = proc.stdout.getReader()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += new TextDecoder().decode(value)
+      const parts = buffer.split("\n")
+      buffer = parts.pop() ?? ""
+      for (const line of parts) {
+        const text = line.trim()
+        if (text === "") continue
+        try {
+          const msg = JSON.parse(text) as { id?: number }
+          if (msg.id !== undefined && pending.has(msg.id)) {
+            pending.get(msg.id)?.(msg)
+            pending.delete(msg.id)
+          } else {
+            lines.push(text)
+          }
+        } catch {}
+      }
+    }
+  })()
+  void pump
+  const drainErr = (async () => {
+    const reader = proc.stderr.getReader()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      errTail.push(new TextDecoder().decode(value))
+      if (errTail.length > 20) errTail.shift()
+    }
+  })()
+  void drainErr
+  const call = (method: string, params: unknown): Promise<unknown> =>
+    new Promise((resolve, reject) => {
+      const id = nextId++
+      pending.set(id, resolve)
+      setTimeout(() => {
+        if (pending.delete(id)) reject(new Error(`mcp timeout on ${method}`))
+      }, 60000)
+      proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n")
+    })
+  const notify = (method: string, params: unknown): void => {
+    proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n")
+  }
+  const stop = (): void => {
+    try {
+      proc.kill("SIGKILL")
+    } catch {}
+  }
+  const server: McpServer = { call, notify, stop, errTail }
+  return server
+}
+
+const check = Effect.fn("eval.check")(function* (name: string, cond: boolean, detail: string) {
+  yield* Console.log(`${cond ? "PASS" : "FAIL"} ${name} :: ${detail.slice(0, 100)}`)
+  return cond
+})
+
+const textOf = (response: unknown): string => {
+  const content = (response as { result?: { content?: Array<{ text?: string }> } }).result?.content
+  return content?.map((c) => c.text ?? "").join("\n") ?? ""
+}
+
+const main = Effect.fn("eval.main")(function* () {
+  const results: Array<boolean> = []
+  const server = yield* Effect.sync(() => startServer())
+  // Proc lifetime is scope-free but not structureless: ensuring stops the
+  // server however the body ends (the sync callbacks inside stay raw —
+  // they only touch locals, documented at startServer).
+  return yield* Effect.ensuring(
+    runChecks(server, results),
+    Effect.sync(() => server.stop())
+  )
+})
+
+const runChecks = Effect.fn("eval.checks")(function* (
+  server: McpServer,
+  results: Array<boolean>
+) {
+  // Last rpc failure, preserved for check detail: a crashed serve must
+  // report its cause, never FAIL with empty detail.
+  let lastError = ""
+  const rpc = (method: string, params: unknown): Effect.Effect<unknown> =>
+    Effect.tryPromise(() => server.call(method, params)).pipe(
+      Effect.catch((cause) => {
+        lastError = String(cause)
+        return Effect.succeed(null)
+      })
+    )
+  const detail = (text: string): string =>
+    text !== "" ? text : `rpc failed: ${lastError}${server.errTail.length > 0 ? ` :: serve stderr: ${server.errTail.join("").slice(-300)}` : ""}`
+
+  const init = (yield* rpc("initialize", {
+    protocolVersion: "2024-11-05",
+    capabilities: {},
+    clientInfo: { name: "eval-mcp", version: "0.0.0" }
+  })) as { result?: { serverInfo?: { name?: string } } } | null
+  results.push(yield* check("initialize", init?.result?.serverInfo?.name === "agent-webmcp", detail(JSON.stringify(init?.result?.serverInfo ?? null))))
+  server.notify("notifications/initialized", {})
+
+  const listed = (yield* rpc("tools/list", {})) as {
+    result: { tools: Array<{ name: string }> }
+  } | null
+  const names = listed?.result.tools.map((t) => t.name).sort() ?? []
+  const want = ["close", "execute", "invoke", "list", "open", "search"]
+  results.push(yield* check(
+    "tools-list-6",
+    want.every((n) => names.includes(n)),
+    detail(names.join(","))
+  ))
+
+  const opened = textOf(yield* rpc("tools/call", {
+    name: "open",
+    arguments: { url: DEMO }
+  }))
+  let handle = ""
+  try {
+    handle = (JSON.parse(opened) as { handle: string }).handle
+  } catch {}
+  results.push(yield* check("call-open", handle.startsWith("s_"), detail(opened.slice(0, 60))))
+
+  let invokedOk = false
+  let untrustedOk = false
+  if (handle !== "") {
+    const invoked = textOf(yield* rpc("tools/call", {
+      name: "invoke",
+      arguments: { handle, tool: "searchFlights", args: { origin: "SFO", destination: "JFK" } }
+    }))
+    try {
+      const report = JSON.parse(invoked) as { status: string; untrusted: boolean; origin: string }
+      invokedOk = report.status === "Completed"
+      untrustedOk = report.untrusted === true && typeof report.origin === "string"
+    } catch {}
+    results.push(yield* check("call-invoke", invokedOk, detail(invoked.slice(0, 80))))
+    results.push(yield* check("invoke-untrusted", untrustedOk, detail(invoked.slice(0, 120))))
+
+    const searched = textOf(yield* rpc("tools/call", {
+      name: "search",
+      arguments: { query: "flights", handle }
+    }))
+    let sessionHit = false
+    try {
+      const report = JSON.parse(searched) as { tools: Array<{ name: string; session: string | null }> }
+      sessionHit = report.tools.some((t) => t.session === handle)
+    } catch {}
+    results.push(yield* check("search-session", sessionHit, detail(searched.slice(0, 120))))
+
+    const batched = textOf(yield* rpc("tools/call", {
+      name: "execute",
+      arguments: {
+        calls: [{ tool: "searchFlights", args: { origin: "SFO", destination: "JFK" } }],
+        sessionId: handle
+      }
+    }))
+    let batchOk = false
+    try {
+      const report = JSON.parse(batched) as { results: Array<{ ok: boolean }> }
+      batchOk = report.results.length === 1 && report.results[0].ok === true
+    } catch {}
+    results.push(yield* check("execute-session", batchOk, detail(batched.slice(0, 120))))
+
+    const closed = textOf(yield* rpc("tools/call", {
+      name: "close",
+      arguments: { handle }
+    }))
+    results.push(yield* check("call-close", closed.includes(handle), detail(closed.slice(0, 80))))
+  }
+
+  server.stop()
+  return results.every(Boolean) ? 0 : 1
+})
+
+const exit = await Effect.runPromiseExit(main())
+process.exit(exit._tag === "Success" ? exit.value : 1)

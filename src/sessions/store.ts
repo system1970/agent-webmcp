@@ -1,6 +1,6 @@
 import { Console, Effect, Schema } from "effect"
 import { mkdirSync, chmodSync } from "node:fs"
-import { CliFailure } from "../commands/failure.ts"
+import { CliFailure } from "../failure.ts"
 
 // Persisted sessions: re-attachable handles, not live sockets. A CLI
 // invocation is one process; the browser outlives it. Each record holds
