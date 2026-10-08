@@ -16,7 +16,10 @@ Get this exact document version-matched from any binary:
 ## Two doors, one surface
 
 Everything below describes MCP tools (`open { url }`, `invoke { handle,
-tool, args }`, …). The CLI mirrors them verb-for-verb:
+tool, args }`, …). The CLI mirrors the four session verbs verb-for-verb
+(`open`, `list`, `invoke`, `close`); `search`/`execute` live behind
+`mcp serve` — there are no CLI verbs for them yet (shell composition
+today means one process per call; see Pattern B):
 
 ```bash
 agent-webmcp open --json <url>                  # prints {handle, ...}
@@ -29,12 +32,13 @@ agent-webmcp skill show                         # this document
 
 `--json` is the machine door: single-quote the args object so the shell
 passes it whole (`'{"sku":"gadget","qty":1}'`). Without `--json`, output
-is human rows. `search`/`execute` have no direct CLI verbs — reach them
-via `mcp serve` (any MCP client) or `mcp list` (inspect).
+is human rows. The composition tools have no CLI verbs — reach `search`/
+`execute` via `mcp serve` (any MCP client) or `mcp list` (inspect).
 
 ## Setup
 
-Serve the engine over stdio (project scope shown; global works too):
+MCP clients only — the CLI needs no setup, it runs standalone. Serve the
+engine over stdio (project scope shown; global works too):
 
 ```bash
 pi mcp add --local agent-webmcp -- bun <repo>/src/main.ts mcp serve
@@ -67,8 +71,10 @@ Composition (engine-local, no session needed):
 
 - `search { query, limit?, handle? }` — word-overlap ranking over
   tool names (3x) and descriptions. Pass `handle` to include that
-  session's page tools (tagged with their session). Run it before
-  guessing a tool name.
+  session's page tools (tagged with their session). When to prefer what:
+  `list` shows one session's whole catalog (complete, small); `search`
+  ranks across engine + session when you don't know the name. Run it
+  before guessing a tool name.
 - `execute { calls: [{ tool, args }], sessionId?, maxChars? }` — one turn
   for up to 5 calls, run in parallel. `sessionId` is a session handle:
   routes page-tool calls to that page. Returns
