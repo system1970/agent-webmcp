@@ -28,13 +28,34 @@ if (runnerExplicit !== undefined && runnerExplicit !== "pi" && runnerExplicit !=
 const runner: "pi" | "opencode" = runnerExplicit === "opencode" ? "opencode" : "pi"
 const diffArgs = stagedOnly ? ["diff", "--cached", "--"] : ["diff", "HEAD", "--"]
 
-const diff = await new Response(
-  Bun.spawnSync(["git", ...diffArgs, ".", ":!bun.lock", ":!repos"]).stdout
-).text()
+// New files are untracked, and `git diff HEAD` omits untracked content —
+// the gate would review the MAP without the code it describes. Intent-to-add
+// stages the file list without content, so the diff sees new files. Same
+// exclusions as the diff itself.
+const textOf = (out: Uint8Array | null): string => new TextDecoder().decode(out ?? new Uint8Array())
 
-const status = await new Response(
+const others = textOf(
+  Bun.spawnSync(["git", "ls-files", "--others", "--exclude-standard", "--", ".", ":!bun.lock", ":!repos"]).stdout
+).split("\n").map((l) => l.trim()).filter((l) => l !== "")
+if (!stagedOnly && others.length > 0) {
+  Bun.spawnSync(["git", "add", "-N", "--", ...others])
+  // The gate just wrote index state for a read-only review. Say so: the
+  // content is untouched (intent-to-add stages the file list only), but
+  // `git status` now lists these files as new.
+  console.error(`review: intent-to-add ${others.length} new file(s) so the diff sees them (index file-list only, no content staged)`)
+}
+
+const diff = textOf(
+  Bun.spawnSync(["git", ...diffArgs, ".", ":!bun.lock", ":!repos"]).stdout
+)
+
+const status = textOf(
   Bun.spawnSync(["git", "status", "--short", "--", ".", ":!repos"]).stdout
-).text()
+)
+// Lockfile drift stays visible even though the diff hides lock content.
+const lockStatus = textOf(
+  Bun.spawnSync(["git", "status", "--short", "--", "bun.lock"]).stdout
+)
 
 if (diff.trim().length === 0) {
   console.log("nothing to review: working tree matches HEAD")
@@ -52,7 +73,8 @@ const brief = [
   "Report only: do not edit, commit, or push.",
   "",
   "Context (git status):",
-  status.trim() || "(clean status, diff vs HEAD)"
+  status.trim() || "(clean status, diff vs HEAD)",
+  lockStatus.trim() !== "" ? `Lockfile: ${lockStatus.trim()}` : "Lockfile: unchanged"
 ].join("\n")
 
 const tmp = `${process.env.TMPDIR ?? "/tmp"}/agent-webmcp-review-${process.pid}-${Math.random().toString(36).slice(2)}.diff`

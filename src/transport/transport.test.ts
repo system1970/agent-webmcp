@@ -1,0 +1,159 @@
+import { describe, expect, test } from "bun:test"
+import { Effect } from "effect"
+import { TransportFailed, WEBMCP_FLAGS, flagsFix } from "./errors.ts"
+import { mergeToolEvent, waitForEvent } from "./client.ts"
+import type { CdpListener, Connection, PageTool } from "./client.ts"
+
+const tool = (name: string, frameId = "F1"): PageTool => ({
+  name,
+  description: `${name} does things`,
+  inputSchema: { type: "object" },
+  annotations: { readOnly: true },
+  frameId
+})
+
+describe("errors", () => {
+  test("TransportFailed carries reason, operation, message, fix", () => {
+    const e = new TransportFailed({
+      reason: "no-browser",
+      operation: "dial",
+      message: "nothing listens",
+      fix: "launch it"
+    })
+    expect(e._tag).toBe("TransportFailed")
+    expect(e.reason).toBe("no-browser")
+    expect(e.fix).toBe("launch it")
+  })
+
+  test("flagsFix names the exact launch flags", () => {
+    expect(flagsFix("chromium")).toContain(WEBMCP_FLAGS)
+    expect(flagsFix("chromium")).toContain("chromium")
+  })
+
+  test("TransportFailed flows through the Effect error channel", async () => {
+    const failure = await Effect.runPromise(
+      Effect.fail(new TransportFailed({
+        reason: "timeout",
+        operation: "op",
+        message: "slow"
+      })).pipe(
+        Effect.catchTag("TransportFailed", (e) => Effect.succeed(e.reason))
+      )
+    )
+    expect(failure).toBe("timeout")
+  })
+
+  test("function-form tryPromise fails (never dies) on rejection", async () => {
+    // Load-bearing for every fetch/poll in launch + evals: if v4
+    // function-form defected instead of failing, the catch below would
+    // miss it and runPromise would reject. Pinned against the vendored pin.
+    const result = await Effect.runPromise(
+      Effect.tryPromise(() => Promise.reject(new Error("boom"))).pipe(
+        Effect.catch(() => Effect.succeed("caught"))
+      )
+    )
+    expect(result).toBe("caught")
+  })
+})
+
+describe("mergeToolEvent", () => {
+  const catalogOf = (result: { catalog: Map<string, PageTool> }): Map<string, PageTool> => result.catalog
+
+  test("toolsAdded inserts keyed by frame+name", () => {
+    const next = catalogOf(mergeToolEvent(new Map(), "WebMCP.toolsAdded", { tools: [tool("a"), tool("b")] }))
+    expect([...next.keys()].sort()).toEqual(["F1::a", "F1::b"])
+  })
+
+  test("same name in two frames is two tools", () => {
+    let catalog = catalogOf(mergeToolEvent(new Map(), "WebMCP.toolsAdded", { tools: [tool("a", "F1")] }))
+    catalog = catalogOf(mergeToolEvent(catalog, "WebMCP.toolsAdded", { tools: [tool("a", "F2")] }))
+    expect(catalog.size).toBe(2)
+  })
+
+  test("toolsRemoved deletes only the named frame entry", () => {
+    let catalog = catalogOf(mergeToolEvent(new Map(), "WebMCP.toolsAdded", {
+      tools: [tool("a", "F1"), tool("a", "F2")]
+    }))
+    catalog = catalogOf(mergeToolEvent(catalog, "WebMCP.toolsRemoved", {
+      tools: [{ name: "a", frameId: "F1" }]
+    }))
+    expect([...catalog.keys()]).toEqual(["F2::a"])
+  })
+
+  test("re-added tool replaces the entry", () => {
+    let catalog = catalogOf(mergeToolEvent(new Map(), "WebMCP.toolsAdded", { tools: [tool("a")] }))
+    const changed: PageTool = { ...tool("a"), description: "new words" }
+    catalog = catalogOf(mergeToolEvent(catalog, "WebMCP.toolsAdded", { tools: [changed] }))
+    expect(catalog.size).toBe(1)
+    expect(catalog.get("F1::a")?.description).toBe("new words")
+  })
+
+  test("unknown events and malformed params leave the catalog alone", () => {
+    const before = catalogOf(mergeToolEvent(new Map(), "WebMCP.toolsAdded", { tools: [tool("a")] }))
+    expect(catalogOf(mergeToolEvent(before, "Page.loadEventFired", {})).size).toBe(1)
+    expect(catalogOf(mergeToolEvent(before, "WebMCP.toolsAdded", null)).size).toBe(1)
+    expect(catalogOf(mergeToolEvent(before, "WebMCP.toolsAdded", {})).size).toBe(1)
+  })
+
+  test("entries missing name or frameId are quarantined and counted", () => {
+    const result = mergeToolEvent(new Map(), "WebMCP.toolsAdded", {
+      tools: [{ description: "nameless" }, tool("fine")]
+    })
+    expect([...result.catalog.keys()]).toEqual(["F1::fine"])
+    expect(result.quarantined).toBe(1)
+  })
+
+  test("foreign annotation keys pass through decode (future-tolerant)", () => {
+    const result = mergeToolEvent(new Map(), "WebMCP.toolsAdded", {
+      tools: [{ ...tool("a"), annotations: { readOnly: true, consequentialHint: true } }]
+    })
+    expect(result.catalog.size).toBe(1)
+    expect(result.quarantined).toBe(0)
+  })
+})
+
+// A connection with no browser behind it: calls fail, events only fire when
+// the test fires them. Proves the wait/timeout/filter logic without a page.
+const stubConn = (): { conn: Connection; emit: (method: string, params: unknown, sessionId?: string) => void } => {
+  const listeners = new Set<CdpListener>()
+  const conn: Connection = {
+    endpoint: "stub",
+    call: () => Effect.fail(new TransportFailed({ reason: "protocol", operation: "stub", message: "no browser" })),
+    subscribe: (listener) => {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+    stats: { malformedFrames: 0, listenerErrors: 0 },
+    close: Effect.void
+  }
+  return {
+    conn,
+    emit: (method, params, sessionId) => {
+      for (const l of listeners) l(method, params, sessionId)
+    }
+  }
+}
+
+describe("waitForEvent", () => {
+  test("no matching event fails timeout with the operation named", async () => {
+    const { conn } = stubConn()
+    const failure = await Effect.runPromise(
+      waitForEvent(conn, () => false, 50, "stub-wait").pipe(Effect.flip)
+    )
+    expect(failure).toBeInstanceOf(TransportFailed)
+    expect((failure as TransportFailed).reason).toBe("timeout")
+    expect((failure as TransportFailed).fix).toBeDefined()
+  })
+
+  test("matching event resolves, other sessions ignored", async () => {
+    const { conn, emit } = stubConn()
+    const waited = Effect.runPromise(
+      waitForEvent(conn, (m) => m === "X.fired", 1000, "stub-wait", "S1")
+    )
+    emit("X.fired", { n: 1 }, "S2")
+    emit("X.fired", { n: 2 }, "S1")
+    expect(await waited).toEqual({ n: 2 })
+  })
+})

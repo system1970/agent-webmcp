@@ -122,8 +122,9 @@ when the code moves. Only this region's agent writes this file.
   reconnect note, Pattern A (native scripts) / Pattern B (no scripts).
   `skills/agent-webmcp/SKILL.md:1`
 - `bun run review` sends the working-tree diff to the standing
-  code-reviewer subagent; BLOCKING findings gate commits. The diff and
-  status both exclude `repos/` (vendored Effect would flood the reviewer).
+  code-reviewer subagent; BLOCKING findings gate commits. Intent-to-add
+  stages new files so the diff sees them (announced on stderr); both diff
+  and status exclude `bun.lock` + `repos/`.
   Both runners proven against the same model (pi verified end-to-end
   2026-10-08; opencode earlier). Works wherever OPENCODE_API_KEY resolves.
   `AGENTS.md:15`, `scripts/review.ts:29`
@@ -139,6 +140,62 @@ when the code moves. Only this region's agent writes this file.
   `package.json:11`
 - No `check` script exists. A `check` script would shadow Bun's builtin.
   `package.json:10`
+
+### The transport: WebMCP over CDP (Unit 1)
+
+- Transport is a minimal CDP client: `Target` (attach), `Page`
+  (navigate/lifecycle), `WebMCP` (tools), plus `Runtime.evaluate` for the
+  page-support probe only — never for driving pages.
+  `src/transport/client.ts:1`
+- The live protocol (probed from Chromium 152 `/json/protocol`, not docs):
+  `WebMCP.enable/disable`, `invokeTool {frameId, toolName, input}` returning
+  `{invocationId}`, `cancelInvocation`, events `toolsAdded/toolsRemoved/
+  toolInvoked/toolResponded`. Discovery is event-driven: no list command,
+  enable replays current tools. `src/transport/client.ts:1`
+- This build's annotations are `readOnly/untrustedContent/autosubmit` — no
+  `consequentialHint` in 152. `toolResponded.output` is documented untrusted
+  at the protocol level. `src/transport/client.ts:7`
+- Chromium 152 ships WebMCP unflagged: page surface defined and tools
+  register with no flags (eval2 locks this). Flags stay as fallback for
+  foreign builds. `scripts/eval-transport.ts:19`
+- `TransportFailed` names operation + reason + fix (errno discipline).
+  Reasons: `no-browser`, `flags-missing`, `timeout`, `protocol`.
+  `src/transport/errors.ts:4`
+- `invokeTool` awaits the terminal `toolResponded` for its invocationId;
+  Completed-with-Error returns as page data, only stalls fail — and stalls
+  cancel first. Default timeout 30s, never indefinite.
+  `src/transport/client.ts:461`
+- All CDP replies are Schema-decoded (`TargetCreated`, `SessionAttached`,
+  `InvokeReply`, `ToolResponded`): a malformed reply fails `protocol`, never
+  dies on a cast. `probePageSupport` maps malformed evaluate replies to
+  `protocol`, never silent false. `src/transport/client.ts:1`
+- Events carry their flattened `sessionId`; waits and snapshots filter to
+  their own session — multi-page safe. `src/transport/client.ts:301`
+- Catalog merge is pure `mergeToolEvent`, keyed name+frameId (cross-frame
+  collisions are two tools). Entries decode per-item; malformed ones are
+  quarantined, never keyed `undefined::undefined`. `collectTools` snapshots
+  honestly inside a window; sessions hold the subscription open.
+  `src/transport/client.ts:374`
+- Launched browsers get per-port `--user-data-dir` (no shared-profile
+  contention, removed on close) and SIGKILL close (no port-stealing
+  strays). Launch failures carry browser stderr.
+  `src/transport/launch.ts:1`
+- v4 gotchas, learned the hard way: `Schema.Literals([...])` for unions
+  (multi-arg `Literal` collapses to its first value); options-form
+  `Effect.tryPromise` without `catch` dies instead of failing — always pass
+  `catch` or use function form; `Effect.callback` replaces `Effect.async`
+  (interrupt cleanup unregisters listeners); no `Effect.catchAll`, use
+  `Effect.catch`. `src/transport/client.ts:1`
+- `transport.test.ts` (13 tests) locks error shape, catalog merge +
+  quarantine (incl. future-tolerant annotations), tryPromise-fails
+  pin, and wait semantics (timeout-tag mapping, session filter) on a
+  stub connection — no browser needed.
+  `scripts/eval-transport.ts` runs 3 live evals, zero tokens (bad endpoint,
+  no-flags, live list+invoke+Completed); manual, not CI (no browser there).
+  `src/transport/transport.test.ts:1`, `scripts/eval-transport.ts:1`
+- Verified 2026-10-08: 3/3 evals green against live Chromium 152 +
+  flightsearch demo, zero stray browsers (SIGKILL close).
+  `scripts/eval-transport.ts:49`
 
 ### Research
 
@@ -176,7 +233,7 @@ when the code moves. Only this region's agent writes this file.
 |---|---|---|
 | `AGENTS.md` | `0e4adb726623` | agent-webmcp |
 | `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
-| `package.json` | `29f5f7ef7bef` | agent-webmcp |
+| `package.json` | `ae10daead5ea` | agent-webmcp |
 | `tsconfig.json` | `3443c8284415` | agent-webmcp |
 | `src/main.ts` | `00b779f4df5d` | agent-webmcp |
 | `src/cli.ts` | `70f836ac5db1` | agent-webmcp |
@@ -191,12 +248,17 @@ when the code moves. Only this region's agent writes this file.
 | `src/tools/composition.test.ts` | `713325a991a1` | agent-webmcp |
 | `docs/sessions.md` | `6bb389e93bda` | agent-webmcp |
 | `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
-| `scripts/review.ts` | `e3a2c5b6c411` | agent-webmcp |
+| `scripts/review.ts` | `2b2e7d08e459` | agent-webmcp |
 | `skills/agent-webmcp/SKILL.md` | `ad2ac26007b7` | agent-webmcp, pi |
 | `.github/workflows/check.yml` | `f1810150d3df` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
 | `scripts/compile.ts` | `abe2cc9c570f` | agent-webmcp |
+| `src/transport/errors.ts` | `f3df43f71f0e` | agent-webmcp |
+| `src/transport/client.ts` | `dd500002c3d1` | agent-webmcp |
+| `src/transport/launch.ts` | `57ffbf0f13a1` | agent-webmcp |
+| `src/transport/transport.test.ts` | `de9083d23796` | agent-webmcp |
+| `scripts/eval-transport.ts` | `42a115ddbe3d` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |
 | `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
 

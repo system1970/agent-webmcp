@@ -13,6 +13,7 @@
     "compile": "bun ./scripts/compile.ts",
     "test": "bun test src",
     "review": "bun ./scripts/review.ts",
+    "eval:transport": "bun ./scripts/eval-transport.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
