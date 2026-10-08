@@ -56,14 +56,20 @@ when the code moves. Only this region's agent writes this file.
 - Stdout is the protocol in serve mode. Diagnostics go to stderr.
   `src/commands/mcp-serve.ts:15`
 - `UsageError` exits `2`. Everything else exits `1`. `src/main.ts:7`
-- Version comes from `package.json` at runtime. `src/version.ts:5`
-- `bun run compile` bakes both versions into a standalone binary via
-  `--define`, so the binary reads no files. `scripts/compile.ts:21`,
-  `package.json:11`
-- In dev the defines are absent and `src/version.ts` reads package.json
-  off disk instead. `src/version.ts:25`
+- Version comes from generated consts. `src/version.ts:6`
+- `bun run gen` derives `src/generated/versions.ts` from package.json
+  files. package.json is the single source of truth.
+  `scripts/gen-versions.ts:2`, `package.json:11`
+- The generated module is committed so fresh clones check green without
+  running gen. Re-run gen when a version changes. `scripts/gen-versions.ts:2`
+- `bun run compile` only bundles; versions ride along in the module.
+  `scripts/compile.ts:1`
+- In dev and binary alike, versions are plain consts: no file reads,
+  no defines. `src/version.ts:6`
 - Verified: binary installed at `~/.local/bin/agent-webmcp` reports `0.0.1`
-  and correct effect version from a foreign cwd. `src/version.ts:25`
+  and correct effect version from a foreign cwd. `src/version.ts:6`
+- Verified: the installed binary serves MCP and fetches (HTTP 200).
+  `src/commands/mcp-serve.ts:20`
 - `tsconfig.json` covers `src/` and `scripts/`. `tsconfig.json:13`
 - Verified: `doctor` reports bun `1.4.3`, effect `4.0.0-rc.112`.
   `src/commands/doctor.ts:6`
@@ -73,12 +79,19 @@ when the code moves. Only this region's agent writes this file.
 
 ### The tools: one registry, two doors
 
-- A tool is name, description, JSON inputSchema, and an Effect execute.
+- A tool is name, description, an Effect input schema, and an Effect execute.
   `src/tools/definition.ts:9`
+- The MCP `inputSchema` is derived via `toInputSchema`, which calls
+  `Schema.toJsonSchemaDocument`. One schema is the truth.
+  `src/tools/definition.ts:28`
+- Tool inputs stay anonymous: named schemas land in `definitions`, which
+  the helper does not forward yet. `src/tools/definition.ts:28`
 - The registry is one list. CLI and MCP both read it.
   `src/tools/registry.ts:6`
 - First tool is `web_fetch`: GET a URL, status plus 8000 chars of body.
   `src/tools/web-fetch.ts:15`
+- Its input description lives as a schema annotation, flowing into the
+  derived JSON Schema. `src/tools/web-fetch.ts:8`
 - `web_fetch` is read-only: HTTP errors return data, only network or input
   failures become `ToolFailed`. `src/tools/web-fetch.ts:10`
 - Input is validated with `Schema.decodeUnknownEffect`, v4 API.
@@ -118,18 +131,20 @@ when the code moves. Only this region's agent writes this file.
 |---|---|---|
 | `AGENTS.md` | `ebcb9dc2be3a` | agent-webmcp |
 | `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
-| `package.json` | `2e22d6bfa4e9` | agent-webmcp |
+| `package.json` | `5d0391194b82` | agent-webmcp |
 | `tsconfig.json` | `3443c8284415` | agent-webmcp |
 | `src/main.ts` | `6fc3aadee5e4` | agent-webmcp |
 | `src/cli.ts` | `836aae93cc3c` | agent-webmcp |
-| `src/version.ts` | `49128e6ff539` | agent-webmcp |
+| `src/version.ts` | `1067c7fbdd05` | agent-webmcp |
 | `src/commands/doctor.ts` | `146099bdb8a7` | agent-webmcp |
 | `src/commands/mcp-list.ts` | `331da0fad885` | agent-webmcp |
 | `src/commands/mcp-serve.ts` | `acef600ca19e` | agent-webmcp |
-| `src/tools/definition.ts` | `f02062268d0c` | agent-webmcp |
+| `src/tools/definition.ts` | `e55854b24bcc` | agent-webmcp |
 | `src/tools/registry.ts` | `4181183a145d` | agent-webmcp |
-| `src/tools/web-fetch.ts` | `9b70a59031ac` | agent-webmcp |
-| `scripts/compile.ts` | `5661b8b5c11e` | agent-webmcp |
+| `src/tools/web-fetch.ts` | `b3840252c85b` | agent-webmcp |
+| `scripts/gen-versions.ts` | `dcdb00e74882` | agent-webmcp |
+| `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
+| `scripts/compile.ts` | `abe2cc9c570f` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |
 | `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
 

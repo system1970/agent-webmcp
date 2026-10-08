@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "bun ./src/main.ts",
+    "gen": "bun ./scripts/gen-versions.ts",
     "compile": "bun ./scripts/compile.ts",
     "typecheck": "tsc --noEmit"
   },

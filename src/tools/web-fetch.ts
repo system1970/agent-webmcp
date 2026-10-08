@@ -1,11 +1,11 @@
 import { Effect, Schema } from "effect"
 import type { WebmcpTool } from "./definition.ts"
-import { ToolFailed } from "./definition.ts"
+import { ToolFailed, toInputSchema } from "./definition.ts"
 
 const MAX_BODY_CHARS = 8000
 
 const Input = Schema.Struct({
-  url: Schema.String
+  url: Schema.String.annotate({ description: "The http(s) URL to fetch." })
 })
 
 // Fetch a URL and return status plus truncated text. Read-only: HTTP errors
@@ -14,14 +14,7 @@ const Input = Schema.Struct({
 export const webFetch: WebmcpTool = {
   name: "web_fetch",
   description: "GET a URL and return the HTTP status plus the first 8000 characters of the body as text.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      url: { type: "string", description: "The http(s) URL to fetch." }
-    },
-    required: ["url"],
-    additionalProperties: false
-  },
+  inputSchema: toInputSchema(Input),
   execute: (args) =>
     Effect.gen(function*() {
       const input = yield* Schema.decodeUnknownEffect(Input)(args).pipe(
