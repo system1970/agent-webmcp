@@ -1,86 +1,88 @@
-# MAP.md — agent-webmcp (Rust)
+# MAP.md — agent-webmcp
 
 Facts about this repo. Every fact names a file and a line.
 
+This file is the map. The agent reads it at session start. The agent writes it
+when the code moves. Only this region's agent writes this file.
+
+## Rules for the map
+
+1. Facts only. No guesses. If the code does not say it, the map does not say it.
+2. Every fact ends with a source. `path:line`.
+3. Every file described here has a hash. If the hash is not the hash of the
+   file now, this map is old. Re-read the file. Write the map again.
+4. Add to the map. Do not rewrite history. Delete a line only when the file it
+   names is gone.
+5. Use short sentences. One meaning per word. Say the thing straight.
+
 ## The map
+
+<!-- The agent writes here. -->
 
 ### Shape of the repo
 
-- One Cargo package, binary `agent-webmcp`. `rust/src/*.rs`, `rust/src/verbs/*.rs`. rust/Cargo.toml:1
-- Deps: clap (derive), reqwest (blocking), tungstenite, serde_json, anyhow, nix (process+signal), rquickjs. rust/Cargo.toml:6
-- Sync only: no async runtime anywhere. rust/src/cdp.rs:1
-- Docs site: `website/` (Next.js; CLI docs only — install, verbs, authoring).
-- External plugins: `plugins/` (repo scope; `hello-echo` example). `plugins/README.md:1`
-- Harness playbook: `skill-data/SKILL.md` + `references/`.
-- Installer: `scripts/install-local.sh` (quiesce, atomic replace, rev verify).
-- Parked: `zig/` (CDP spike, shelved). Deleted: `cmd/` Go sources, root binary.
+- Fresh Bun + TypeScript + Effect v4 CLI scaffold. No browser code yet.
+  `AGENTS.md:5`, `package.json:14`
+- `src/` holds the CLI. `website/` holds the docs site (own `AGENTS.md`).
+  `AGENTS.md:10`, `website/AGENTS.md:1`
+- Entry point is `src/main.ts`. Binary name is `agent-webmcp`.
+  `src/main.ts:1`, `package.json:7`
 
-### Plugin system
+### The CLI: hello world
 
-- Everything is a plugin: id, permissions, verbs, hooks. rust/src/plugin.rs:77
-- Verb handlers receive (&Ctx, &Registry, verb-name, args). rust/src/plugin.rs:31
-- Permissions: Browser, Network, Secrets, Fs, Spawn — requested in manifests. rust/src/plugin.rs:19
-- Control syntax from env AGENT_WEBMCP_PLUGINS: `*`, `-id`, `-ns.*`, later ID re-enables. rust/src/plugin.rs:107
-- Hooks carry the owning plugin id; external before/after run sandboxed manifest JS (veto = throw/false, guards fail closed). rust/src/ext.rs: veto/fail-closed in ext_before
-- Manifest `config` is free-form data visible as `config` in verbs and hooks.
-- `core.policy` and `core.receipts` ignore removals. rust/src/plugin.rs:109
-- Hooks wrap every call: before may veto, after observes. Registry owns both.
-- Unknown verbs fail hard with a `bad_verb` envelope, exit 2. rust/src/main.rs:60
-- Runtime errors exit 1 with a derived code (KNOWN_CODES). rust/src/main.rs:129
-- Pretty for TTY, compact when piped; `mcp` owns stdout (no trailing line). rust/src/main.rs:100
-- External manifests: repo/user/project scopes, trust-gated project. rust/src/ext.rs:178
-- Registry index: user file, repo `registry/index.json`, remote URL; search ranks name hits. `plugin search/publish`, name resolution in `add`.
-- External verbs run sandboxed JS with an `args` global over the session catalog. rust/src/ext.rs:347
-- Manifest engine must match the binary (0.x compares minor). rust/src/ext.rs:89
-- `plugin new` scaffolds, `plugin show` inspects. rust/src/ext.rs:422
+- `src/main.ts` reads `Bun.argv[2]`, defaults to `"world"`.
+  `src/main.ts:3`
+- `src/main.ts` logs `hello, ${name}!` via `Console.log`.
+  `src/main.ts:5`
+- `main` is an `Effect`. It runs once via `Effect.runPromise`.
+  `src/main.ts:5`, `src/main.ts:7`
+- Failure prints the cause and exits `1`. `src/main.ts:8`
+- Verified: `bun ./src/main.ts` prints `hello, world!`.
+  `src/main.ts:5`
+- Verified: `bun ./src/main.ts agent` prints `hello, agent!`.
+  `src/main.ts:3`
+- `bun check` is the native typecheck. It is green. `AGENTS.md:6`
+- `bun run typecheck` is `tsc --noEmit`. It is the parity escape hatch.
+  `package.json:11`
+- No `check` script exists. A `check` script would shadow Bun's builtin.
+  `package.json:10`
 
-### Browser (browser.*)
+### Stale docs vs live code (read these before trusting a guide)
 
-- `open`: session reuse or profile launch, headed mismatch relaunches, dead-tab timeout relaunches once. rust/src/verbs/browser.rs:112
-- `observe`: snapshot JS: stable @eN refs, kinds click/fill/select/scroll, password/file/hidden skipped.
-- Chrome launches in its own process group (setsid); group-kill marker per profile. rust/src/cdp.rs:52
-- `kill_profile` takes the whole tree when marked, single-pid otherwise; PID-reuse guarded. rust/src/session.rs:131
-- `tab_alive`: one evaluate round-trip, failure paths only. rust/src/cdp.rs:92
-- Sessions: name -> port+url+target files under ~/.agent-webmcp/rust/, liveness-checked on load.
-- Evidence: every call appends (verb, ms, ok); `audit` aggregates. rust/src/session.rs:239
+- Root `../AGENTS.md` calls this region a Rust CLI. It is Bun TS.
+  `AGENTS.md:5`
+- `../orkestrate/AGENTS.md` calls this region a Go browser CLI. It is Bun TS.
+  `AGENTS.md:5`
+- Live user instruction wins over both: Bun + TS + Effect v4 from scratch.
+  `AGENTS.md:5`
 
-### WebMCP (core, not a feature)
+### Rules that bind this region
 
-- Launch always carries WebMCP flags; no opt-out exists. rust/src/cdp.rs:34
-- Chrome resolves per OS (`AGENT_WEBMCP_CHROME` override, install spots, PATH); portable home dir, portable kills. rust/src/cdp.rs: chrome_exe
-- Discovery: enable, listTools fast path, event drain fallback. rust/src/webmcp.rs:230
-- Invocation: invokeTool, callTool fallback, async toolResponded wait. `invoke` takes positional or `--tool`. rust/src/verbs/webmcp.rs:54
-- Detached waits fork a daemon holding the routed socket; `result` polls the file. rust/src/webmcp.rs:295
-- Method-absent errors match the method-absent family. Every envelope carries untrusted:true.
-
-### Codemode + craft
-
-- Catalog: live page tools; `search` pulls definitions, `batch` fans out (cap 8), budgets on max-calls + wall clock. rust/src/verbs/exec.rs:12
-- `tools add` stages host-scoped page JS; `verify` reloads + confirms in `list`; only verified auto-injects.
+- Bun only. No `npm`/`node` runs. `AGENTS.md:7`
+- Side effects go through `Effect`. Run once at the bottom. `AGENTS.md:8`
+- `bun check` stays green. `AGENTS.md:10`
+- Docs site is CLI docs only. `AGENTS.md:10`
 
 ## Files covered
 
-| File | Told about |
-|---|---|
-| rust/src/main.rs | agent-webmcp |
-| rust/src/plugin.rs | agent-webmcp |
-| rust/src/cdp.rs | agent-webmcp |
-| rust/src/session.rs | agent-webmcp |
-| rust/src/webmcp.rs | agent-webmcp |
-| rust/src/ext.rs | agent-webmcp |
-| rust/src/exec.rs | agent-webmcp |
-| rust/src/tools.rs | agent-webmcp |
-| rust/src/args.rs | agent-webmcp |
-| rust/src/mcp.rs | agent-webmcp |
-| rust/src/verbs/mod.rs | agent-webmcp |
-| rust/src/verbs/core.rs | agent-webmcp |
-| rust/src/verbs/browser.rs | agent-webmcp |
-| rust/src/verbs/act.rs | agent-webmcp |
-| rust/src/verbs/webmcp.rs | agent-webmcp |
-| rust/src/verbs/tools.rs | agent-webmcp |
-| rust/src/verbs/exec.rs | agent-webmcp |
-| rust/Cargo.toml | agent-webmcp |
+<!-- The agent writes here. One row per file it describes. -->
+
+| File | Hash | Told about |
+|---|---|---|
+| `AGENTS.md` | `bd03c663579a` | agent-webmcp |
+| `package.json` | `10cb05acc448` | agent-webmcp |
+| `tsconfig.json` | `32c5aa7dc507` | agent-webmcp |
+| `src/main.ts` | `89edc2e49573` | agent-webmcp |
+| `LICENSE` | `6c253b662168` | agent-webmcp |
+| `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
+
+Hash is the first 12 characters of `sha256sum`. Told about lists the agents to
+tell when this file changes. Use `agent-webmcp` for this repo.
 
 ## Agents to tell
 
 - `agent-webmcp` — this repo
+- `orkestrate` — when a change here needs the platform. The setup prompt,
+  version string, and browser floor in that repo's copy-blocks describe this
+  engine's surface. A change to CLI name, install path, or verbs is a fact
+  about that surface.
