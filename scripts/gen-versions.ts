@@ -14,5 +14,15 @@ export const CLI_VERSION = ${JSON.stringify(pkg.version ?? "0.0.0")} as const
 export const EFFECT_VERSION = ${JSON.stringify(effectPkg.version ?? "unknown")} as const
 `
 
+if (Bun.argv.includes("--check")) {
+  const current = await Bun.file("src/generated/versions.ts").text()
+  if (current !== out) {
+    console.error("src/generated/versions.ts is stale: run `bun run gen`")
+    process.exit(1)
+  }
+  console.log("versions clean")
+  process.exit(0)
+}
+
 await Bun.write("src/generated/versions.ts", out)
 console.log("wrote src/generated/versions.ts")

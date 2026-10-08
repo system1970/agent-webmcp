@@ -1,8 +1,10 @@
 import { Effect, Schema } from "effect"
 import type { WebmcpTool } from "./definition.ts"
 import { ToolFailed, toInputSchema } from "./definition.ts"
-// Cycle with registry.ts is safe: this module only reads `findTool` inside
-// the execute closure, long after both modules finished evaluating.
+// Cycle with registry.ts is safe today: this module only reads `findTool`
+// inside the execute closure, long after both modules finished evaluating.
+// When sessions wire up, break it properly by injecting the catalog
+// (pass the tool list in) instead of importing it.
 import { findTool } from "./registry.ts"
 
 const Call = Schema.Struct({
@@ -17,6 +19,17 @@ const Input = Schema.Struct({
 })
 
 const DEFAULT_MAX_CHARS = 8000
+const MIN_MAX_CHARS = 1000
+const MAX_MAX_CHARS = 64000
+const MAX_CALLS = 5
+
+// Clamp the budget, then truncate with a marker. Pure: unit-tested directly.
+export const shapeContent = (content: string, maxChars?: number): string => {
+  const budget = Math.min(MAX_MAX_CHARS, Math.max(MIN_MAX_CHARS, maxChars ?? DEFAULT_MAX_CHARS))
+  return content.length > budget
+    ? content.slice(0, budget) + `\n…[truncated at ${budget} chars]`
+    : content
+}
 
 // Run a batch of tool calls in parallel, one turn for many calls. Items never
 // fail the batch: unknown tools and tool failures become `{ ok: false }`
@@ -42,7 +55,15 @@ export const execute: WebmcpTool = {
       if (input.calls.length === 0) {
         return yield* Effect.fail(new ToolFailed({ tool: "execute", message: "no calls in batch" }))
       }
-      const maxChars = input.maxChars ?? DEFAULT_MAX_CHARS
+      if (input.calls.length > MAX_CALLS) {
+        return yield* Effect.fail(
+          new ToolFailed({
+            tool: "execute",
+            message: `at most ${MAX_CALLS} calls per batch, got ${input.calls.length}`
+          })
+        )
+      }
+      const maxChars = input.maxChars
       const runOne = (call: { tool: string; args: unknown }) => {
         const tool = findTool(call.tool)
         if (tool === undefined) {
@@ -64,14 +85,12 @@ export const execute: WebmcpTool = {
             onSuccess: (result) => ({
               tool: call.tool,
               ok: true as const,
-              result: result.content.length > maxChars
-                ? result.content.slice(0, maxChars) + `\n…[truncated at ${maxChars} chars]`
-                : result.content
+              result: shapeContent(result.content, maxChars)
             })
           })
         )
       }
-      const results = yield* Effect.all(input.calls.map(runOne), { concurrency: "unbounded" })
+      const results = yield* Effect.all(input.calls.map(runOne), { concurrency: MAX_CALLS })
       return { content: JSON.stringify({ sessionId: input.sessionId ?? null, results }) }
     })
 }

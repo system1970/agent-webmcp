@@ -9,7 +9,10 @@
   "scripts": {
     "start": "bun ./src/main.ts",
     "gen": "bun ./scripts/gen-versions.ts",
+    "check:gen": "bun ./scripts/gen-versions.ts --check",
     "compile": "bun ./scripts/compile.ts",
+    "test": "bun test src",
+    "review": "bun ./scripts/review.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

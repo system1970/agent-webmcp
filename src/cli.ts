@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect"
+import { Console, Data, Effect } from "effect"
 import { doctor } from "./commands/doctor.ts"
 import { mcpList } from "./commands/mcp-list.ts"
 import { mcpServe } from "./commands/mcp-serve.ts"
@@ -54,11 +54,11 @@ export const dispatch = (argv: ReadonlyArray<string>): Effect.Effect<void, Usage
     const version = yield* getVersion
     const [name, ...rest] = argv
     if (name === undefined || name === "--help" || name === "-h") {
-      console.log(helpText(version))
+      yield* Console.log(helpText(version))
       return
     }
     if (name === "--version" || name === "-v") {
-      console.log(version)
+      yield* Console.log(version)
       return
     }
     const command = commands.find((c) => c.name === name)

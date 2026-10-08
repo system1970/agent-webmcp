@@ -26,7 +26,7 @@ const score = (terms: Array<string>, tool: { name: string; description: string }
 
 export const search: WebmcpTool = {
   name: "search",
-  description: "Find tools by words in their name or description. Returns matching tools as JSON. Use before invoke/execute when unsure what exists.",
+  description: "Find tools by words in their name or description. Returns matching tools as JSON. Use before execute when unsure what exists.",
   inputSchema: toInputSchema(Input),
   execute: (args) =>
     Effect.gen(function*() {

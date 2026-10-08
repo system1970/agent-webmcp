@@ -6,8 +6,9 @@ import { Data, Effect, Schema } from "effect"
 export interface WebmcpTool {
   readonly name: string
   readonly description: string
-  // MCP `inputSchema`. Kept next to the Effect schema below so the two stay
-  // in sync by inspection. No codegen until we have enough tools to earn it.
+  // MCP `inputSchema`. Computed from the Effect schema via `toInputSchema`
+  // below — one schema is the truth. Descriptions ride along as
+  // annotations and flow into the derived JSON Schema.
   readonly inputSchema: Record<string, unknown>
   readonly execute: (args: unknown) => Effect.Effect<ToolResult, ToolFailed>
 }

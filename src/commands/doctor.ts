@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Console, Effect } from "effect"
 import { allTools } from "../tools/registry.ts"
 import { getEffectVersion } from "../version.ts"
 
@@ -15,11 +15,11 @@ export const doctor = (args: ReadonlyArray<string>): Effect.Effect<void, Error> 
       tools: allTools.map((tool) => tool.name)
     }
     if (json) {
-      console.log(JSON.stringify(report, null, 2))
+      yield* Console.log(JSON.stringify(report, null, 2))
     } else {
-      console.log(`bun:      ${report.bun}`)
-      console.log(`platform: ${report.platform}`)
-      console.log(`effect:   ${report.effect}`)
-      console.log(`tools:    ${report.tools.join(", ") || "(none)"}`)
+      yield* Console.log(`bun:      ${report.bun}`)
+      yield* Console.log(`platform: ${report.platform}`)
+      yield* Console.log(`effect:   ${report.effect}`)
+      yield* Console.log(`tools:    ${report.tools.join(", ") || "(none)"}`)
     }
   })
