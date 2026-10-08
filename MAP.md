@@ -91,9 +91,11 @@ when the code moves. Only this region's agent writes this file.
 - The tools are `search` and `execute`: composition surface, no fetch
   placeholder (`web_fetch` removed). `src/tools/registry.ts:8`
 - `search` ranks tools by word overlap over name (3x) + description.
-  `src/tools/search.ts:40`
+  `src/tools/search.ts:31`
+- `search` clamps `limit` to 1–50 (default 8) via pure `clampLimit`;
+  non-finite falls back to default. `src/tools/search.ts:20`
 - `search` points agents at `execute`, the door that exists.
-  `src/tools/search.ts:29`
+  `src/tools/search.ts:40`
 - `execute` runs a batch of at most 5 in parallel and never fails the
   batch on item errors: unknown tools and tool failures become
   `{ ok: false }` entries. Oversized batches fail loudly.
@@ -108,8 +110,9 @@ when the code moves. Only this region's agent writes this file.
 - Verified: one `execute` turn ran search + search + unknown tool in
   parallel with truncation bounds and per-item ok flags.
   `src/tools/execute.ts:74`
-- `composition.test.ts` (13 tests) locks search ranking and execute
-  semantics: flags, bounds, rejections. `src/tools/composition.test.ts:21`
+- `composition.test.ts` (18 tests) locks search ranking, limit clamping,
+  and execute semantics: flags, bounds, rejections.
+  `src/tools/composition.test.ts:21`
 - `bun test src` is scoped: bare `bun test` also runs vendored effect
   tests. `package.json:14`
 - `bun run check:gen` fails when the generated versions module drifts.
@@ -119,12 +122,16 @@ when the code moves. Only this region's agent writes this file.
   reconnect note, Pattern A (native scripts) / Pattern B (no scripts).
   `skills/agent-webmcp/SKILL.md:1`
 - `bun run review` sends the working-tree diff to the standing
-  code-reviewer subagent; BLOCKING findings gate commits. `AGENTS.md:15`
+  code-reviewer subagent; BLOCKING findings gate commits. The diff and
+  status both exclude `repos/` (vendored Effect would flood the reviewer).
+  `AGENTS.md:15`, `scripts/review.ts:29`
 - Input is validated with `Schema.decodeUnknownEffect`, v4 API.
   `src/tools/search.ts:33`
 - v4 has no `Effect.catchAll`/`Effect.either`: main uses `catchTag` plus
-  `runPromiseExit`, serve uses runPromise with try/catch.
-  `src/main.ts:7`, `src/commands/mcp-serve.ts:37`
+  `runPromiseExit`, serve uses runPromise with try/catch. Inside the
+  runtime side effects go through `Console`; past `runPromiseExit` the
+  edge uses raw process I/O by design. `src/main.ts:4`,
+  `src/commands/mcp-serve.ts:37`
 - `bun check` is the native typecheck. It is green. `AGENTS.md:6`
 - `bun run typecheck` is `tsc --noEmit`. It is the parity escape hatch.
   `package.json:11`
@@ -151,7 +158,8 @@ when the code moves. Only this region's agent writes this file.
 ### Rules that bind this region
 
 - Bun only. No `npm`/`node` runs. `AGENTS.md:11`
-- Side effects go through `Effect`. Run once at the bottom. `AGENTS.md:12`
+- Side effects go through `Effect` (`Console` in-runtime, raw process I/O
+  at the settled edge). `AGENTS.md:12`
 - `bun check` stays green. `AGENTS.md:13`
 - Review gates commits: `bun run review`, BLOCKING first. `AGENTS.md:15`
 - Docs site is CLI docs only. `AGENTS.md:18`
@@ -164,11 +172,11 @@ when the code moves. Only this region's agent writes this file.
 
 | File | Hash | Told about |
 |---|---|---|
-| `AGENTS.md` | `63c82f7c5ee3` | agent-webmcp |
+| `AGENTS.md` | `0e4adb726623` | agent-webmcp |
 | `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
 | `package.json` | `29f5f7ef7bef` | agent-webmcp |
 | `tsconfig.json` | `3443c8284415` | agent-webmcp |
-| `src/main.ts` | `b347f2956c6c` | agent-webmcp |
+| `src/main.ts` | `00b779f4df5d` | agent-webmcp |
 | `src/cli.ts` | `70f836ac5db1` | agent-webmcp |
 | `src/version.ts` | `1067c7fbdd05` | agent-webmcp |
 | `src/commands/doctor.ts` | `1ca98d076742` | agent-webmcp |
@@ -176,12 +184,12 @@ when the code moves. Only this region's agent writes this file.
 | `src/commands/mcp-serve.ts` | `acef600ca19e` | agent-webmcp |
 | `src/tools/definition.ts` | `114ca9e790a4` | agent-webmcp |
 | `src/tools/registry.ts` | `08a0705b76ee` | agent-webmcp |
-| `src/tools/search.ts` | `0f54bf741512` | agent-webmcp |
+| `src/tools/search.ts` | `ef2858dcbec4` | agent-webmcp |
 | `src/tools/execute.ts` | `e59caf535708` | agent-webmcp |
-| `src/tools/composition.test.ts` | `a4f298fe44b6` | agent-webmcp |
+| `src/tools/composition.test.ts` | `713325a991a1` | agent-webmcp |
 | `docs/sessions.md` | `6bb389e93bda` | agent-webmcp |
 | `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
-| `scripts/review.ts` | `327dd65cfeca` | agent-webmcp |
+| `scripts/review.ts` | `614044337599` | agent-webmcp |
 | `skills/agent-webmcp/SKILL.md` | `ad2ac26007b7` | agent-webmcp, pi |
 | `.github/workflows/check.yml` | `f1810150d3df` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |

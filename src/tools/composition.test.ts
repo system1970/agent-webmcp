@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { ToolFailed } from "./definition.ts"
 import { allTools, findTool } from "./registry.ts"
-import { search } from "./search.ts"
+import { search, clampLimit } from "./search.ts"
 import { execute, shapeContent } from "./execute.ts"
 import type { WebmcpTool } from "./definition.ts"
 
@@ -49,6 +49,20 @@ describe("search", () => {
     const failure = await err(search, { query: "   " })
     expect(failure).toBeInstanceOf(ToolFailed)
     expect((failure as ToolFailed).message).toMatch(/empty/)
+  })
+
+  test("clampLimit defaults, clamps, and floors", () => {
+    expect(clampLimit(undefined)).toBe(8)
+    expect(clampLimit(NaN)).toBe(8)
+    expect(clampLimit(Infinity)).toBe(8)
+    expect(clampLimit(0)).toBe(1)
+    expect(clampLimit(-5)).toBe(1)
+    expect(clampLimit(2.9)).toBe(2)
+    expect(clampLimit(9999)).toBe(50)
+  })
+
+  test("non-positive limit still returns one result", async () => {
+    expect(names(await ok(search, { query: "tool", limit: 0 }))).toHaveLength(1)
   })
 })
 

@@ -9,7 +9,9 @@ Bun + TypeScript + Effect v4 (`effect@4.0.0-rc`). `bun install`,
 ## Rules
 
 - Bun only. No `npm`/`node` runs.
-- All side effects go through `Effect`. `main` stays an `Effect`, run once at the bottom with `Effect.runPromise`.
+- All side effects go through `Effect` (`Console` inside the runtime). Past
+  `runPromiseExit` the runtime has settled, so the `main.ts` edge uses raw
+  process I/O by design. `main` stays an `Effect`, run once at the bottom.
 - `bun check` clean before claiming done. `bun run typecheck` (`tsc --noEmit`)
 is the parity escape hatch. No `check` script: it would shadow Bun's builtin.
 - After implementing and before committing, run `bun run review` (standing

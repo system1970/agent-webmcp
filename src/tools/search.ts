@@ -11,6 +11,17 @@ const Input = Schema.Struct({
 const tokens = (text: string): Array<string> =>
   text.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 0)
 
+const DEFAULT_LIMIT = 8
+const MIN_LIMIT = 1
+const MAX_LIMIT = 50
+
+// Clamp the result budget. Pure: unit-tested directly. Non-finite input
+// (NaN, Infinity) means "no usable budget", so it falls back to default.
+export const clampLimit = (limit: number | undefined): number => {
+  if (limit === undefined || !Number.isFinite(limit)) return DEFAULT_LIMIT
+  return Math.min(MAX_LIMIT, Math.max(MIN_LIMIT, Math.floor(limit)))
+}
+
 // Word-overlap ranking over name + description. Name hits weigh 3x: a tool
 // named like the query is the answer. Deliberately small — when the catalog
 // (page tools included) outgrows it, this becomes BM25 without changing the
@@ -37,7 +48,7 @@ export const search: WebmcpTool = {
       if (terms.length === 0) {
         return yield* Effect.fail(new ToolFailed({ tool: "search", message: "query is empty" }))
       }
-      const limit = input.limit ?? 8
+      const limit = clampLimit(input.limit)
       const ranked = allTools
         .map((tool) => ({ tool, rank: score(terms, tool) }))
         .filter((entry) => entry.rank > 0)

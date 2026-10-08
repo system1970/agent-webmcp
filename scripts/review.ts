@@ -1,51 +1,112 @@
-// Send the working-tree diff to the standing code-reviewer subagent.
-// Usage: `bun run review [--staged]`. Nothing to diff means nothing to review.
-// The reviewer is report-only (edit denied in its permissions); BLOCKING
-// findings must be addressed before committing.
+// Send the working-tree diff to the standing code reviewer.
+// Usage: `bun run review [--staged] [--runner pi|opencode]` (default: pi).
+// Nothing to diff means nothing to review. Findings are report-only;
+// BLOCKING findings must be addressed before committing. Vendored `repos/`
+// is excluded: upstream code would flood the reviewer.
+//
+// Runner note: pi print mode needs model access, which nested/sandboxed
+// sessions disable (403). An implicit pi run that hits the 403 falls back
+// to the opencode code-reviewer subagent; any other pi failure, or a
+// failure under an explicit `--runner pi`, is reported, not hidden.
+// Both runners use model opencode-go/muse-spark-1.3-contributor.
 export {}
 
+const REVIEW_MODEL = process.env.CODEREVIEW_MODEL ?? "opencode-go/muse-spark-1.3-contributor"
+
 const stagedOnly = Bun.argv.includes("--staged")
+const runnerIdx = Bun.argv.indexOf("--runner")
+const runnerEq = Bun.argv.find((a) => a.startsWith("--runner="))?.split("=")[1]
+const runnerNext = runnerIdx >= 0 ? Bun.argv[runnerIdx + 1] : undefined
+const runnerExplicit = runnerEq ?? (runnerNext && !runnerNext.startsWith("-") ? runnerNext : undefined)
+if (runnerExplicit !== undefined && runnerExplicit !== "pi" && runnerExplicit !== "opencode") {
+  console.error(`unknown runner '${runnerExplicit}': expected pi or opencode`)
+  process.exit(2)
+}
+const runner: "pi" | "opencode" = runnerExplicit === "opencode" ? "opencode" : "pi"
 const diffArgs = stagedOnly ? ["diff", "--cached", "--"] : ["diff", "HEAD", "--"]
 
 const diff = await new Response(
-  Bun.spawnSync(["git", ...diffArgs, ".", ":!bun.lock"]).stdout
+  Bun.spawnSync(["git", ...diffArgs, ".", ":!bun.lock", ":!repos"]).stdout
 ).text()
 
-const status = await new Response(Bun.spawnSync(["git", "status", "--short"]).stdout).text()
+const status = await new Response(
+  Bun.spawnSync(["git", "status", "--short", "--", ".", ":!repos"]).stdout
+).text()
 
 if (diff.trim().length === 0) {
   console.log("nothing to review: working tree matches HEAD")
   process.exit(0)
 }
 
-const prompt = [
-  "Review the attached working-tree diff for /home/pracurser/Projects/agent-webmcp.",
+const brief = [
+  "You are the standing code reviewer for /home/pracurser/Projects/agent-webmcp",
+  "(Bun + TypeScript + Effect v4 CLI: minimal engine exposing web pages as MCP tools).",
+  "First read AGENTS.md and MAP.md at the repo root; they are law. Then review",
+  "the attached working-tree diff on two axes: (1) Standards — effect-wrapped",
+  "side effects, help-truth, least privilege, no stubs, mechanism-only comments;",
+  "(2) Spec — no scope creep, no speculative machinery. Severity per finding:",
+  "BLOCKING, SHOULD-FIX, NIT. Quote file:line for every finding. Keep it dense.",
+  "Report only: do not edit, commit, or push.",
+  "",
   "Context (git status):",
-  status.trim() || "(clean status, diff vs HEAD)",
-  "Read AGENTS.md and MAP.md at the repo root first; they are law.",
-  "Report BLOCKING / SHOULD-FIX / NIT with file:line for every finding. Report only."
+  status.trim() || "(clean status, diff vs HEAD)"
 ].join("\n")
 
-const model = process.env.CODEREVIEW_MODEL ?? "opencode-go/muse-spark-1.3-contributor"
 const tmp = `${process.env.TMPDIR ?? "/tmp"}/agent-webmcp-review-${process.pid}-${Math.random().toString(36).slice(2)}.diff`
 await Bun.write(tmp, diff)
+Bun.spawnSync(["chmod", "600", tmp])
 
-const proc = Bun.spawn(
-  [
-    "opencode",
-    "run",
-    "--agent",
-    "code-reviewer",
-    "--model",
-    model,
-    "--auto",
-    "--file",
-    tmp,
-    prompt
-  ],
-  { stdout: "inherit", stderr: "inherit" }
-)
+async function runPi(): Promise<{ ok: boolean; output: string; fallback403: boolean }> {
+  // `@tmp` follows pi's documented `@path` contract (cli.md: file included
+  // in the first prompt). Unverifiable from model-blocked sandboxes — if pi
+  // ever ignores the attachment, the gate passes vacuous and this breaks loud.
+  let proc
+  try {
+    proc = Bun.spawn(
+      ["pi", "--print", "--model", REVIEW_MODEL, "--tools", "read,grep,find,ls", brief, `@${tmp}`],
+      { stdout: "pipe", stderr: "pipe" }
+    )
+  } catch (error) {
+    return { ok: false, output: `cannot start pi: ${String(error)}`, fallback403: false }
+  }
+  const [out, errText] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text()
+  ])
+  const code = await proc.exited
+  const combined = `${out}\n${errText}`
+  if (code === 0 && !/Model access is disabled/.test(combined)) {
+    return { ok: true, output: out, fallback403: false }
+  }
+  if (/Model access is disabled/.test(combined)) return { ok: false, output: combined, fallback403: true }
+  return { ok: false, output: combined || `pi exited ${code}`, fallback403: false }
+}
 
-const code = await proc.exited
-await Bun.file(tmp).delete().catch(() => {})
-process.exit(code ?? 1)
+async function runOpencode(): Promise<number> {
+  const proc = Bun.spawn(
+    ["opencode", "run", "--agent", "code-reviewer", "--model", REVIEW_MODEL, "--auto", "--file", tmp, brief],
+    { stdout: "inherit", stderr: "inherit" }
+  )
+  const code = await proc.exited
+  await Bun.file(tmp).delete().catch(() => {})
+  return code ?? 1
+}
+
+if (runner === "pi") {
+  const result = await runPi()
+  if (result.ok) {
+    await Bun.file(tmp).delete().catch(() => {})
+    console.log("reviewer: pi")
+    console.log(result.output)
+    process.exit(0)
+  }
+  if (result.fallback403 && runnerExplicit === undefined) {
+    console.error("reviewer: pi unavailable (nested model access disabled) — falling back to opencode")
+    process.exit(await runOpencode())
+  }
+  await Bun.file(tmp).delete().catch(() => {})
+  console.error(`reviewer: pi failed:\n${result.output.slice(0, 2000)}`)
+  process.exit(1)
+}
+
+process.exit(await runOpencode())
