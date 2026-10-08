@@ -17,7 +17,7 @@ is the parity escape hatch. No `check` script: it would shadow Bun's builtin.
   CLI and MCP read the same registry. Add a tool by adding one file + one line.
 - In `mcp serve`, stdout is the protocol: diagnostics go to stderr only.
 - Pi registration lives at Projects level (`../.pi/mcp.json` as server
-  `webmcp`), not in this repo. One registration avoids double loading.
+  `agent-webmcp`), not in this repo. One registration avoids double loading.
 
 ## Vendored repositories
 

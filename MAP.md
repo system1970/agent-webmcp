@@ -45,7 +45,7 @@ when the code moves. Only this region's agent writes this file.
 - `doctor` reports bun, platform, effect, tools. `--json` for scripts.
   `src/commands/doctor.ts:6`
 - `.pi/mcp.json` does not exist in this repo. Pi registration lives one
-  level up at Projects scope, as server `webmcp`. `AGENTS.md:19`
+  level up at Projects scope, as server `agent-webmcp`. `AGENTS.md:19`
 - The Projects-level entry spawns `mcp serve` via absolute repo path.
   `src/commands/mcp-serve.ts:20`
 - Projects scope still needs one human trust approval inside pi.
@@ -108,7 +108,7 @@ when the code moves. Only this region's agent writes this file.
 
 | File | Hash | Told about |
 |---|---|---|
-| `AGENTS.md` | `4ef95e587902` | agent-webmcp |
+| `AGENTS.md` | `ebcb9dc2be3a` | agent-webmcp |
 | `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
 | `package.json` | `22ee38968eec` | agent-webmcp |
 | `tsconfig.json` | `32c5aa7dc507` | agent-webmcp |
@@ -134,6 +134,6 @@ tell when this file changes. Use `agent-webmcp` for this repo.
   version string, and browser floor in that repo's copy-blocks describe this
   engine's surface. A change to CLI name, install path, or verbs is a fact
   about that surface.
-- `pi` — the harness. The `webmcp` server entry lives at Projects level
+- `pi` — the harness. The `agent-webmcp` server entry lives at Projects level
   (`../.pi/mcp.json`). A change to tool names or the serve command needs
   `pi mcp list` re-checked from `/home/pracurser/Projects`.
