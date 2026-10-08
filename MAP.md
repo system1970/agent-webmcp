@@ -335,7 +335,7 @@ when the code moves. Only this region's agent writes this file.
 | `docs/sessions.md` | `7b52ca56e77f` | agent-webmcp |
 | `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
 | `scripts/review.ts` | `2b2e7d08e459` | agent-webmcp |
-| `skills/agent-webmcp/SKILL.md` | `4ed9a17fe3c5` | agent-webmcp, pi |
+| `skills/agent-webmcp/SKILL.md` | `f89023c43b4e` | agent-webmcp, pi |
 | `.github/workflows/check.yml` | `f1810150d3df` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |

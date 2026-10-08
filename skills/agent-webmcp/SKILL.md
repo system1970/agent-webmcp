@@ -13,6 +13,25 @@ of tools share one surface: engine tools (composition) and page tools
 Get this exact document version-matched from any binary:
 `agent-webmcp skill show`.
 
+## Two doors, one surface
+
+Everything below describes MCP tools (`open { url }`, `invoke { handle,
+tool, args }`, …). The CLI mirrors them verb-for-verb:
+
+```bash
+agent-webmcp open --json <url>                  # prints {handle, ...}
+agent-webmcp list <handle> [--json] [tool]      # rows, or full JSON / one schema
+agent-webmcp invoke <handle> <tool> '<json>' [--timeout ms] [--json]
+agent-webmcp close <handle|--all>
+agent-webmcp mcp list [--json]                  # the composition surface
+agent-webmcp skill show                         # this document
+```
+
+`--json` is the machine door: single-quote the args object so the shell
+passes it whole (`'{"sku":"gadget","qty":1}'`). Without `--json`, output
+is human rows. `search`/`execute` have no direct CLI verbs — reach them
+via `mcp serve` (any MCP client) or `mcp list` (inspect).
+
 ## Setup
 
 Serve the engine over stdio (project scope shown; global works too):
