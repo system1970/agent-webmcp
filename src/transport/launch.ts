@@ -1,6 +1,6 @@
 import { Duration, Effect } from "effect"
 import { rmSync } from "node:fs"
-import { TransportFailed } from "./errors.ts"
+import { TransportFailed, WEBMCP_LAUNCH_FLAGS } from "./errors.ts"
 import { PORT_MIN, PORT_MAX } from "../budgets.ts"
 
 // Launch a Chromium we own: headless, remote debugging on, WebMCP flags on.
@@ -47,14 +47,16 @@ export const launchChromium = Effect.fn("transport.launchChromium")(function* (
     ? fromEnv
     : yield* findExecutable()
   const userDataDir = `/tmp/opencode/agent-webmcp-chrome-${port}`
-  // No feature flags: WebMCP ships in the browser, not behind a switch.
-  // A build that needs flags is below the floor (see webmcpFloorFix).
+  // Testing flag, always: no-op on https origins where WebMCP ships, and
+  // required on http/localhost where the page surface stays undefined
+  // without it (proven live). Same default agent-browser ships.
   const args = [
     "--headless",
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userDataDir}`,
     "--no-first-run",
     "--no-default-browser-check",
+    WEBMCP_LAUNCH_FLAGS,
     "about:blank"
   ]
   const proc = yield* Effect.sync(() => {

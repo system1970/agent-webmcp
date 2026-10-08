@@ -14,10 +14,14 @@ export class TransportFailed extends Schema.TaggedError<TransportFailed>()("Tran
   fix: Schema.optional(Schema.String)
 }) {}
 
-// WebMCP is the core, not a feature flag: supported browsers ship it
-// natively (verified: Chromium 152 registers page tools with no flags).
-// There is no flags path in this codebase — a browser that needs
-// --enable-features=WebMCPTesting,DevToolsWebMCPSupport to speak WebMCP
-// is older than our floor (152+), and the fix says so.
+// WebMCP is the core, not an opt-in — but Chromium still gates the page
+// surface behind a Testing flag on some origins. Verified live (152):
+// https pages expose modelContext unflagged; http (incl. localhost)
+// answers undefined without the flag and object with it. So every
+// browser we launch carries it: no-op where it ships, required where
+// it doesn't. A browser that lacks WebMCP even WITH the flag is older
+// than our floor (152+), and the fix says so.
+export const WEBMCP_LAUNCH_FLAGS = "--enable-features=WebMCPTesting,DevToolsWebMCPSupport"
+
 export const webmcpFloorFix =
-  "use Chromium 152 or newer: WebMCP ships built-in, no flags. Older builds are below the engine floor."
+  "use Chromium 152 or newer: WebMCP ships built-in. Older builds are below the engine floor."

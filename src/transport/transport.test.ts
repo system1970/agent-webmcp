@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { TransportFailed, webmcpFloorFix } from "./errors.ts"
+import { TransportFailed, webmcpFloorFix, WEBMCP_LAUNCH_FLAGS } from "./errors.ts"
 import { mergeToolEvent, waitForEvent } from "./client.ts"
 import type { CdpListener, Connection, PageTool } from "./client.ts"
 
@@ -28,6 +28,10 @@ describe("errors", () => {
   test("webmcpFloorFix names the version floor, not flags", () => {
     expect(webmcpFloorFix).toContain("152")
     expect(webmcpFloorFix).not.toContain("--enable-features")
+  })
+
+  test("launched browsers carry the Testing flag (localhost needs it)", () => {
+    expect(WEBMCP_LAUNCH_FLAGS).toContain("WebMCPTesting")
   })
 
   test("TransportFailed flows through the Effect error channel", async () => {

@@ -157,10 +157,15 @@ when the code moves. Only this region's agent writes this file.
   at the protocol level. `src/transport/client.ts:7`
 - Chromium 152 ships WebMCP natively (registers tools with no flags);
   older builds are below the floor. `src/transport/errors.ts:17`
-- WebMCP is the core, not a flag: no `--enable-features` anywhere in this
-  codebase. Supported browsers ship it natively (152 registers tools
-  unflagged); older builds are below the floor (`webmcpFloorFix`: 152+).
+- WebMCP is the core, not an opt-in — but Chromium still gates the page
+  surface behind a Testing flag on some origins. Verified live (152):
+  https pages expose modelContext unflagged; http (incl. localhost)
+  answers undefined without the flag, object with it. Every launched
+  browser carries WEBMCP_LAUNCH_FLAGS: no-op where it ships, required
+  where it doesn't (same default agent-browser ships).
   `src/transport/errors.ts:17`
+- Browsers below the floor (no WebMCP even with the flag, pre-152) fail
+  with webmcpFloorFix: 152+. `src/transport/errors.ts:17`
 - `TransportFailed` names operation + reason + numeric CDP code + fix.
   Reasons: `no-browser`, `flags-missing`, `timeout`, `protocol`.
   `src/transport/errors.ts:6`
@@ -335,10 +340,10 @@ when the code moves. Only this region's agent writes this file.
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
 | `scripts/compile.ts` | `abe2cc9c570f` | agent-webmcp |
-| `src/transport/errors.ts` | `fd6d83e4adf2` | agent-webmcp |
+| `src/transport/errors.ts` | `564b7b8e0799` | agent-webmcp |
 | `src/transport/client.ts` | `16e5820f0bf9` | agent-webmcp |
-| `src/transport/launch.ts` | `c0b419a4afdf` | agent-webmcp |
-| `src/transport/transport.test.ts` | `2ec1e6d0f24e` | agent-webmcp |
+| `src/transport/launch.ts` | `c0aaf9104547` | agent-webmcp |
+| `src/transport/transport.test.ts` | `33223e399ba8` | agent-webmcp |
 | `scripts/eval-transport.ts` | `3282f5671797` | agent-webmcp |
 | `src/failure.ts` | `4ca144d8ce8e` | agent-webmcp |
 | `src/commands/open.ts` | `2ceff40ddd06` | agent-webmcp |
