@@ -15,25 +15,24 @@ Get this exact document version-matched from any binary:
 
 ## Two doors, one surface
 
-Everything below describes MCP tools (`open { url }`, `invoke { handle,
-tool, args }`, …). The CLI mirrors the four session verbs verb-for-verb
-(`open`, `list`, `invoke`, `close`); `search`/`execute` live behind
-`mcp serve` — there are no CLI verbs for them yet (shell composition
-today means one process per call; see Pattern B):
+MCP shape first (`open { url }`, `invoke { handle, tool, args }`, …),
+then the CLI mirror. Both doors below, in that order:
 
 ```bash
 agent-webmcp open --json <url>                  # prints {handle, ...}
 agent-webmcp list <handle> [--json] [tool]      # rows, or full JSON / one schema
 agent-webmcp invoke <handle> <tool> '<json>' [--timeout ms] [--json]
 agent-webmcp close <handle|--all>
-agent-webmcp mcp list [--json]                  # the composition surface
+agent-webmcp search [--json] [--handle H] [--limit N] <query...>
+agent-webmcp execute [--json] [--session H] [--max-chars N] '<json-calls>'
+agent-webmcp mcp list [--json]                  # inspect the served surface
 agent-webmcp skill show                         # this document
 ```
 
-`--json` is the machine door: single-quote the args object so the shell
-passes it whole (`'{"sku":"gadget","qty":1}'`). Without `--json`, output
-is human rows. The composition tools have no CLI verbs — reach `search`/
-`execute` via `mcp serve` (any MCP client) or `mcp list` (inspect).
+`--json` is the machine door: single-quote JSON args so the shell passes
+them whole (`'{"sku":"gadget","qty":1}'`, `execute` takes an array:
+`'[{"tool":"search","args":{...}}]'`). Without `--json`, output is human
+rows.
 
 ## Setup
 

@@ -7,6 +7,8 @@ import { open } from "./commands/open.ts"
 import { list } from "./commands/list.ts"
 import { invoke } from "./commands/invoke.ts"
 import { close } from "./commands/close.ts"
+import { search } from "./commands/search.ts"
+import { execute } from "./commands/execute.ts"
 import { skill } from "./commands/skill.ts"
 import { getVersion } from "./version.ts"
 
@@ -64,6 +66,18 @@ const commands: ReadonlyArray<Command> = [
     description: "Release a session (kills browsers we launched, never foreign ones).",
     usage: "close <handle|--all>",
     run: close
+  },
+  {
+    name: "search",
+    description: "Find tools by words (engine + session page tools with --handle).",
+    usage: "search [--json] [--handle H] [--limit 1–50] <query...>",
+    run: search
+  },
+  {
+    name: "execute",
+    description: "Run up to 5 tool calls in one turn (page calls with --session).",
+    usage: "execute [--json] [--session H] [--max-chars 1k–64k] '<json-calls>' (--handle aliases --session)",
+    run: execute
   },
   {
     name: "skill",

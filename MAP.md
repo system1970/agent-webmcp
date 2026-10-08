@@ -218,8 +218,10 @@ when the code moves. Only this region's agent writes this file.
   the machine. `src/sessions/store.ts:1`
 - `open [--cdp URL [--target SUB]] [--port N] [--json] <url>` launches
   detached (survives the CLI; `close` kills) or borrows a foreign tab
-  (navigates it — stated in help; never closes/kills foreign). Refuses
-  below-floor pages where the probe fails. `src/commands/open.ts:14`
+  (navigates it — stated in help; never closes/kills foreign). Probe
+  failures (no surface at all: old browsers) refuse below-floor; pages
+  with surface but no tools open fine and list empty.
+  `src/commands/open.ts:14`
 - `list <handle> [tool] [--json]`: stat-like rows (name, desc bits,
   schema size); full schema on demand; tool-less pages print a fact,
   exit 0. `src/commands/list.ts:1`
@@ -246,9 +248,10 @@ when the code moves. Only this region's agent writes this file.
   wrongly; held-subscription sessions (daemon) will carry true frameIds.
   Event entries without frameIds quarantine instead — opposite evidence,
   opposite default, both counted.
-- `eval:sessions` runs 9 checks across separate CLI processes
-  (open/list/invoke/unknown-tool/tool-less/close/usage-2/foreign-target/
-  foreign-alive), all green 2026-10-08. `scripts/eval-sessions.ts:1`
+- `eval:sessions` runs 11 checks across separate CLI processes
+  (open/list/invoke/unknown-tool/tool-less/close/usage-2/cli-search/
+  cli-execute/foreign-target/foreign-alive), all green 2026-10-09.
+  `scripts/eval-sessions.ts:1`
 
 ### Research
 
@@ -269,10 +272,12 @@ when the code moves. Only this region's agent writes this file.
 
 ### MCP surface (Unit 3)
 
-- 6 tools in one registry: `search execute` (composition) + `open list
-  invoke close` (session verbs, same data fns as the CLI). `mcp serve`
-  needed no changes — snapshot-at-connect stands, proxy tools cover
-  dynamic pages. `src/tools/registry.ts:8`
+- 6 tools in one registry (`search execute open list invoke close`):
+  composition + session verbs sharing data fns with the CLI.
+  `src/tools/registry.ts:8`
+- CLI mirrors all six (`search`, `execute` added Unit 4 as thin argv
+  shells over the tool definitions — no new logic, no new schemas).
+  `src/cli.ts:1`
 - Verbs split data-from-print: `src/sessions/verbs.ts` holds
   openSession/listSessionTools/invokeSessionTool/closeSession/
   closeAllSessions + pickPort; commands parse argv and print, MCP tools
@@ -322,7 +327,7 @@ when the code moves. Only this region's agent writes this file.
 | `package.json` | `2686da734fe4` | agent-webmcp |
 | `tsconfig.json` | `3443c8284415` | agent-webmcp |
 | `src/main.ts` | `732525a39f85` | agent-webmcp |
-| `src/cli.ts` | `a70418e3e9bd` | agent-webmcp |
+| `src/cli.ts` | `842c0603d93d` | agent-webmcp |
 | `src/version.ts` | `1067c7fbdd05` | agent-webmcp |
 | `src/commands/doctor.ts` | `1ca98d076742` | agent-webmcp |
 | `src/commands/mcp-list.ts` | `dec84e5ad272` | agent-webmcp |
@@ -335,7 +340,7 @@ when the code moves. Only this region's agent writes this file.
 | `docs/sessions.md` | `7b52ca56e77f` | agent-webmcp |
 | `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
 | `scripts/review.ts` | `2b2e7d08e459` | agent-webmcp |
-| `skills/agent-webmcp/SKILL.md` | `326712f79398` | agent-webmcp, pi |
+| `skills/agent-webmcp/SKILL.md` | `80ce3021ca9d` | agent-webmcp, pi |
 | `.github/workflows/check.yml` | `f1810150d3df` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
@@ -354,7 +359,7 @@ when the code moves. Only this region's agent writes this file.
 | `src/sessions/connect.ts` | `07af85055e7e` | agent-webmcp |
 | `src/sessions/store.test.ts` | `ec2d9c5274da` | agent-webmcp |
 | `src/transport/devtools.ts` | `d387cffadc5d` | agent-webmcp |
-| `scripts/eval-sessions.ts` | `0122cd5b177a` | agent-webmcp |
+| `scripts/eval-sessions.ts` | `4a37481bc153` | agent-webmcp |
 | `src/commands/budgets.ts` | `06886f355e2a` | agent-webmcp |
 | `src/tools/open.ts` | `57bed3c05763` | agent-webmcp |
 | `src/tools/list.ts` | `7f872fc75755` | agent-webmcp |
@@ -365,6 +370,8 @@ when the code moves. Only this region's agent writes this file.
 | `src/budgets.ts` | `d203fe03ba72` | agent-webmcp |
 | `src/md.d.ts` | `592511bb79fe` | agent-webmcp |
 | `scripts/eval-mcp.ts` | `f45179ae6de0` | agent-webmcp |
+| `src/commands/search.ts` | `45653be04e27` | agent-webmcp |
+| `src/commands/execute.ts` | `76c5424a6b68` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |
 | `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
 

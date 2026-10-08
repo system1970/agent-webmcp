@@ -61,9 +61,19 @@ const main = Effect.fn("eval.main")(function* () {
     missed.out.slice(0, 100)
   ))
 
-  // 5. Tool-less page refuses at open (below floor) — also honest.
+  // 5. Tool-less page: with Testing flags the surface exists everywhere,
+  // so open succeeds and list reports empty (a fact, exit 0).
   const openedPlain = yield* cli("open", "--json", "https://example.com")
-  results.push(yield* check("tool-less-refused", openedPlain.code === 1 && openedPlain.out.includes("no WebMCP surface"), openedPlain.out.slice(0, 100)))
+  let plainOk = false
+  if (openedPlain.code === 0) {
+    try {
+      const plainHandle = (JSON.parse(openedPlain.out) as { handle: string }).handle
+      const plainList = yield* cli("list", plainHandle)
+      plainOk = plainList.code === 0 && plainList.out.includes("publishes nothing")
+      yield* cli("close", plainHandle)
+    } catch {}
+  }
+  results.push(yield* check("tool-less-empty", plainOk, openedPlain.out.slice(0, 80)))
 
   // 6. close drops the record; the handle is unknown afterwards.
   const closed = yield* cli("close", handle)
@@ -78,7 +88,20 @@ const main = Effect.fn("eval.main")(function* () {
   const usage = yield* cli("open")
   results.push(yield* check("usage-2", usage.code === 2 && usage.out.includes("usage error"), usage.out.slice(0, 80)))
 
-  // 8. Foreign borrow: second browser, --target picks the tab, close
+  // 8. CLI search finds engine verbs (no browser needed): row shape.
+  const found = yield* cli("search", "session", "handle")
+  results.push(yield* check("cli-search", found.code === 0 && found.out.includes("open —"), found.out.split("\n")[0] ?? ""))
+
+  // 9. CLI execute batches engine-local calls (no browser needed).
+  const batched = yield* cli("execute", "--json", `[{"tool":"search","args":{"query":"close","limit":1}}]`)
+  let batchOk = false
+  try {
+    const report = JSON.parse(batched.out) as { results: Array<{ tool: string; ok: boolean }> }
+    batchOk = batched.code === 0 && report.results.length === 1 && report.results[0].ok === true
+  } catch {}
+  results.push(yield* check("cli-execute", batchOk, batched.out.slice(0, 80)))
+
+  // 10. Foreign borrow: second browser, --target picks the tab, close
   // leaves the foreign browser alive (never ours to kill).
   const foreign = yield* launchChromium(9455)
   yield* Effect.ensuring(
