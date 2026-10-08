@@ -35,6 +35,23 @@ export const catchSession = (tool: string) =>
       Effect.catchTag("TransportFailed", (f) => Effect.fail(new ToolFailed({ tool, message: asCliFailure(f).message })))
     );
 
+// Tool registry: each tool module self-registers on import, so no tool
+// module ever imports the manifest (import cycles used to make load
+// order load-bearing — a module imported before the manifest crashed
+// with "Cannot access before initialization"). The manifest
+// (registry.ts) imports every tool file for side effects exactly once.
+// Add a tool by writing `src/tools/<name>.ts` calling registerTool.
+const entries: Array<WebmcpTool> = []
+
+export const registerTool = (tool: WebmcpTool): void => {
+  entries.push(tool)
+}
+
+export const allTools: ReadonlyArray<WebmcpTool> = entries
+
+export const findTool = (name: string): WebmcpTool | undefined =>
+  entries.find((tool) => tool.name === name)
+
 // Derive an MCP `inputSchema` from the tool's Effect schema. One schema is
 // the truth; the JSON Schema is computed. Anonymous structs inline fully.
 // Named (identifier-annotated) schemas land in `definitions` instead —

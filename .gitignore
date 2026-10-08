@@ -5,6 +5,9 @@ trace.jsonl
 trace.log
 *.log
 
+# Local review transcripts (bun run review records every run here).
+reviews/
+
 dist/
 
 # Next.js / Node

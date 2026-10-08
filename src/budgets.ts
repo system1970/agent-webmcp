@@ -6,3 +6,6 @@ export const INVOKE_TIMEOUT_MAX_MS = 300000
 // Unprivileged ports only; launch binds localhost.
 export const PORT_MIN = 1024
 export const PORT_MAX = 65535
+// Per-result character budget (min/default/max) for execute/describe
+// shaping. Shared so both doors clamp identically.
+export const CHAR_BUDGET = { min: 1000, max: 64000, fallback: 8000 }

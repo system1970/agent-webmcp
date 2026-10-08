@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect"
 import type { WebmcpTool } from "./definition.ts"
 import { ToolFailed, toInputSchema, catchSession } from "./definition.ts"
+import { registerTool } from "./definition.ts"
 import { listSessionTools } from "../sessions/verbs.ts"
 
 const Input = Schema.Struct({
@@ -52,3 +53,5 @@ export const list: WebmcpTool = {
       }
     })
 }
+
+registerTool(list)

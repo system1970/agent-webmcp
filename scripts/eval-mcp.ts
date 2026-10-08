@@ -1,8 +1,8 @@
 // Unit 3 eval: the MCP surface over stdio, no model. Usage:
 // `bun run eval:mcp`. Manual (needs network + chromium).
-// initialize -> tools/list (6 tools), 8 checks -> call open -> call
-// invoke (Completed, untrusted:true) -> call search w/ sessionHandle ->
-// call close.
+// initialize -> tools/list (7 tools) -> call open -> call invoke
+// (Completed, untrusted:true) -> search/describe w/ session -> spilling
+// execute batch -> call close.
 import { Console, Effect } from "effect"
 
 const DEMO = "https://googlechromelabs.github.io/webmcp-tools/demos/react-flightsearch/"
@@ -138,9 +138,9 @@ const runChecks = Effect.fn("eval.checks")(function* (
     result: { tools: Array<{ name: string }> }
   } | null
   const names = listed?.result.tools.map((t) => t.name).sort() ?? []
-  const want = ["close", "execute", "invoke", "list", "open", "search"]
+  const want = ["close", "describe", "execute", "invoke", "list", "open", "search"]
   results.push(yield* check(
-    "tools-list-6",
+    "tools-list-7",
     want.every((n) => names.includes(n)),
     detail(names.join(","))
   ))
@@ -181,6 +181,19 @@ const runChecks = Effect.fn("eval.checks")(function* (
     } catch {}
     results.push(yield* check("search-session", sessionHit, detail(searched.slice(0, 120))))
 
+    const described = textOf(yield* rpc("tools/call", {
+      name: "describe",
+      arguments: { handle, tool: "searchFlights" }
+    }))
+    let describeOk = false
+    try {
+      const record = JSON.parse(described) as { name: string; inputSchema: { properties: { origin: unknown } }; untrusted: boolean }
+      describeOk = record.name === "searchFlights" &&
+        typeof record.inputSchema.properties.origin === "object" &&
+        record.untrusted === true
+    } catch {}
+    results.push(yield* check("describe-record", describeOk, detail(described.slice(0, 120))))
+
     const batched = textOf(yield* rpc("tools/call", {
       name: "execute",
       arguments: {
@@ -194,6 +207,40 @@ const runChecks = Effect.fn("eval.checks")(function* (
       batchOk = report.results.length === 1 && report.results[0].ok === true
     } catch {}
     results.push(yield* check("execute-session", batchOk, detail(batched.slice(0, 120))))
+
+    // Spill contract, both sides, via the structured field (see
+    // spill.ts): overflow names a matching file, fit carries no key.
+    const spilling = textOf(yield* rpc("tools/call", {
+      name: "execute",
+      arguments: {
+        calls: [{ tool: "listFlights", args: {} }],
+        sessionId: handle,
+        maxChars: 1000
+      }
+    }))
+    let spillOk = false
+    try {
+      const report = JSON.parse(spilling) as { results: Array<{ ok: boolean; result: string; spill?: unknown }> }
+      const item = report.results[0]
+      if (item?.ok === true && typeof item.spill === "string" && item.spill !== "") {
+        const body = yield* Effect.tryPromise(() => Bun.file(item.spill as string).text()).pipe(
+          Effect.catch(() => Effect.succeed(""))
+        )
+        spillOk = body.length > 0 && item.result.startsWith(body.slice(0, 500))
+      }
+    } catch {}
+    results.push(yield* check("execute-spill", spillOk, detail(spilling.slice(0, 120))))
+
+    const small = textOf(yield* rpc("tools/call", {
+      name: "describe",
+      arguments: { tool: "search" }
+    }))
+    let fitOk = false
+    try {
+      const record = JSON.parse(small) as { name: string; spill?: unknown }
+      fitOk = record.name === "search" && !("spill" in record)
+    } catch {}
+    results.push(yield* check("describe-fits", fitOk, detail(small.slice(0, 120))))
 
     const closed = textOf(yield* rpc("tools/call", {
       name: "close",

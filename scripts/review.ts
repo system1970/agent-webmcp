@@ -4,6 +4,12 @@
 // BLOCKING findings must be addressed before committing. Vendored `repos/`
 // is excluded: upstream code would flood the reviewer.
 //
+// Every run records itself to `reviews/YYYY-MM-DD-HHMM-<runner>.md`
+// (gitignored, local only): header (time, runner, model, HEAD) + brief +
+// diff + full reviewer output. Stdout still prints the verdict live; the
+// file is the durable record for later questions ("what did the reviewer
+// say about X?").
+//
 // Runner note: pi print mode needs model access, which nested/sandboxed
 // sessions disable (403). An implicit pi run that hits the 403 falls back
 // to the opencode code-reviewer subagent; any other pi failure, or a
@@ -107,14 +113,51 @@ async function runPi(): Promise<{ ok: boolean; output: string; fallback403: bool
   return { ok: false, output: combined || `pi exited ${code}`, fallback403: false }
 }
 
-async function runOpencode(): Promise<number> {
+async function runOpencode(): Promise<{ code: number; output: string }> {
   const proc = Bun.spawn(
     ["opencode", "run", "--agent", "code-reviewer", "--model", REVIEW_MODEL, "--auto", "--file", tmp, brief],
-    { stdout: "inherit", stderr: "inherit" }
+    { stdout: "pipe", stderr: "pipe" }
   )
-  const code = await proc.exited
+  const [out, errText] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text()
+  ])
+  const code = await proc.exited ?? 1
+  // Print live (same as before), but the record keeps everything.
+  process.stdout.write(out)
+  process.stderr.write(errText)
   await Bun.file(tmp).delete().catch(() => {})
-  return code ?? 1
+  return { code, output: `${out}\n${errText}` }
+}
+
+// Durable record of this review. Local only (gitignored): timestamped so
+// repeated runs never overwrite each other.
+async function recordReview(runnerName: string, code: number, output: string): Promise<void> {
+  const now = new Date()
+  const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`
+  const head = textOf(Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"]).stdout).trim()
+  const file = `reviews/${stamp}-${runnerName}.md`
+  await Bun.write(file, [
+    `# review ${stamp} (${runnerName}, exit ${code})`,
+    ``,
+    `- model: ${REVIEW_MODEL}`,
+    `- HEAD: ${head}${stagedOnly ? " (staged diff)" : ""}`,
+    ``,
+    `## brief`,
+    ``,
+    brief,
+    ``,
+    `## diff`,
+    ``,
+    "```diff",
+    diff,
+    "```",
+    ``,
+    `## reviewer output`,
+    ``,
+    output.trim() || "(no output)"
+  ].join("\n"))
+  console.error(`review: recorded to ${file}`)
 }
 
 if (runner === "pi") {
@@ -123,15 +166,21 @@ if (runner === "pi") {
     await Bun.file(tmp).delete().catch(() => {})
     console.log("reviewer: pi")
     console.log(result.output)
+    await recordReview("pi", 0, `reviewer: pi\n\n${result.output}`)
     process.exit(0)
   }
   if (result.fallback403 && runnerExplicit === undefined) {
     console.error("reviewer: pi unavailable (nested model access disabled) — falling back to opencode")
-    process.exit(await runOpencode())
+    const fallback = await runOpencode()
+    await recordReview("opencode-fallback", fallback.code, fallback.output)
+    process.exit(fallback.code)
   }
   await Bun.file(tmp).delete().catch(() => {})
   console.error(`reviewer: pi failed:\n${result.output.slice(0, 2000)}`)
+  await recordReview("pi-failed", 1, result.output)
   process.exit(1)
 }
 
-process.exit(await runOpencode())
+const final = await runOpencode()
+await recordReview("opencode", final.code, final.output)
+process.exit(final.code)

@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect"
 import type { WebmcpTool } from "./definition.ts"
 import { ToolFailed, toInputSchema, catchSession } from "./definition.ts"
+import { registerTool } from "./definition.ts"
 import { invokeSessionTool } from "../sessions/verbs.ts"
 import { INVOKE_TIMEOUT_MS, INVOKE_TIMEOUT_MAX_MS } from "../budgets.ts"
 
@@ -40,3 +41,5 @@ export const invoke: WebmcpTool = {
       return { content: JSON.stringify(result) }
     })
 }
+
+registerTool(invoke)

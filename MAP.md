@@ -124,7 +124,8 @@ when the code moves. Only this region's agent writes this file.
 - `bun run review` sends the working-tree diff to the standing
   code-reviewer subagent; BLOCKING findings gate commits. Intent-to-add
   stages new files so the diff sees them (announced on stderr); both diff
-  and status exclude `bun.lock` + `repos/`.
+  and status exclude `bun.lock` + `repos/`. Every run records itself to
+  `reviews/YYYY-MM-DD-HHMM-<runner>.md` (gitignored, local only).
   Both runners proven against the same model (pi verified end-to-end
   2026-10-08; opencode earlier). Works wherever OPENCODE_API_KEY resolves.
   `AGENTS.md:15`, `scripts/review.ts:29`
@@ -270,14 +271,35 @@ when the code moves. Only this region's agent writes this file.
 - Live user instruction wins over both: Bun + TS + Effect v4 from scratch.
   `AGENTS.md:5`
 
-### MCP surface (Unit 3)
+### Codemode discovery (Unit 5)
 
-- 6 tools in one registry (`search execute open list invoke close`):
-  composition + session verbs sharing data fns with the CLI.
+- `search` hits carry compact signatures (`name(req: type, opt?: …)`),
+  derived from the JSON Schemas we already carry — discovery without a
+  second round-trip for arg shapes. `src/tools/search.ts:1`
+- `describe {tool, handle?}` is the loop's second step: one full record
+  (schema + annotations + origin/session) for page and engine tools
+  alike. 7 tools now. `src/tools/describe.ts:1`
+- Overflow spills to `/tmp/opencode/agent-webmcp-spill/` (0700 dir
+  only when we create it, 0600 files, no daemon GC — /tmp dies on
+  reboot) with the path in a structured `spill` field per execute
+  item (describe nests it inside its content JSON — parse, same trust
+  rule), never regexed from text (forged markers are a
+  prompt-injection vector). `describe` budgets large schemas the same
+  way. `src/spill.ts:1`
+- Skill teaches the positioning: harness codemode composes directly
+  (primary), our `execute` batches where it can't (fallback); loop is
+  search → describe → invoke, schemas on demand. `skills/agent-webmcp/SKILL.md:1`
+- `eval:mcp` 10/10 (list-7, describe-record, spill round-trip).
+  `scripts/eval-mcp.ts:1`
+
+### MCP surface (Unit 3, now 7 with describe)
+
+- 7 tools in one registry (`search execute open list invoke close
+  describe`): composition + session verbs sharing data fns with the CLI.
   `src/tools/registry.ts:8`
-- CLI mirrors all six (`search`, `execute` added Unit 4 as thin argv
-  shells over the tool definitions — no new logic, no new schemas).
-  `src/cli.ts:1`
+- CLI mirrors the session verbs + search/execute (`describe` intentionally
+  has no CLI verb: `list <handle> <tool>` already serves it — documented,
+  not built). `src/cli.ts:1`
 - Verbs split data-from-print: `src/sessions/verbs.ts` holds
   openSession/listSessionTools/invokeSessionTool/closeSession/
   closeAllSessions + pickPort; commands parse argv and print, MCP tools
@@ -301,8 +323,8 @@ when the code moves. Only this region's agent writes this file.
 - Budgets moved to neutral `src/budgets.ts` (sessions + commands share,
   no layering debt). `src/budgets.ts:1`
 - `eval:mcp` drives `mcp serve` over stdio with no model: initialize →
-  list (6) → open → invoke (Completed + untrusted) → search w/ session
-  → execute w/ session → close. 8/8 green 2026-10-09.
+  list (7) → open → invoke (Completed + untrusted) → search/describe
+  w/ session → spilling execute batch → close. 10/10 green 2026-10-09.
   `scripts/eval-mcp.ts:1`
 
 ### Rules that bind this region
@@ -332,18 +354,19 @@ when the code moves. Only this region's agent writes this file.
 | `src/commands/doctor.ts` | `1ca98d076742` | agent-webmcp |
 | `src/commands/mcp-list.ts` | `dec84e5ad272` | agent-webmcp |
 | `src/commands/mcp-serve.ts` | `acef600ca19e` | agent-webmcp |
-| `src/tools/definition.ts` | `5945966d469e` | agent-webmcp |
-| `src/tools/registry.ts` | `c37568472e66` | agent-webmcp |
-| `src/tools/search.ts` | `8c528f75309c` | agent-webmcp |
-| `src/tools/execute.ts` | `d9090ddee609` | agent-webmcp |
-| `src/tools/composition.test.ts` | `a7389595209e` | agent-webmcp |
+| `src/tools/definition.ts` | `998521d1f464` | agent-webmcp |
+| `src/tools/registry.ts` | `a81179fc6727` | agent-webmcp |
+| `src/tools/search.ts` | `3d75f44e650d` | agent-webmcp |
+| `src/tools/execute.ts` | `f38bf17f069d` | agent-webmcp |
+| `src/tools/composition.test.ts` | `46032d394bed` | agent-webmcp |
 | `docs/sessions.md` | `7b52ca56e77f` | agent-webmcp |
 | `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
-| `scripts/review.ts` | `2b2e7d08e459` | agent-webmcp |
-| `skills/agent-webmcp/SKILL.md` | `80ce3021ca9d` | agent-webmcp, pi |
+| `scripts/review.ts` | `62dde1cd6a73` | agent-webmcp |
+| `skills/agent-webmcp/SKILL.md` | `b8d09595b8f9` | agent-webmcp, pi |
 | `.github/workflows/check.yml` | `f1810150d3df` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
+| `docs/research/codemode-opencode-vs-cloudflare.md` | `b4268f2625ec` | agent-webmcp |
 | `scripts/compile.ts` | `abe2cc9c570f` | agent-webmcp |
 | `src/transport/errors.ts` | `564b7b8e0799` | agent-webmcp |
 | `src/transport/client.ts` | `16e5820f0bf9` | agent-webmcp |
@@ -361,17 +384,19 @@ when the code moves. Only this region's agent writes this file.
 | `src/transport/devtools.ts` | `d387cffadc5d` | agent-webmcp |
 | `scripts/eval-sessions.ts` | `4a37481bc153` | agent-webmcp |
 | `src/commands/budgets.ts` | `06886f355e2a` | agent-webmcp |
-| `src/tools/open.ts` | `57bed3c05763` | agent-webmcp |
-| `src/tools/list.ts` | `7f872fc75755` | agent-webmcp |
-| `src/tools/invoke.ts` | `84dea50520c4` | agent-webmcp |
-| `src/tools/close.ts` | `0c21eaafef74` | agent-webmcp |
+| `src/tools/open.ts` | `007efa069b07` | agent-webmcp |
+| `src/tools/list.ts` | `f423ae1f0dfd` | agent-webmcp |
+| `src/tools/invoke.ts` | `970b53aacfb3` | agent-webmcp |
+| `src/tools/close.ts` | `37248234a66b` | agent-webmcp |
 | `src/sessions/verbs.ts` | `b0b004b90e34` | agent-webmcp |
 | `src/commands/skill.ts` | `4c6074d3b4ca` | agent-webmcp |
-| `src/budgets.ts` | `d203fe03ba72` | agent-webmcp |
+| `src/budgets.ts` | `7f6ad2999974` | agent-webmcp |
 | `src/md.d.ts` | `592511bb79fe` | agent-webmcp |
-| `scripts/eval-mcp.ts` | `f45179ae6de0` | agent-webmcp |
+| `scripts/eval-mcp.ts` | `6ad6c8a8654d` | agent-webmcp |
 | `src/commands/search.ts` | `45653be04e27` | agent-webmcp |
 | `src/commands/execute.ts` | `76c5424a6b68` | agent-webmcp |
+| `src/tools/describe.ts` | `eab4e5a86a76` | agent-webmcp |
+| `src/spill.ts` | `2a9dc7dfe6f3` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |
 | `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
 

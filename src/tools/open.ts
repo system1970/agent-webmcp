@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect"
 import type { WebmcpTool } from "./definition.ts"
 import { ToolFailed, toInputSchema, catchSession } from "./definition.ts"
+import { registerTool } from "./definition.ts"
 import { openSession } from "../sessions/verbs.ts"
 
 const Input = Schema.Struct({
@@ -29,3 +30,5 @@ export const open: WebmcpTool = {
       return { content: JSON.stringify(record) }
     })
 }
+
+registerTool(open)
