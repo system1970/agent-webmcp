@@ -87,7 +87,22 @@ when the code moves. Only this region's agent writes this file.
 - Tool inputs stay anonymous: named schemas land in `definitions`, which
   the helper does not forward yet. `src/tools/definition.ts:28`
 - The registry is one list. CLI and MCP both read it.
-  `src/tools/registry.ts:6`
+  `src/tools/registry.ts:8`
+- `search` ranks tools by word overlap over name (3x) + description.
+  `src/tools/search.ts:40`
+- `execute` runs a batch in parallel (`unbounded`) and never fails the
+  batch on item errors: unknown tools and tool failures become
+  `{ ok: false }` entries. `src/tools/execute.ts:74`
+- `execute` shapes results with per-item `maxChars` (default 8000).
+  `src/tools/execute.ts:45`
+- `execute` imports `findTool` from the registry; the cycle is safe
+  because use is deferred to call time. `src/tools/execute.ts:4`
+- Sessions are designed in `docs/sessions.md` but unwired: any `sessionId`
+  fails as unknown, engine-local tools run sessionless.
+  `src/tools/execute.ts:38`, `docs/sessions.md:11`
+- Verified: one `execute` turn ran search + fetch + unknown tool in
+  parallel with truncation and per-item ok flags.
+  `src/tools/execute.ts:74`
 - First tool is `web_fetch`: GET a URL, status plus 8000 chars of body.
   `src/tools/web-fetch.ts:15`
 - Its input description lives as a schema annotation, flowing into the
@@ -148,7 +163,10 @@ when the code moves. Only this region's agent writes this file.
 | `src/commands/mcp-list.ts` | `331da0fad885` | agent-webmcp |
 | `src/commands/mcp-serve.ts` | `acef600ca19e` | agent-webmcp |
 | `src/tools/definition.ts` | `e55854b24bcc` | agent-webmcp |
-| `src/tools/registry.ts` | `4181183a145d` | agent-webmcp |
+| `src/tools/registry.ts` | `3697aca649df` | agent-webmcp |
+| `src/tools/search.ts` | `4cc1e658e94b` | agent-webmcp |
+| `src/tools/execute.ts` | `d47a76248c51` | agent-webmcp |
+| `docs/sessions.md` | `6bb389e93bda` | agent-webmcp |
 | `src/tools/web-fetch.ts` | `b3840252c85b` | agent-webmcp |
 | `scripts/gen-versions.ts` | `dcdb00e74882` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
