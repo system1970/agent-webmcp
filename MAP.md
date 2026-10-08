@@ -27,6 +27,15 @@ when the code moves. Only this region's agent writes this file.
   `AGENTS.md:10`, `website/AGENTS.md:1`
 - Entry point is `src/main.ts`. Binary name is `agent-webmcp`.
   `src/main.ts:1`, `package.json:7`
+- `repos/` holds vendored reference copies via `git subtree --squash`.
+  `AGENTS.md:17`
+- `repos/effect` pins `Effect-TS/effect` at `effect@4.0.0-rc.112`.
+  `AGENTS.md:21`
+- `repos/effect/LLMS.md` is the agent-facing Effect guide. Read it first.
+  `AGENTS.md:26`
+- `.vscode/settings.json` excludes `repos/**` from auto-import (`:2`),
+  file view (`:4`), watcher (`:7`), and search (`:10`).
+  `.vscode/settings.json:2`
 
 ### The CLI: hello world
 
@@ -69,7 +78,8 @@ when the code moves. Only this region's agent writes this file.
 
 | File | Hash | Told about |
 |---|---|---|
-| `AGENTS.md` | `bd03c663579a` | agent-webmcp |
+| `AGENTS.md` | `de9cbcb32c25` | agent-webmcp |
+| `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
 | `package.json` | `10cb05acc448` | agent-webmcp |
 | `tsconfig.json` | `32c5aa7dc507` | agent-webmcp |
 | `src/main.ts` | `89edc2e49573` | agent-webmcp |

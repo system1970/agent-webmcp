@@ -13,3 +13,15 @@ Bun + TypeScript + Effect v4 (`effect@4.0.0-rc`). `bun install`,
 - `bun check` clean before claiming done. `bun run typecheck` (`tsc --noEmit`)
 is the parity escape hatch. No `check` script: it would shadow Bun's builtin.
 - Docs site lives in `website/` (own `AGENTS.md`) — CLI docs only.
+
+## Vendored repositories
+
+- `repos/` holds read-only reference copies of external projects, vendored
+  via `git subtree --squash`. Never edit, never import from them.
+- `repos/effect` pins `Effect-TS/effect` at tag `effect@4.0.0-rc.112`
+  (matches `package.json`). Update with
+  `git subtree pull --prefix=repos/effect <url> <tag> --squash`.
+- When writing Effect code, inspect `repos/effect/` for idiomatic usage,
+  tests, and module structure. Treat it as the source of truth.
+- Always read `repos/effect/LLMS.md` before writing Effect code.
+- Prefer patterns from vendored source over guesses or web search.
