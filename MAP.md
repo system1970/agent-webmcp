@@ -57,6 +57,14 @@ when the code moves. Only this region's agent writes this file.
   `src/commands/mcp-serve.ts:15`
 - `UsageError` exits `2`. Everything else exits `1`. `src/main.ts:7`
 - Version comes from `package.json` at runtime. `src/version.ts:5`
+- `bun run compile` bakes both versions into a standalone binary via
+  `--define`, so the binary reads no files. `scripts/compile.ts:21`,
+  `package.json:11`
+- In dev the defines are absent and `src/version.ts` reads package.json
+  off disk instead. `src/version.ts:25`
+- Verified: binary installed at `~/.local/bin/agent-webmcp` reports `0.0.1`
+  and correct effect version from a foreign cwd. `src/version.ts:25`
+- `tsconfig.json` covers `src/` and `scripts/`. `tsconfig.json:13`
 - Verified: `doctor` reports bun `1.4.3`, effect `4.0.0-rc.112`.
   `src/commands/doctor.ts:6`
 - Verified: full MCP loop over stdio (initialize, tools/list, tools/call
@@ -110,17 +118,18 @@ when the code moves. Only this region's agent writes this file.
 |---|---|---|
 | `AGENTS.md` | `ebcb9dc2be3a` | agent-webmcp |
 | `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
-| `package.json` | `22ee38968eec` | agent-webmcp |
-| `tsconfig.json` | `32c5aa7dc507` | agent-webmcp |
+| `package.json` | `2e22d6bfa4e9` | agent-webmcp |
+| `tsconfig.json` | `3443c8284415` | agent-webmcp |
 | `src/main.ts` | `6fc3aadee5e4` | agent-webmcp |
 | `src/cli.ts` | `836aae93cc3c` | agent-webmcp |
-| `src/version.ts` | `f897643c954d` | agent-webmcp |
-| `src/commands/doctor.ts` | `d7dc538a9ef6` | agent-webmcp |
+| `src/version.ts` | `49128e6ff539` | agent-webmcp |
+| `src/commands/doctor.ts` | `146099bdb8a7` | agent-webmcp |
 | `src/commands/mcp-list.ts` | `331da0fad885` | agent-webmcp |
 | `src/commands/mcp-serve.ts` | `acef600ca19e` | agent-webmcp |
 | `src/tools/definition.ts` | `f02062268d0c` | agent-webmcp |
 | `src/tools/registry.ts` | `4181183a145d` | agent-webmcp |
 | `src/tools/web-fetch.ts` | `9b70a59031ac` | agent-webmcp |
+| `scripts/compile.ts` | `5661b8b5c11e` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |
 | `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
 

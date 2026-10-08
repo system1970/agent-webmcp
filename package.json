@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "bun ./src/main.ts",
+    "compile": "bun ./scripts/compile.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -1,16 +1,13 @@
 import { Effect } from "effect"
 import { allTools } from "../tools/registry.ts"
+import { getEffectVersion } from "../version.ts"
 
 // Report the runtime environment. Facts only: versions and counts, no
 // judgments. `--json` prints the same facts as JSON for scripting.
 export const doctor = (args: ReadonlyArray<string>): Effect.Effect<void, Error> =>
   Effect.gen(function*() {
     const json = args.includes("--json")
-    const effectVersion = yield* Effect.promise(async () => {
-      const file = Bun.file(new URL("../../node_modules/effect/package.json", import.meta.url))
-      const pkg = (await file.json()) as { version?: string }
-      return pkg.version ?? "unknown"
-    })
+    const effectVersion = yield* getEffectVersion
     const report = {
       bun: Bun.version,
       platform: `${process.platform}/${process.arch}`,
