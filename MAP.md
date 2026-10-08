@@ -155,12 +155,15 @@ when the code moves. Only this region's agent writes this file.
 - This build's annotations are `readOnly/untrustedContent/autosubmit` — no
   `consequentialHint` in 152. `toolResponded.output` is documented untrusted
   at the protocol level. `src/transport/client.ts:7`
-- Chromium 152 ships WebMCP unflagged: page surface defined and tools
-  register with no flags (eval2 locks this). Flags stay as fallback for
-  foreign builds. `scripts/eval-transport.ts:19`
-- `TransportFailed` names operation + reason + fix (errno discipline).
+- Chromium 152 ships WebMCP natively (registers tools with no flags);
+  older builds are below the floor. `src/transport/errors.ts:17`
+- WebMCP is the core, not a flag: no `--enable-features` anywhere in this
+  codebase. Supported browsers ship it natively (152 registers tools
+  unflagged); older builds are below the floor (`webmcpFloorFix`: 152+).
+  `src/transport/errors.ts:17`
+- `TransportFailed` names operation + reason + numeric CDP code + fix.
   Reasons: `no-browser`, `flags-missing`, `timeout`, `protocol`.
-  `src/transport/errors.ts:4`
+  `src/transport/errors.ts:6`
 - `invokeTool` awaits the terminal `toolResponded` for its invocationId;
   Completed-with-Error returns as page data, only stalls fail — and stalls
   cancel first. Default timeout 30s, never indefinite.
@@ -190,9 +193,14 @@ when the code moves. Only this region's agent writes this file.
   quarantine (incl. future-tolerant annotations), tryPromise-fails
   pin, and wait semantics (timeout-tag mapping, session filter) on a
   stub connection — no browser needed.
-  `scripts/eval-transport.ts` runs 3 live evals, zero tokens (bad endpoint,
-  no-flags, live list+invoke+Completed); manual, not CI (no browser there).
-  `src/transport/transport.test.ts:1`, `scripts/eval-transport.ts:1`
+  `src/transport/transport.test.ts:1`
+- `scripts/eval-transport.ts` runs 3 live evals, zero tokens (bad endpoint,
+  two-pages, live list+invoke+Completed); manual, not CI (no browser there).
+  `scripts/eval-transport.ts:49`
+- Evals: bad-endpoint (no-browser), two-pages (session isolation live:
+  distinct frames per page), live list+invoke+Completed with catalog
+  reshape. Sequential windows are lossy — sessions must subscribe from
+  attach, proven by eval2's first failure mode.
 - Verified 2026-10-08: 3/3 evals green against live Chromium 152 +
   flightsearch demo, zero stray browsers (SIGKILL close).
   `scripts/eval-transport.ts:49`
@@ -254,11 +262,11 @@ when the code moves. Only this region's agent writes this file.
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
 | `scripts/compile.ts` | `abe2cc9c570f` | agent-webmcp |
-| `src/transport/errors.ts` | `f3df43f71f0e` | agent-webmcp |
-| `src/transport/client.ts` | `dd500002c3d1` | agent-webmcp |
-| `src/transport/launch.ts` | `57ffbf0f13a1` | agent-webmcp |
-| `src/transport/transport.test.ts` | `de9083d23796` | agent-webmcp |
-| `scripts/eval-transport.ts` | `42a115ddbe3d` | agent-webmcp |
+| `src/transport/errors.ts` | `a2f7ef737aef` | agent-webmcp |
+| `src/transport/client.ts` | `82bd9a031571` | agent-webmcp |
+| `src/transport/launch.ts` | `bbeb377b54e4` | agent-webmcp |
+| `src/transport/transport.test.ts` | `5ca754fe2c60` | agent-webmcp |
+| `scripts/eval-transport.ts` | `de52577ea757` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |
 | `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
 

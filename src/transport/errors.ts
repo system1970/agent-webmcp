@@ -14,10 +14,10 @@ export class TransportFailed extends Schema.TaggedError<TransportFailed>()("Tran
   fix: Schema.optional(Schema.String)
 }) {}
 
-// Launch flags for Chromium builds that gate WebMCP behind them (pre-152
-// behavior; 152 ships unflagged). Source: Stagehand's default launch flags,
-// verified against Chromium 152's /json/protocol.
-export const WEBMCP_FLAGS = "--enable-features=WebMCPTesting,DevToolsWebMCPSupport"
-
-export const flagsFix = (exe: string): string =>
-  `relaunch with WebMCP enabled: ${exe} --headless --remote-debugging-port=PORT ${WEBMCP_FLAGS}`
+// WebMCP is the core, not a feature flag: supported browsers ship it
+// natively (verified: Chromium 152 registers page tools with no flags).
+// There is no flags path in this codebase — a browser that needs
+// --enable-features=WebMCPTesting,DevToolsWebMCPSupport to speak WebMCP
+// is older than our floor (152+), and the fix says so.
+export const webmcpFloorFix =
+  "use Chromium 152 or newer: WebMCP ships built-in, no flags. Older builds are below the engine floor."

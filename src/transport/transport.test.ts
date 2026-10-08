@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { TransportFailed, WEBMCP_FLAGS, flagsFix } from "./errors.ts"
+import { TransportFailed, webmcpFloorFix } from "./errors.ts"
 import { mergeToolEvent, waitForEvent } from "./client.ts"
 import type { CdpListener, Connection, PageTool } from "./client.ts"
 
@@ -25,9 +25,9 @@ describe("errors", () => {
     expect(e.fix).toBe("launch it")
   })
 
-  test("flagsFix names the exact launch flags", () => {
-    expect(flagsFix("chromium")).toContain(WEBMCP_FLAGS)
-    expect(flagsFix("chromium")).toContain("chromium")
+  test("webmcpFloorFix names the version floor, not flags", () => {
+    expect(webmcpFloorFix).toContain("152")
+    expect(webmcpFloorFix).not.toContain("--enable-features")
   })
 
   test("TransportFailed flows through the Effect error channel", async () => {

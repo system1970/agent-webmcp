@@ -1,5 +1,5 @@
 import { Console, Duration, Effect, Schema } from "effect"
-import { TransportFailed, flagsFix } from "./errors.ts"
+import { TransportFailed, webmcpFloorFix } from "./errors.ts"
 
 // A tool the page publishes. Field shapes mirror the live CDP WebMCP domain
 // (verified against Chromium 152 via /json/protocol): annotations carry
@@ -289,7 +289,7 @@ export const attachPage = Effect.fn("transport.attachPage")(function* (
           reason: "flags-missing",
           operation: "WebMCP.enable",
           message: `browser does not speak the WebMCP domain: ${failure.message}`,
-          fix: flagsFix("chromium")
+          fix: webmcpFloorFix
         }))
       }
       return Effect.fail(failure)

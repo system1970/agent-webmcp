@@ -2,7 +2,7 @@
 // Usage: `bun run eval:transport`. Not run in CI (no browser there).
 // Three evals, zero tokens: bad endpoint, unflagged 152, live list+invoke.
 import { Console, Effect, Schema } from "effect"
-import { dial, attachPage, navigate, collectTools, invokeTool, closePage, probePageSupport } from "../src/transport/client.ts"
+import { dial, attachPage, navigate, collectTools, invokeTool, closePage } from "../src/transport/client.ts"
 import type { Connection } from "../src/transport/client.ts"
 import { launchChromium } from "../src/transport/launch.ts"
 import { TransportFailed } from "../src/transport/errors.ts"
@@ -46,29 +46,37 @@ const evalBadEndpoint = Effect.fn("eval.badEndpoint")(function* () {
   return reasonOf(failure) === "no-browser"
 })
 
-const evalNoFlags = Effect.fn("eval.noFlags")(function* () {
-  const browser = yield* launchChromium(9444, false)
+const evalTwoPages = Effect.fn("eval.twoPages")(function* () {
+  const browser = yield* launchChromium(9444)
   return yield* Effect.ensuring(
     withConn(yield* wsUrl(browser.httpEndpoint), (conn) =>
       Effect.gen(function* () {
-        const page = yield* attachPage(conn)
-        yield* navigate(conn, page.sessionId, DEMO)
-        // Chromium 152 ships WebMCP unflagged: the page surface exists and
-        // tools register with no flags. This eval locks that behavior — if
-        // a future build re-gates it, the flags-missing path
-        // (probePageSupport false, tools absent) is what open must refuse on.
-        const supported = yield* probePageSupport(conn, page.sessionId)
-        const tools = yield* collectTools(conn, page.sessionId, 4000)
-        yield* closePage(conn, page.targetId)
-        yield* Console.log(`eval2 no-flags -> pageSupport=${supported} tools=[${tools.map((t) => t.name).join(", ")}] (want true + searchFlights)`)
-        return supported === true && tools.some((t) => t.name === "searchFlights")
+        // Two pages, one connection: session-filtering must keep their
+        // catalogs apart (unit-tested on a stub; proven live here).
+        // Per-page order matters: each page's tools register during ITS
+        // collect window — a later window never replays them. (Sessions
+        // fix this by holding the subscription open from attach.)
+        const a = yield* attachPage(conn)
+        yield* navigate(conn, a.sessionId, DEMO)
+        const toolsA = yield* collectTools(conn, a.sessionId, 4000)
+        const b = yield* attachPage(conn)
+        yield* navigate(conn, b.sessionId, DEMO)
+        const toolsB = yield* collectTools(conn, b.sessionId, 4000)
+        yield* Console.log(`eval2 two-pages -> A=[${toolsA.map((t) => t.name).join(",")}] B=[${toolsB.map((t) => t.name).join(",")}]`)
+        const framesDiffer = toolsA.some((t) =>
+          t.name === "searchFlights" &&
+          toolsB.some((u) => u.name === "searchFlights" && u.frameId !== t.frameId)
+        )
+        yield* closePage(conn, a.targetId)
+        yield* closePage(conn, b.targetId)
+        return framesDiffer
       })),
     browser.close
   )
 })
 
 const evalLive = Effect.fn("eval.live")(function* () {
-  const browser = yield* launchChromium(9333, true)
+  const browser = yield* launchChromium(9333)
   return yield* Effect.ensuring(
     withConn(yield* wsUrl(browser.httpEndpoint), (conn) =>
       Effect.gen(function* () {
@@ -105,7 +113,7 @@ const evalLive = Effect.fn("eval.live")(function* () {
 const main = Effect.fn("eval.main")(function* () {
   const results = [
     ["bad-endpoint", yield* evalBadEndpoint()],
-    ["no-flags", yield* evalNoFlags()],
+    ["two-pages", yield* evalTwoPages()],
     ["live", yield* evalLive()]
   ] as const
   for (const [name, ok] of results) yield* Console.log(`${ok ? "PASS" : "FAIL"} ${name}`)

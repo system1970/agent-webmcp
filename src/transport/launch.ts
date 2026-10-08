@@ -1,6 +1,6 @@
 import { Duration, Effect } from "effect"
 import { rmSync } from "node:fs"
-import { TransportFailed, WEBMCP_FLAGS } from "./errors.ts"
+import { TransportFailed } from "./errors.ts"
 
 // Launch a Chromium we own: headless, remote debugging on, WebMCP flags on.
 // Returns the browser HTTP endpoint (for /json/*) plus close. The caller
@@ -34,8 +34,7 @@ const findExecutable = Effect.fn("transport.findExecutable")(function* () {
 })
 
 export const launchChromium = Effect.fn("transport.launchChromium")(function* (
-  port = 9333,
-  withWebmcp = true
+  port = 9333
 ) {
   if (!Number.isInteger(port) || port < 1024 || port > 65535) {
     return yield* Effect.fail(new TransportFailed({
@@ -50,6 +49,8 @@ export const launchChromium = Effect.fn("transport.launchChromium")(function* (
     ? fromEnv
     : yield* findExecutable()
   const userDataDir = `/tmp/opencode/agent-webmcp-chrome-${port}`
+  // No feature flags: WebMCP ships in the browser, not behind a switch.
+  // A build that needs flags is below the floor (see webmcpFloorFix).
   const args = [
     "--headless",
     `--remote-debugging-port=${port}`,
@@ -58,7 +59,6 @@ export const launchChromium = Effect.fn("transport.launchChromium")(function* (
     "--no-default-browser-check",
     "about:blank"
   ]
-  if (withWebmcp) args.push(WEBMCP_FLAGS)
   const proc = yield* Effect.sync(() => Bun.spawn([exe, ...args], {
     stdout: "ignore",
     stderr: "pipe"
