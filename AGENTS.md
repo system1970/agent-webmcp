@@ -13,6 +13,9 @@ Bun + TypeScript + Effect v4 (`effect@4.0.0-rc`). `bun install`,
 - `bun check` clean before claiming done. `bun run typecheck` (`tsc --noEmit`)
 is the parity escape hatch. No `check` script: it would shadow Bun's builtin.
 - Docs site lives in `website/` (own `AGENTS.md`) — CLI docs only.
+- Tools live in `src/tools/`: one file per tool, registered in `registry.ts`.
+  CLI and MCP read the same registry. Add a tool by adding one file + one line.
+- In `mcp serve`, stdout is the protocol: diagnostics go to stderr only.
 
 ## Vendored repositories
 

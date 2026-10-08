@@ -37,19 +37,41 @@ when the code moves. Only this region's agent writes this file.
   file view (`:4`), watcher (`:7`), and search (`:10`).
   `.vscode/settings.json:2`
 
-### The CLI: hello world
+### The CLI: skeleton (pi-shaped)
 
-- `src/main.ts` reads `Bun.argv[2]`, defaults to `"world"`.
-  `src/main.ts:3`
-- `src/main.ts` logs `hello, ${name}!` via `Console.log`.
-  `src/main.ts:5`
-- `main` is an `Effect`. It runs once via `Effect.runPromise`.
-  `src/main.ts:5`, `src/main.ts:7`
-- Failure prints the cause and exits `1`. `src/main.ts:8`
-- Verified: `bun ./src/main.ts` prints `hello, world!`.
-  `src/main.ts:5`
-- Verified: `bun ./src/main.ts agent` prints `hello, agent!`.
-  `src/main.ts:3`
+- Commands are a flat table in `src/cli.ts`. No framework.
+  `src/cli.ts:10`
+- Commands are `doctor` and `mcp`. `src/cli.ts:22`
+- `doctor` reports bun, platform, effect, tools. `--json` for scripts.
+  `src/commands/doctor.ts:6`
+- `mcp list` prints the registry. `--json` for scripts.
+  `src/commands/mcp-list.ts:6`
+- `mcp serve` exposes the registry over stdio. `src/commands/mcp-serve.ts:20`
+- Stdout is the protocol in serve mode. Diagnostics go to stderr.
+  `src/commands/mcp-serve.ts:15`
+- `UsageError` exits `2`. Everything else exits `1`. `src/main.ts:7`
+- Version comes from `package.json` at runtime. `src/version.ts:5`
+- Verified: `doctor` reports bun `1.4.3`, effect `4.0.0-rc.112`.
+  `src/commands/doctor.ts:6`
+- Verified: full MCP loop over stdio (initialize, tools/list, tools/call
+  `web_fetch` on `example.com` returns HTTP 200, unknown tool isError).
+  `src/commands/mcp-serve.ts:20`
+
+### The tools: one registry, two doors
+
+- A tool is name, description, JSON inputSchema, and an Effect execute.
+  `src/tools/definition.ts:9`
+- The registry is one list. CLI and MCP both read it.
+  `src/tools/registry.ts:6`
+- First tool is `web_fetch`: GET a URL, status plus 8000 chars of body.
+  `src/tools/web-fetch.ts:15`
+- `web_fetch` is read-only: HTTP errors return data, only network or input
+  failures become `ToolFailed`. `src/tools/web-fetch.ts:10`
+- Input is validated with `Schema.decodeUnknownEffect`, v4 API.
+  `src/tools/web-fetch.ts:28`
+- v4 has no `Effect.catchAll`/`Effect.either`: main uses `catchTag` plus
+  `runPromiseExit`, serve uses runPromise with try/catch.
+  `src/main.ts:7`, `src/commands/mcp-serve.ts:37`
 - `bun check` is the native typecheck. It is green. `AGENTS.md:6`
 - `bun run typecheck` is `tsc --noEmit`. It is the parity escape hatch.
   `package.json:11`
@@ -67,10 +89,12 @@ when the code moves. Only this region's agent writes this file.
 
 ### Rules that bind this region
 
-- Bun only. No `npm`/`node` runs. `AGENTS.md:7`
-- Side effects go through `Effect`. Run once at the bottom. `AGENTS.md:8`
-- `bun check` stays green. `AGENTS.md:10`
-- Docs site is CLI docs only. `AGENTS.md:10`
+- Bun only. No `npm`/`node` runs. `AGENTS.md:11`
+- Side effects go through `Effect`. Run once at the bottom. `AGENTS.md:12`
+- `bun check` stays green. `AGENTS.md:13`
+- Docs site is CLI docs only. `AGENTS.md:15`
+- Tools live in `src/tools/`, registered in `registry.ts`. `AGENTS.md:17`
+- In `mcp serve`, stdout is the protocol. `AGENTS.md:19`
 
 ## Files covered
 
@@ -78,11 +102,19 @@ when the code moves. Only this region's agent writes this file.
 
 | File | Hash | Told about |
 |---|---|---|
-| `AGENTS.md` | `de9cbcb32c25` | agent-webmcp |
+| `AGENTS.md` | `e18a72fb3d7b` | agent-webmcp |
 | `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
-| `package.json` | `10cb05acc448` | agent-webmcp |
+| `package.json` | `22ee38968eec` | agent-webmcp |
 | `tsconfig.json` | `32c5aa7dc507` | agent-webmcp |
-| `src/main.ts` | `89edc2e49573` | agent-webmcp |
+| `src/main.ts` | `6fc3aadee5e4` | agent-webmcp |
+| `src/cli.ts` | `836aae93cc3c` | agent-webmcp |
+| `src/version.ts` | `f897643c954d` | agent-webmcp |
+| `src/commands/doctor.ts` | `d7dc538a9ef6` | agent-webmcp |
+| `src/commands/mcp-list.ts` | `331da0fad885` | agent-webmcp |
+| `src/commands/mcp-serve.ts` | `acef600ca19e` | agent-webmcp |
+| `src/tools/definition.ts` | `f02062268d0c` | agent-webmcp |
+| `src/tools/registry.ts` | `4181183a145d` | agent-webmcp |
+| `src/tools/web-fetch.ts` | `9b70a59031ac` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |
 | `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
 
