@@ -15,6 +15,8 @@ export class UsageError {
 const has = (flags: Record<string, string | boolean>, name: string): boolean =>
   flags[name] === true || flags[name] === "true"
 
+const BOOLEAN_FLAGS = new Set(["json", "plain", "yes", "help", "version"])
+
 export const parse = (argv: ReadonlyArray<string>): CliArgs | UsageError => {
   const positionals: Array<string> = []
   const flags: Record<string, string | boolean> = {}
@@ -26,7 +28,7 @@ export const parse = (argv: ReadonlyArray<string>): CliArgs | UsageError => {
       const eq = arg.indexOf("=")
       if (eq !== -1) {
         flags[arg.slice(2, eq)] = arg.slice(eq + 1)
-      } else if (i + 1 < argv.length && !(argv[i + 1] as string).startsWith("--")) {
+      } else if (!BOOLEAN_FLAGS.has(arg.slice(2)) && i + 1 < argv.length && !(argv[i + 1] as string).startsWith("--")) {
         flags[arg.slice(2)] = argv[i + 1] as string
         i++
       } else {

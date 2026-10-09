@@ -38,4 +38,23 @@ export const cmdMcpServe = (layers: Layer.Layer<VerbServices>): Effect.Effect<vo
     })
     yield* Effect.promise(() => server.connect(new StdioServerTransport()))
     yield* Console.error("agent-webmcp: serving tools over stdio")
+    // Park until the client goes away: without this the process exits
+    // the moment connect resolves (runPromiseExit sees success and calls
+    // process.exit). Fast-path an already-dead stdin or the await below
+    // never resolves — the same orphan, one race earlier.
+    yield* Effect.callback<void>((resume) => {
+      let finished = false
+      const done = (): void => {
+        if (finished) return
+        finished = true
+        resume(Effect.void)
+      }
+      const stdin = process.stdin as NodeJS.ReadableStream & { readableEnded?: boolean }
+      if (stdin.readableEnded === true) {
+        done()
+      } else {
+        stdin.once("end", done)
+        stdin.once("close", done)
+      }
+    })
   })

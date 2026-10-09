@@ -27,6 +27,14 @@ describe("cli", () => {
     expect(parse(["--version"])).toEqual({ command: "version", positionals: [], flags: { version: true } })
   })
 
+  test("boolean flags never eat positionals", () => {
+    expect(parse(["open", "--json", "https://x.test"])).toEqual({
+      command: "open",
+      positionals: ["https://x.test"],
+      flags: { json: true },
+    })
+  })
+
   test("json default follows the pipe", () => {
     expect(isJson({ command: "list", positionals: [], flags: { json: true } })).toBe(true)
     expect(isJson({ command: "list", positionals: [], flags: { plain: true } })).toBe(false)

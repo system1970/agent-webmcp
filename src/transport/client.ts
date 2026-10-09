@@ -127,8 +127,8 @@ export const connect = (wsUrl: string): Effect.Effect<CdpConnection, TransportFa
               new TransportFailed({
                 reason: "page",
                 operation: "cdp",
-                message: String(reply.error.message ?? "unknown CDP error"),
-                fix: "the page refused the call — retry once, then report.",
+                message: `CDP error: ${String(reply.error.message ?? "unknown").slice(0, 200)}`,
+                fix: "the browser refused the call — old build (check the version floor) or a dead target.",
               })
             )
           )
@@ -336,19 +336,14 @@ export const listPageTools = (
       Deferred.doneUnsafe(gate, toPageTools(params))
     })
     yield* sendBounded(conn, "WebMCP.enable", {}, timeoutMs, sessionId)
-    return yield* Deferred.await(gate).pipe(
-      Effect.timeout(Duration.millis(timeoutMs)),
-      Effect.catchTag("TimeoutError", () =>
-        Effect.fail(
-          new TransportFailed({
-            reason: "timeout",
-            operation: "WebMCP.enable",
-            message: `no toolsAdded in ${timeoutMs}ms (empty page, or domain missing)`,
-            fix: "empty pages expose nothing — not an error. Persistent absence means an old browser: check the version floor.",
-          })
-        )
-      )
+    // Empty pages may never burst: a short grace resolves to [] (open must
+    // succeed with toolCount 0). A missing domain fails LOUD at enable
+    // above (CDP error reply) — silence here means empty, never broken.
+    const burst = yield* Deferred.await(gate).pipe(
+      Effect.timeout(Duration.millis(Math.min(timeoutMs, 3000))),
+      Effect.catchTag("TimeoutError", () => Effect.succeed([] as ReadonlyArray<PageTool>))
     )
+    return burst
   })
 
 const ToolResponded = Schema.Struct({
