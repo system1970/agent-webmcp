@@ -18,9 +18,16 @@ Bun + TypeScript + Effect v4 (`effect@4.0.0-rc`). `bun install`,
   (stdout is the MCP wire).
 - `bun check` clean before claiming done. `bun run typecheck` (`tsc --noEmit`)
 is the parity escape hatch. No `check` script: it would shadow Bun's builtin.
-- After implementing and before committing, run `bun run review` (standing
-  code-reviewer subagent over the working-tree diff) and address BLOCKING
-  findings. `bun test` covers search ranking and execute semantics.
+- After implementing and before committing, run `bun run preflight`
+  (map/help/envelope/check/test, deterministic) then `bun run review`
+  (standing code-reviewer subagent over the working-tree diff, exits 1
+  on confirmed BLOCKING) and address BLOCKING findings. `bun test` covers
+  search ranking and execute semantics.
+- `docs/decisions.md` + `docs/review-learnings.md` bind like law:
+  re-litigation without new evidence is out of scope.
+- Units stay small: one verb or one mechanism, ~400 diff lines max.
+- Review harness lives in `scripts/review/` (one module per job,
+  unit-tested); the `scripts/review.ts` entry only orchestrates.
 - Docs site lives in `website/` (own `AGENTS.md`) — CLI docs only.
 - Tools live in `src/tools/`: one file per tool, registered in `registry.ts`.
   CLI and MCP read the same registry. Add a tool by adding one file + one line.

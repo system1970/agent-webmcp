@@ -3,7 +3,7 @@ import { invokeSessionTool } from "../sessions/verbs.ts"
 import { UsageError, CliFailure, asCliFailure } from "../failure.ts"
 import { INVOKE_TIMEOUT_MS, INVOKE_TIMEOUT_MAX_MS } from "../budgets.ts"
 
-// invoke <handle> <tool> '<json-args>' [--timeout ms 1-300000] [--json]: thin argv
+// invoke <handle> <tool> '<json-args>' [--timeout ms 1-INVOKE_TIMEOUT_MAX_MS] [--json]: thin argv
 // shell over verbs.invokeSessionTool; output rendering only here.
 export const invoke = (args: ReadonlyArray<string>) =>
   Effect.gen(function* () {

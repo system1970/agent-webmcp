@@ -80,7 +80,7 @@ describe("registry", () => {
 
   test("execute rejects bad timeout without a browser", async () => {
     const failure = await err(execute, { handle: "s_deadbeef01", code: "return 1", timeoutMs: 999999999 })
-    expect((failure as ToolFailed).message).toMatch(/1-300000/)
+    expect((failure as ToolFailed).message).toMatch(new RegExp(`1-${RUN_TIMEOUT_MAX_MS}`))
   })
 
   test("execute rejects empty code without a browser", async () => {

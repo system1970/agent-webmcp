@@ -3,7 +3,7 @@ import { execute as executeTool } from "../tools/execute.ts"
 import { UsageError, CliFailure } from "../failure.ts"
 import { RUN_TIMEOUT_MAX_MS } from "../budgets.ts"
 
-// execute [--session H | --as ALIAS=H ...] [--timeout ms 1-300000] [--max-chars N]
+// execute [--session H | --as ALIAS=H ...] [--timeout ms 1-RUN_TIMEOUT_MAX_MS] [--max-chars N]
 // [--json] '<code>': thin argv shell over the execute tool. Single
 // session binds bare tools.*; --as repeats for multi-page flows
 // (sesh.ALIAS.tools.* in code). Human summary default, full envelope
@@ -58,7 +58,7 @@ export const execute = (args: ReadonlyArray<string>) =>
           return yield* Effect.fail(new UsageError({ message: `execute: bad --max-chars '${raw ?? "(missing)"}': want positive integer` }))
         }
       } else if (arg.startsWith("-")) {
-        return yield* Effect.fail(new UsageError({ message: `execute: unknown flag '${arg}'. Usage: execute [--session H | --as ALIAS=H ...] [--timeout ms 1-300000] [--max-chars N] [--json] '<code>'` }))
+        return yield* Effect.fail(new UsageError({ message: `execute: unknown flag '${arg}'. Usage: execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json] '<code>'` }))
       } else if (code === undefined) {
         code = arg
       } else {
@@ -69,10 +69,10 @@ export const execute = (args: ReadonlyArray<string>) =>
       return yield* Effect.fail(new UsageError({ message: "execute: --session and --as exclude each other (one session or an alias map)." }))
     }
     if (session === undefined && aliases.length === 0) {
-      return yield* Effect.fail(new UsageError({ message: "execute: missing session. Usage: execute [--session H | --as ALIAS=H ...] [--timeout ms 1-300000] [--max-chars N] [--json] '<code>'" }))
+      return yield* Effect.fail(new UsageError({ message: "execute: missing session. Usage: execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json] '<code>'" }))
     }
     if (code === undefined) {
-      return yield* Effect.fail(new UsageError({ message: "execute: missing '<code>'. Usage: execute [--session H | --as ALIAS=H ...] [--timeout ms 1-300000] [--max-chars N] [--json] '<code>'" }))
+      return yield* Effect.fail(new UsageError({ message: "execute: missing '<code>'. Usage: execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json] '<code>'" }))
     }
     const sessions: Record<string, string> = {}
     for (const [alias, handle] of aliases) {

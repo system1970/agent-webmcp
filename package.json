@@ -13,6 +13,8 @@
     "compile": "bun ./scripts/compile.ts",
     "test": "bun test src",
     "review": "bun ./scripts/review.ts",
+    "preflight": "bun ./scripts/preflight.ts",
+    "review:eval": "bun ./scripts/review-eval.ts",
     "eval:transport": "bun ./scripts/eval-transport.ts",
     "eval:sessions": "bun ./scripts/eval-sessions.ts",
     "eval:mcp": "bun ./scripts/eval-mcp.ts",
