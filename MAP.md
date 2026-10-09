@@ -489,7 +489,7 @@ when the code moves. Only this region's agent writes this file.
 | `src/commands/mcp-serve.test.ts` | `7506f8a3e6d2` | agent-webmcp |
 | `docs/research/cross-page-composition.md` | `cbb976ebb2f9` | agent-webmcp |
 | `docs/decisions.md` | `f17ee84ba17a` | agent-webmcp |
-| `docs/review-learnings.md` | `9bd7754f5218` | agent-webmcp |
+| `docs/review-learnings.md` | `65f3b4bfb86a` | agent-webmcp |
 | `scripts/preflight.ts` | `9331bf42050e` | agent-webmcp |
 | `scripts/review-eval.ts` | `190eabb5786a` | agent-webmcp |
 | `scripts/review-eval.json` | `c19d5da15ab0` | agent-webmcp |
