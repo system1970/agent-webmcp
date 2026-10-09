@@ -1,6 +1,6 @@
 // Preflight: deterministic pre-review gate. Usage:
 // `bun ./scripts/preflight.ts` (check) or with `--write` (fix MAP hashes).
-// No browser, no network, no model. Eight checks, dense lines; failures
+// No browser, no network, no model. Nine checks, dense lines; failures
 // accumulate and the run exits 1 so one invocation shows everything:
 //
 // 1. map-sync: MAP.md Files-covered hashes equal sha256(file).slice(0,12).
@@ -11,8 +11,10 @@
 // 4. `bun check` clean. 5. `bun test src` green.
 // 6. `bun test scripts/review` green (the gate's own unit tests).
 // 7. desc-budget: every tool blurb fits the budget (detail lives in
-//    SKILL.md, never accretes into descriptions).
-// 8. user-surface: strangers discover tools via SKILL and run on their
+//    SKILL.md, never accretes into descriptions). 8. schema-object:
+//    every inputSchema is top-level {type:"object"} (one typeless tool
+//    poisons the whole tools/list).
+// 9. user-surface: strangers discover tools via SKILL and run on their
 //    own machines — every registry tool documented, no my-machine paths.
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
@@ -130,7 +132,10 @@ const pass = (msg: string): void => console.log(`PASS ${msg}`)
 }
 
 // 7. desc-budget: tool blurbs stay short (L3 accretion class — the
-// catalog lives in SKILL.md). Import-time only: registry side effects
+// catalog lives in SKILL.md). 8. schema-object: every inputSchema is
+// top-level {type:"object"} (opencode rejects the WHOLE tools/list on
+// one typeless tool — `status` shipped `anyOf` from an empty struct and
+// poisoned all eight). Import-time only: registry side effects
 // register, nothing dials.
 {
   await import("../src/tools/registry.ts")
@@ -142,9 +147,15 @@ const pass = (msg: string): void => console.log(`PASS ${msg}`)
   if (fat.length > 0) {
     fail(`desc-budget: over ${DESC_BUDGET} chars: ${fat.join(", ")} (move detail to SKILL.md)`)
   } else if (!failed) pass(`desc-budget (${allTools.length} tools)`)
+  const badSchema = allTools
+    .filter((t) => (t.inputSchema as { type?: unknown }).type !== "object")
+    .map((t) => t.name)
+  if (badSchema.length > 0) {
+    fail(`schema-object: non-object inputSchema: ${badSchema.join(", ")} (MCP requires top-level type object)`)
+  } else if (!failed) pass(`schema-object (${allTools.length} tools)`)
 }
 
-// 8. user-surface: strangers discover tools via SKILL and run on their
+// 9. user-surface: strangers discover tools via SKILL and run on their
 // own machines — every registry tool named there, no my-machine paths
 // in shipped code. Import-time only (registers, never dials).
 {

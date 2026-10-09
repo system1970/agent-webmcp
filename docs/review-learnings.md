@@ -34,3 +34,7 @@ a witness + date. Prune rows whose witness file is gone or older than
 - L9: kill by exact pid, never bare `pkill -f` — the pattern matches
   your own cmdline and SIGTERMs your shell (8902 cleanup). Approved
   2026-10-09.
+- L10: MCP inputSchema is top-level `{type:"object"}` for EVERY tool —
+  one typeless tool poisons the whole tools/list (empty structs derive
+  `anyOf`; collapse in toInputSchema, lock in preflight + eval-mcp).
+  Approved 2026-10-09. `src/tools/definition.ts:59`

@@ -56,5 +56,16 @@ export const findTool = (name: string): WebmcpTool | undefined =>
 // the truth; the JSON Schema is computed. Anonymous structs inline fully.
 // Named (identifier-annotated) schemas land in `definitions` instead —
 // keep tool inputs anonymous until a tool earns `$defs` handling.
-export const toInputSchema = (schema: Schema.Constraint): Record<string, unknown> =>
-  Schema.toJsonSchemaDocument(schema).schema as Record<string, unknown>
+//
+// MCP contract, enforced here: top-level inputSchema is always
+// `{type: "object"}`. Effect emits `anyOf: [object, array]` for EMPTY
+// structs (verified: `status` shipped typeless and opencode rejected the
+// whole tools/list — one bad tool poisons all eight). Our tools take
+// objects and ignore extra keys, so collapsing to object is truthful;
+// every tool input is a struct by construction, never an array.
+export const toInputSchema = (schema: Schema.Constraint): Record<string, unknown> => {
+  const derived = Schema.toJsonSchemaDocument(schema).schema as Record<string, unknown>
+  if (derived.type === "object") return derived
+  const { anyOf: _dropped, ...rest } = derived as Record<string, unknown> & { anyOf?: unknown }
+  return { ...rest, type: "object" }
+}

@@ -318,6 +318,12 @@ when the code moves. Only this region's agent writes this file.
   shim-free xpage-join, close-both), green 2026-10-09. Outside evidence:
   joins consume normalized values with zero unwrapping; slow pages read
   toolCount 0 at open and settle via windowed list. `scripts/eval-real.ts:1`
+- `tools/list` poisoning fix 2026-10-09: `status` shipped a typeless
+  inputSchema (empty struct derives `anyOf`) and opencode rejected the
+  whole list. `toInputSchema` collapses to top-level `{type:"object"}`;
+  locked import-time (preflight `schema-object`), wire-level (eval-mcp
+  `tools-schemas-object`), and memory (G21 + L10).
+  `src/tools/definition.ts:59`
 
 ### Unit 9 — custom-WebMCP authoring (annotation mapping + recipe)
 
@@ -441,7 +447,7 @@ when the code moves. Only this region's agent writes this file.
 | `src/commands/doctor.ts` | `1ca98d076742` | agent-webmcp |
 | `src/commands/mcp-list.ts` | `dec84e5ad272` | agent-webmcp |
 | `src/commands/mcp-serve.ts` | `a96ba79b1535` | agent-webmcp |
-| `src/tools/definition.ts` | `998521d1f464` | agent-webmcp |
+| `src/tools/definition.ts` | `96d61b33a2ca` | agent-webmcp |
 | `src/tools/registry.ts` | `05e9a3ad40ef` | agent-webmcp |
 | `src/tools/search.ts` | `c95ce1895a7d` | agent-webmcp |
 | `src/tools/execute.ts` | `4d2226c11c59` | agent-webmcp |
@@ -478,7 +484,7 @@ when the code moves. Only this region's agent writes this file.
 | `src/commands/skill.ts` | `4c6074d3b4ca` | agent-webmcp |
 | `src/budgets.ts` | `e921c3a3e6df` | agent-webmcp |
 | `src/md.d.ts` | `592511bb79fe` | agent-webmcp |
-| `scripts/eval-mcp.ts` | `0e284f0daebe` | agent-webmcp |
+| `scripts/eval-mcp.ts` | `7064d58d3fd0` | agent-webmcp |
 | `src/commands/search.ts` | `91e778fd29d0` | agent-webmcp |
 | `src/commands/execute.ts` | `38296b60ed71` | agent-webmcp |
 | `src/tools/describe.ts` | `eab4e5a86a76` | agent-webmcp |
@@ -489,10 +495,10 @@ when the code moves. Only this region's agent writes this file.
 | `src/commands/mcp-serve.test.ts` | `7506f8a3e6d2` | agent-webmcp |
 | `docs/research/cross-page-composition.md` | `cbb976ebb2f9` | agent-webmcp |
 | `docs/decisions.md` | `f17ee84ba17a` | agent-webmcp |
-| `docs/review-learnings.md` | `65f3b4bfb86a` | agent-webmcp |
-| `scripts/preflight.ts` | `9331bf42050e` | agent-webmcp |
+| `docs/review-learnings.md` | `5ecb535fa0f1` | agent-webmcp |
+| `scripts/preflight.ts` | `5ca1c63636cf` | agent-webmcp |
 | `scripts/review-eval.ts` | `190eabb5786a` | agent-webmcp |
-| `scripts/review-eval.json` | `c19d5da15ab0` | agent-webmcp |
+| `scripts/review-eval.json` | `31d719297003` | agent-webmcp |
 | `scripts/review/git.ts` | `8c23538e6fd3` | agent-webmcp |
 | `scripts/review/brief.ts` | `05437060508b` | agent-webmcp |
 | `scripts/review/cache.ts` | `d6004758de1f` | agent-webmcp |

@@ -137,7 +137,7 @@ const runChecks = Effect.fn("eval.checks")(function* (
   server.notify("notifications/initialized", {})
 
   const listed = (yield* rpc("tools/list", {})) as {
-    result: { tools: Array<{ name: string }> }
+    result: { tools: Array<{ name: string; inputSchema?: { type?: unknown } }> }
   } | null
   const names = listed?.result.tools.map((t) => t.name).sort() ?? []
   const want = ["close", "describe", "execute", "invoke", "list", "open", "search", "status"]
@@ -145,6 +145,17 @@ const runChecks = Effect.fn("eval.checks")(function* (
     "tools-list-8",
     want.every((n) => names.includes(n)),
     detail(names.join(","))
+  ))
+  // Wire-level MCP contract: EVERY tool's inputSchema is top-level
+  // {type:"object"} — opencode rejects the whole list on one typeless
+  // tool (status shipped anyOf; preflight schema-object locks it
+  // import-time, this locks what actually crosses stdio).
+  const schemasOk = (listed?.result.tools ?? []).length === 8
+    && (listed?.result.tools ?? []).every((t) => t.inputSchema?.type === "object")
+  results.push(yield* check(
+    "tools-schemas-object",
+    schemasOk,
+    detail((listed?.result.tools ?? []).map((t) => `${t.name}:${String(t.inputSchema?.type)}`).join(","))
   ))
 
   const openStart = Date.now()
