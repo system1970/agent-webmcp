@@ -1,9 +1,9 @@
-// Unit 6 eval: the MCP surface over stdio, no model. Usage:
+// Unit 7 eval: the MCP surface over stdio, no model. Usage:
 // `bun run eval:mcp`. Manual (needs network + chromium).
-// initialize -> tools/list (8 tools) -> call open -> call invoke
-// (Completed, untrusted:true) -> search/describe w/ session -> spilling
-// execute batch -> run code block (loop/branch/filter in-code) ->
-// call close.
+// initialize -> tools/list (7 tools) -> call open -> call invoke
+// (Completed, untrusted:true) -> search/describe w/ session -> execute
+// code block (invoke in code) -> spilling execute (big code value) ->
+// execute control-flow (loop/branch/filter in-code) -> call close.
 import { Console, Effect } from "effect"
 
 const DEMO = "https://googlechromelabs.github.io/webmcp-tools/demos/react-flightsearch/"
@@ -139,9 +139,9 @@ const runChecks = Effect.fn("eval.checks")(function* (
     result: { tools: Array<{ name: string }> }
   } | null
   const names = listed?.result.tools.map((t) => t.name).sort() ?? []
-  const want = ["close", "describe", "execute", "invoke", "list", "open", "run", "search"]
+  const want = ["close", "describe", "execute", "invoke", "list", "open", "search"]
   results.push(yield* check(
-    "tools-list-8",
+    "tools-list-7",
     want.every((n) => names.includes(n)),
     detail(names.join(","))
   ))
@@ -198,42 +198,46 @@ const runChecks = Effect.fn("eval.checks")(function* (
     const batched = textOf(yield* rpc("tools/call", {
       name: "execute",
       arguments: {
-        calls: [{ tool: "searchFlights", args: { origin: "SFO", destination: "JFK" } }],
-        sessionId: handle
+        handle,
+        code: `const r = await tools.searchFlights({ origin: "SFO", destination: "JFK" });
+          return { searched: typeof r };`
       }
     }))
     let batchOk = false
     try {
-      const report = JSON.parse(batched) as { results: Array<{ ok: boolean }> }
-      batchOk = report.results.length === 1 && report.results[0].ok === true
+      const report = JSON.parse(batched) as { value: string; toolCalls: number; untrusted: boolean }
+      const inner = JSON.parse(report.value) as { searched: string }
+      batchOk = inner.searched === "object" && report.toolCalls === 1 && report.untrusted === true
     } catch {}
     results.push(yield* check("execute-session", batchOk, detail(batched.slice(0, 120))))
 
     // Spill contract, both sides, via the structured field (see
     // spill.ts): overflow names a matching file, fit carries no key.
+    // Five page reads in code, one turn total — past budget by design.
     const spilling = textOf(yield* rpc("tools/call", {
       name: "execute",
       arguments: {
-        calls: [{ tool: "listFlights", args: {} }],
-        sessionId: handle,
+        handle,
+        code: `const out = [];
+          for (let i = 0; i < 5; i++) { out.push(await tools.listFlights({})); }
+          return JSON.stringify(out);`,
         maxChars: 1000
       }
     }))
     let spillOk = false
     try {
-      const report = JSON.parse(spilling) as { results: Array<{ ok: boolean; result: string; spill?: unknown }> }
-      const item = report.results[0]
-      if (item?.ok === true && typeof item.spill === "string" && item.spill !== "") {
-        const body = yield* Effect.tryPromise(() => Bun.file(item.spill as string).text()).pipe(
+      const report = JSON.parse(spilling) as { value: string; spilled: unknown; untrusted: boolean }
+      if (typeof report.spilled === "string" && report.spilled !== "" && report.untrusted === true) {
+        const body = yield* Effect.tryPromise(() => Bun.file(report.spilled as string).text()).pipe(
           Effect.catch(() => Effect.succeed(""))
         )
-        spillOk = body.length > 0 && item.result.startsWith(body.slice(0, 500))
+        spillOk = body.length > 1000 && report.value.startsWith(body.slice(0, 500))
       }
     } catch {}
     results.push(yield* check("execute-spill", spillOk, detail(spilling.slice(0, 120))))
 
     const ran = textOf(yield* rpc("tools/call", {
-      name: "run",
+      name: "execute",
       arguments: {
         handle,
         code: `const names = ["searchFlights", "listFlights"];
@@ -256,7 +260,10 @@ const runChecks = Effect.fn("eval.checks")(function* (
     let runOk = false
     let runDetail = ""
     try {
-      const report = JSON.parse(ran) as { value: string; untrusted: boolean }
+      const report = JSON.parse(ran) as {
+        value: string; untrusted: boolean; toolCalls: number;
+        perSession: Record<string, number>; origins: Array<string>
+      }
       const inner = JSON.parse(report.value) as { described: Array<string>; found: Array<string>; ok: Array<string> }
       runDetail = report.value.slice(0, 160)
       // Control-flow shape plus one live success: describe-first loop
@@ -265,6 +272,7 @@ const runChecks = Effect.fn("eval.checks")(function* (
       // stay green on shape alone. (If page-side validation ever
       // rejects the placeholder args, this anchor goes red and the
       // eval gets real args — that failure is signal, not noise.)
+      // Single handle: both attempts counted under it, one origin.
       const names = ["searchFlights", "listFlights"]
       runOk = report.untrusted === true
         && JSON.stringify(inner.described) === JSON.stringify(names)
@@ -272,8 +280,11 @@ const runChecks = Effect.fn("eval.checks")(function* (
         && inner.found.every((n) => names.includes(n) || n.startsWith("miss:"))
         && inner.ok.every((n) => names.includes(n))
         && inner.ok.length >= 1
+        && report.toolCalls === 2
+        && report.perSession[handle] === 2
+        && report.origins.length === 1
     } catch {}
-    results.push(yield* check("run-control-flow", runOk, detail(runDetail === "" ? ran.slice(0, 120) : runDetail)))
+    results.push(yield* check("execute-control-flow", runOk, detail(runDetail === "" ? ran.slice(0, 120) : runDetail)))
 
     const small = textOf(yield* rpc("tools/call", {
       name: "describe",

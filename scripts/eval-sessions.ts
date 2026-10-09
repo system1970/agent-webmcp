@@ -92,14 +92,51 @@ const main = Effect.fn("eval.main")(function* () {
   const found = yield* cli("search", "session", "handle")
   results.push(yield* check("cli-search", found.code === 0 && found.out.includes("open —"), found.out.split("\n")[0] ?? ""))
 
-  // 9. CLI execute batches engine-local calls (no browser needed).
-  const batched = yield* cli("execute", "--json", `[{"tool":"search","args":{"query":"close","limit":1}}]`)
-  let batchOk = false
+  // 9. CLI execute runs code against a session (needs a browser):
+  // open -> search (registers results-page tools) -> listFlights ->
+  // close. listFlights only exists after a search runs (page-state
+  // registration, found live) — the code does the real agent flow.
+  // Asserts the CLI door end to end (envelope shape, not page
+  // semantics — those live in eval:mcp / eval:xpage).
+  const xOpen = yield* cli("open", "--json", DEMO)
+  let xHandle = ""
   try {
-    const report = JSON.parse(batched.out) as { results: Array<{ tool: string; ok: boolean }> }
-    batchOk = batched.code === 0 && report.results.length === 1 && report.results[0].ok === true
+    xHandle = (JSON.parse(xOpen.out) as { handle: string }).handle
   } catch {}
-  results.push(yield* check("cli-execute", batchOk, batched.out.slice(0, 80)))
+  let codeOk = false
+  let attempts = 0
+  if (/^s_[a-z0-9]+$/.test(xHandle)) {
+    // Fresh opens race SPA tool registration: retry with sleeps until
+    // the tool answers (bounded — a real agent re-lists when missing).
+    for (let attempt = 0; attempt < 5 && !codeOk; attempt++) {
+      attempts = attempt + 1
+      if (attempt > 0) {
+        yield* Effect.sleep("2 seconds")
+      }
+      const ran = yield* cli(
+        "execute", "--json", "--session", xHandle,
+        `await tools.searchFlights({ origin: "SFO", destination: "JFK" });
+        const v = await tools.listFlights({});
+        return { t: typeof v, len: JSON.stringify(v).length };`
+      )
+      try {
+        const report = JSON.parse(ran.out) as { value: string; toolCalls: number; untrusted: boolean }
+        const inner = JSON.parse(report.value) as { t: string; len: number }
+        codeOk = ran.code === 0 && report.toolCalls === 2 && report.untrusted === true
+          && (inner.t === "object" || inner.t === "string") && inner.len > 100
+      } catch {}
+    }
+    yield* cli("close", xHandle).pipe(
+      Effect.flatMap((closed) =>
+        Effect.sync(() => {
+          if (!closed.out.includes(xHandle)) {
+            codeOk = false
+          }
+        })
+      )
+    )
+  }
+  results.push(yield* check("cli-execute", codeOk, xHandle === "" ? "open failed" : `${xHandle} attempts:${attempts}`))
 
   // 10. Foreign borrow: second browser, --target picks the tab, close
   // leaves the foreign browser alive (never ours to kill).

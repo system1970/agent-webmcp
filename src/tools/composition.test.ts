@@ -5,9 +5,9 @@ import { Effect } from "effect"
 import { ToolFailed } from "./definition.ts"
 import { allTools, findTool } from "./registry.ts"
 import { search, clampLimit, signature } from "./search.ts"
-import { execute } from "./execute.ts"
+import { execute, sanitizeMaxChars } from "./execute.ts"
 import { describe as describeTool } from "./describe.ts"
-import { run as runTool, sanitizeMaxChars } from "./run.ts"
+import { saveSession } from "../sessions/store.ts"
 import { RUN_TIMEOUT_MAX_MS, INVOKE_TIMEOUT_MS } from "../budgets.ts"
 import { shapeResult } from "../spill.ts"
 import type { WebmcpTool } from "./definition.ts"
@@ -24,8 +24,38 @@ const err = (tool: WebmcpTool, args: unknown): Promise<unknown> =>
 const names = (content: string): Array<string> =>
   (JSON.parse(content) as { tools: Array<{ name: string }> }).tools.map((t) => t.name)
 
+// Hermetic sessions dir: the production dir is shared, so point it at
+// a fresh kernel-uniquified tmpdir (no wall-clock, no collision),
+// restored + removed in finally.
+const withEmptySessionsDir = async <A>(fn: () => Promise<A>): Promise<A> => {
+  const dir = mkdtempSync(`${tmpdir()}/agent-webmcp-unknown-`)
+  const prev = Bun.env.AGENT_SESSIONS_DIR
+  Bun.env.AGENT_SESSIONS_DIR = dir
+  try {
+    return await fn()
+  } finally {
+    if (prev === undefined) {
+      delete Bun.env.AGENT_SESSIONS_DIR
+    } else {
+      Bun.env.AGENT_SESSIONS_DIR = prev
+    }
+    try {
+      rmSync(dir, { recursive: true, force: true })
+    } catch {}
+  }
+}
+
+const deadRecord = (handle: string) => ({
+  handle,
+  browserHttp: "http://127.0.0.1:9/",
+  targetId: "deadbeef",
+  url: "http://dead.test/",
+  ownBrowser: false,
+  createdAt: "2026-01-01T00:00:00.000Z"
+})
+
 describe("registry", () => {
-  test("lists all eight tools", () => {
+  test("lists all seven tools", () => {
     expect(allTools.map((t) => t.name).sort()).toEqual([
       "close",
       "describe",
@@ -33,39 +63,73 @@ describe("registry", () => {
       "invoke",
       "list",
       "open",
-      "run",
       "search"
     ].sort())
   })
 
-  test("run tool record carries code/timeout inputs", async () => {
-    const record = JSON.parse(await ok(describeTool, { tool: "run" })) as {
+  test("execute tool record carries code/session inputs", async () => {
+    const record = JSON.parse(await ok(describeTool, { tool: "execute" })) as {
       name: string
-      inputSchema: { properties: { handle: unknown; code: unknown; timeoutMs: unknown } }
+      inputSchema: { properties: { handle: unknown; sessions: unknown; code: unknown; timeoutMs: unknown } }
     }
-    expect(record.name).toBe("run")
+    expect(record.name).toBe("execute")
     expect(record.inputSchema.properties.code).toBeDefined()
     expect(record.inputSchema.properties.timeoutMs).toBeDefined()
+    expect(record.inputSchema.properties.sessions).toBeDefined()
   })
 
-  test("run rejects bad timeout without a browser", async () => {
-    const failure = await err(runTool, { handle: "s_deadbeef01", code: "return 1", timeoutMs: 999999999 })
+  test("execute rejects bad timeout without a browser", async () => {
+    const failure = await err(execute, { handle: "s_deadbeef01", code: "return 1", timeoutMs: 999999999 })
     expect((failure as ToolFailed).message).toMatch(/1-300000/)
   })
 
-  test("run rejects empty code without a browser", async () => {
-    const failure = await err(runTool, { handle: "s_deadbeef01", code: "   " })
+  test("execute rejects empty code without a browser", async () => {
+    const failure = await err(execute, { handle: "s_deadbeef01", code: "   " })
     expect((failure as ToolFailed).message).toMatch(/empty/)
   })
 
-  test("run rejects non-positive maxChars without a browser", async () => {
-    const failure = await err(runTool, { handle: "s_deadbeef01", code: "return 1", maxChars: -5 })
+  test("execute rejects non-positive maxChars without a browser", async () => {
+    const failure = await err(execute, { handle: "s_deadbeef01", code: "return 1", maxChars: -5 })
     expect((failure as ToolFailed).message).toMatch(/positive integer/)
   })
 
-  test("run rejects oversized code without a browser", async () => {
-    const failure = await err(runTool, { handle: "s_deadbeef01", code: `return 1; /*${"x".repeat(70000)}*/` })
+  test("execute rejects oversized code without a browser", async () => {
+    const failure = await err(execute, { handle: "s_deadbeef01", code: `return 1; /*${"x".repeat(70000)}*/` })
     expect((failure as ToolFailed).message).toMatch(/chunk the block/)
+  })
+
+  test("execute rejects handle+sessions together", async () => {
+    const failure = await err(execute, { handle: "s_deadbeef01", sessions: { a: "s_deadbeef02" }, code: "return 1" })
+    expect((failure as ToolFailed).message).toMatch(/exactly one of handle\/sessions/)
+  })
+
+  test("execute rejects missing session wiring", async () => {
+    const failure = await err(execute, { code: "return 1" })
+    expect((failure as ToolFailed).message).toMatch(/exactly one of handle\/sessions/)
+  })
+
+  test("execute rejects empty sessions map", async () => {
+    const failure = await err(execute, { sessions: {}, code: "return 1" })
+    expect((failure as ToolFailed).message).toMatch(/at least one alias/)
+  })
+
+  test("execute caps bound sessions without a browser", async () => {
+    const sessions: Record<string, string> = {}
+    for (let i = 0; i < 9; i++) sessions[`s${i}`] = "s_deadbeef01"
+    const failure = await err(execute, { sessions, code: "return 1" })
+    expect((failure as ToolFailed).message).toMatch(/at most 8 sessions/)
+  })
+
+  test("execute rejects duplicate handles across aliases", async () => {
+    const failure = await err(execute, { sessions: { a: "s_deadbeef01", b: "s_deadbeef01" }, code: "return 1" })
+    expect((failure as ToolFailed).message).toMatch(/bound twice/)
+  })
+
+  test("execute rejects prototype-chain aliases without a browser", async () => {
+    for (const alias of ["__proto__", "constructor", "prototype", "9lives", "has space"]) {
+      const failure = await err(execute, { sessions: { [alias]: "s_deadbeef01" }, code: "return 1" })
+      expect((failure as ToolFailed).message).toMatch(/plain identifier/)
+    }
   })
 
   test("sanitizeMaxChars falls back on non-finite, rejects non-positive", () => {
@@ -81,38 +145,30 @@ describe("registry", () => {
     expect(() => sanitizeMaxChars(0)).toThrow(RangeError)
   })
 
-  test("run timeout ceiling covers the per-call ceiling", async () => {
+  test("execute timeout ceiling covers the per-call ceiling", async () => {
     // Distinct symbols, intended relation: a run must admit at least
     // one full per-call budget. Same value today, separate meaning —
     // locked so a retune can't silently invert them.
     expect(RUN_TIMEOUT_MAX_MS).toBeGreaterThanOrEqual(INVOKE_TIMEOUT_MS)
   })
 
-  test("run rejects malformed handles fast", async () => {
-    const failure = await err(runTool, { handle: "abc", code: "return 1" })
+  test("execute rejects malformed handles fast", async () => {
+    const failure = await err(execute, { handle: "abc", code: "return 1" })
     expect((failure as ToolFailed).message).toMatch(/invalid session handle/)
   })
 
-  test("run rejects unknown handles as unknown sessions", async () => {
-    // Hermetic: the sessions dir is shared with production, so point
-    // it at a fresh kernel-uniquified tmpdir (no wall-clock, no
-    // collision) — every handle is unknown there, deterministically.
-    const dir = mkdtempSync(`${tmpdir()}/agent-webmcp-unknown-`)
-    const prev = Bun.env.AGENT_SESSIONS_DIR
-    Bun.env.AGENT_SESSIONS_DIR = dir
-    try {
-      const failure = await err(runTool, { handle: "s_deadbeef01", code: "return 1" })
+  test("execute rejects unknown handles as unknown sessions", async () => {
+    await withEmptySessionsDir(async () => {
+      const failure = await err(execute, { handle: "s_deadbeef01", code: "return 1" })
       expect((failure as ToolFailed).message).toMatch(/unknown session/)
-    } finally {
-      if (prev === undefined) {
-        delete Bun.env.AGENT_SESSIONS_DIR
-      } else {
-        Bun.env.AGENT_SESSIONS_DIR = prev
-      }
-      try {
-        rmSync(dir, { recursive: true, force: true })
-      } catch {}
-    }
+    })
+  })
+
+  test("execute rejects unknown sessions map entries", async () => {
+    await withEmptySessionsDir(async () => {
+      const failure = await err(execute, { sessions: { a: "s_deadbeef01" }, code: "return 1" })
+      expect((failure as ToolFailed).message).toMatch(/unknown session/)
+    })
   })
 
   test("findTool misses cleanly", () => {
@@ -126,7 +182,7 @@ describe("search", () => {
   })
 
   test("finds execute by its behavior words", async () => {
-    expect(names(await ok(search, { query: "multiple calls parallel" }))).toContain("execute")
+    expect(names(await ok(search, { query: "loops branches code" }))).toContain("execute")
   })
 
   test("respects limit", async () => {
@@ -146,25 +202,50 @@ describe("search", () => {
   })
 
   test("rejects malformed session handles fast", async () => {
-    const failure = await err(execute, {
-      calls: [{ tool: "search", args: { query: "x" } }],
-      sessionId: "abc"
-    })
+    const failure = await err(search, { query: "x", handle: "abc" })
     expect((failure as ToolFailed).message).toMatch(/invalid session handle/)
   })
 
   test("unknown well-formed sessions fail as unknown", async () => {
-    const failure = await err(execute, {
-      calls: [{ tool: "search", args: { query: "x" } }],
-      sessionId: "s_deadbeef01"
+    await withEmptySessionsDir(async () => {
+      const failure = await err(search, { query: "x", handle: "s_deadbeef01" })
+      expect((failure as ToolFailed).message).toMatch(/unknown session/)
     })
-    expect((failure as ToolFailed).message).toMatch(/unknown session/)
+  })
+
+  test("all sweeps best-effort: dead sessions land in skipped", async () => {
+    await withEmptySessionsDir(async () => {
+      await Effect.runPromise(saveSession(deadRecord("s_dead01")))
+      const report = JSON.parse(await ok(search, { query: "tool", all: true })) as {
+        tools: Array<{ name: string }>
+        skipped: Array<{ session: string; reason: string }>
+      }
+      // Engine hits still rank (reconnaissance degrades, never fails);
+      // the dead record is named, not silent.
+      expect(report.tools.length).toBeGreaterThan(0)
+      expect(report.skipped).toEqual([{ session: "s_dead01", reason: expect.anything() }])
+    })
+  })
+
+  test("explicit dead handles fail loud (not skipped)", async () => {
+    await withEmptySessionsDir(async () => {
+      await Effect.runPromise(saveSession(deadRecord("s_dead01")))
+      const failure = await err(search, { query: "tool", handles: ["s_dead01", "s_dead02"] })
+      expect(failure).toBeInstanceOf(ToolFailed)
+    })
   })
 
   test("empty query fails", async () => {
     const failure = await err(search, { query: "   " })
     expect(failure).toBeInstanceOf(ToolFailed)
     expect((failure as ToolFailed).message).toMatch(/empty/)
+  })
+
+  test("all with explicit handles refuses the ambiguity", async () => {
+    const failure = await err(search, { query: "x", all: true, handle: "s_deadbeef01" })
+    expect((failure as ToolFailed).message).toMatch(/either all or/)
+    const failure2 = await err(search, { query: "x", all: true, handles: ["s_deadbeef01"] })
+    expect((failure2 as ToolFailed).message).toMatch(/either all or/)
   })
 
   test("clampLimit defaults, clamps, and floors", () => {
@@ -264,54 +345,17 @@ describe("shapeResult", () => {
 })
 
 describe("execute", () => {
-  test("batch keeps per-item ok flags", async () => {
-    const content = await ok(execute, {
-      calls: [
-        { tool: "search", args: { query: "find" } },
-        { tool: "bogus", args: {} }
-      ]
-    })
-    const report = JSON.parse(content) as {
-      sessionId: null
-      results: Array<{ tool: string; ok: boolean; result: string }>
-    }
-    expect(report.sessionId).toBeNull()
-    expect(report.results.map((r) => [r.tool, r.ok])).toEqual([
-      ["search", true],
-      ["bogus", false]
-    ])
-    expect(report.results[1].result).toMatch(/unknown tool/)
-  })
-
-  test("clamps tiny maxChars to the floor instead of truncating", async () => {
-    const tiny = await ok(execute, {
-      calls: [{ tool: "search", args: { query: "find" } }],
-      maxChars: 50
-    })
-    const full = await ok(execute, {
-      calls: [{ tool: "search", args: { query: "find" } }],
-      maxChars: 64000
-    })
-    // Floor is 1000; registry results are shorter, so both return whole.
-    // The slice+marker path only triggers on page-tool-sized results.
-    expect(JSON.parse(tiny)).toEqual(JSON.parse(full))
-    expect(tiny).not.toMatch(/truncated/)
-  })
-
-  test("rejects oversized batches loudly", async () => {
-    const calls = Array.from({ length: 6 }, () => ({ tool: "search", args: { query: "x" } }))
-    const failure = await err(execute, { calls })
+  // Code-only contract: every positive path needs a live session
+  // (covered by eval:mcp + eval:xpage). Unit locks the shape that
+  // fails before any CDP dial.
+  test("execute requires code", async () => {
+    const failure = await err(execute, { handle: "s_deadbeef01" })
     expect(failure).toBeInstanceOf(ToolFailed)
-    expect((failure as ToolFailed).message).toMatch(/at most 5/)
   })
 
-  test("rejects empty batches", async () => {
-    const failure = await err(execute, { calls: [] })
-    expect((failure as ToolFailed).message).toMatch(/no calls/)
-  })
-
-  test("rejects malformed batches", async () => {
-    expect(await err(execute, { calls: "nope" })).toBeInstanceOf(ToolFailed)
+  test("execute rejects non-record sessions", async () => {
+    const failure = await err(execute, { sessions: ["nope"], code: "return 1" })
+    expect(failure).toBeInstanceOf(ToolFailed)
   })
 })
 

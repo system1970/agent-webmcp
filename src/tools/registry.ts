@@ -9,6 +9,5 @@ import "./list.ts"
 import "./invoke.ts"
 import "./close.ts"
 import "./describe.ts"
-import "./run.ts"
 
 export { allTools, findTool } from "./definition.ts"

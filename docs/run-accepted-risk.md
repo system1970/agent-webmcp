@@ -61,7 +61,9 @@ threat that doesn't exist in single-operator use.
 Denied-name shadowing (incl. bridge internals `__nextId`/`__pending`),
 runaway kills (timeouts terminate the worker), invoke-call caps,
 per-result ceilings on every bridge op plus the final value, fail-before-dial
-validation, defect-loudness. Accidents contained; malice out of scope.
+validation, defect-loudness. Multi-session runs return `origins[]`
+(the contributor list — honest, not cryptographic lineage) alongside
+per-session call counts. Accidents contained; malice out of scope.
 
 ## What reopens this
 

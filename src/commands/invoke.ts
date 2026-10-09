@@ -3,7 +3,7 @@ import { invokeSessionTool } from "../sessions/verbs.ts"
 import { UsageError, CliFailure, asCliFailure } from "../failure.ts"
 import { INVOKE_TIMEOUT_MS, INVOKE_TIMEOUT_MAX_MS } from "../budgets.ts"
 
-// invoke <handle> <tool> '<json-args>' [--timeout ms] [--json]: thin argv
+// invoke <handle> <tool> '<json-args>' [--timeout ms 1-300000] [--json]: thin argv
 // shell over verbs.invokeSessionTool; output rendering only here.
 export const invoke = (args: ReadonlyArray<string>) =>
   Effect.gen(function* () {
@@ -23,7 +23,7 @@ export const invoke = (args: ReadonlyArray<string>) =>
           return yield* Effect.fail(new UsageError({ message: `invoke: bad --timeout '${raw ?? "(missing)"}': want 1-${INVOKE_TIMEOUT_MAX_MS} ms` }))
         }
       } else if (arg.startsWith("-")) {
-        return yield* Effect.fail(new UsageError({ message: `invoke: unknown flag '${arg}'. Usage: invoke <handle> <tool> '<json>' [--timeout ms] [--json]` }))
+        return yield* Effect.fail(new UsageError({ message: `invoke: unknown flag '${arg}'. Usage: invoke <handle> <tool> '<json>' [--timeout ms 1-${INVOKE_TIMEOUT_MAX_MS}] [--json]` }))
       } else if (handle === undefined) {
         handle = arg
       } else if (tool === undefined) {
@@ -35,7 +35,7 @@ export const invoke = (args: ReadonlyArray<string>) =>
       }
     }
     if (handle === undefined || tool === undefined) {
-      return yield* Effect.fail(new UsageError({ message: "invoke: missing <handle> or <tool>. Usage: invoke <handle> <tool> '<json>' [--timeout ms] [--json]" }))
+      return yield* Effect.fail(new UsageError({ message: `invoke: missing <handle> or <tool>. Usage: invoke <handle> <tool> '<json>' [--timeout ms 1-${INVOKE_TIMEOUT_MAX_MS}] [--json]` }))
     }
     let parsed: unknown
     try {

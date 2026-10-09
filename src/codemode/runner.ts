@@ -34,16 +34,30 @@ import { RUN_MAX_CODE_CHARS } from "../budgets.ts"
 // (restricted subset, copied values, tool-call caps; see
 // docs/research/codemode-opencode-vs-cloudflare.md) without its
 // interpreter: the realm boundary is the containment.
+//
+// Multi-session: one run binds N sessions under caller aliases. Each
+// alias carries a frozen tool snapshot (same benign fail directions,
+// per alias); budgets stay global (one 25-call cap, one run timeout).
+// Returns carry origins[] — the contributor list, honest but not
+// cryptographic lineage. Callers bind bare tools/search/describe to
+// exactly one session; multi-session code addresses sesh.ALIAS.tools.
 
-export interface RunBridge {
-  readonly invoke: (tool: string, args: Record<string, unknown>) => Effect.Effect<unknown, { message: string }>
-  readonly search: (query: string) => Effect.Effect<Array<{ name: string; description: string }>, { message: string }>
-  readonly describe: (name: string) => Effect.Effect<Record<string, unknown>, { message: string }>
+export interface RunSessionSnapshot {
+  readonly handle: string
+  readonly origin: string
+  readonly tools: Array<{
+    readonly name: string
+    readonly description: string
+    readonly inputSchema: unknown
+    readonly annotations: unknown
+  }>
 }
 
 export interface RunResult {
   readonly value: unknown
   readonly toolCalls: number
+  readonly perSession: Record<string, number>
+  readonly origins: Array<string>
 }
 
 // One list feeds both the `new Function` param shadow and the
@@ -125,15 +139,40 @@ onmessage = (ev) => {
     getPrototypeOf: function () { return null; },
     apply: function (t, th, args) { return t.apply(th, args); }
   });
-  const tools = new Proxy({}, {
+  const boundTools = (alias) => new Proxy({}, {
     get: function (_, name) {
       if (name === "then" || name === "constructor" || name === "prototype" || name === "__proto__" || name === "valueOf") return undefined;
-      return mask(function (args) { return checked(__call("invoke", { tool: String(name), args: args === undefined ? {} : args })); });
+      return mask(function (args) { return checked(__call("invoke", { session: alias, tool: String(name), args: args === undefined ? {} : args })); });
+    },
+    getPrototypeOf: function () { return null; }
+  });
+  const tools = m.defaultAlias === null ? new Proxy({}, {
+    get: function () { throw new Error("multi-session run: use sesh.ALIAS.tools.<name> (bare tools need exactly one bound session)"); },
+    getPrototypeOf: function () { return null; }
+  }) : boundTools(m.defaultAlias);
+  // Multi-session addressing: sesh.ALIAS.tools.<name> routes to that
+  // session; sesh.ALIAS.search filters merged hits to it;
+  // sesh.ALIAS.describe pins it. Unknown aliases read undefined (the
+  // host refuses forged ones anyway). Global search spans all bound
+  // sessions; global describe takes an optional session.
+  // Null-prototype map (not {}): caller aliases share this namespace
+  // and __proto__ must never resolve through inheritance here.
+  const KNOWN = Object.create(null);
+  for (const a of m.sessions) KNOWN[a] = true;
+  const sesh = new Proxy({}, {
+    get: function (_, alias) {
+      if (typeof alias !== "string" || !KNOWN[alias]) return undefined;
+      return {
+        tools: boundTools(alias),
+        search: (query) => search(query).then((hits) => hits.filter((h) => h.session === alias)),
+        describe: (name) => describe(name, alias)
+      };
     },
     getPrototypeOf: function () { return null; }
   });
   const search = mask((query) => checked(__call("search", { query: String(query) })));
-  const describe = mask((name) => checked(__call("describe", { name: String(name) })));
+  const describe = mask((name, session) => checked(__call("describe",
+    session === undefined ? { name: String(name) } : { name: String(name), session: String(session) })));
   const settle = (ok, value, message) => {
     // Final-value blast cap, worker-side pre-clone: the host shapes +
     // spills, but only AFTER clone + stringify — a 500M-char done would
@@ -176,13 +215,13 @@ onmessage = (ev) => {
   };
   let fn;
   try {
-    fn = new Function("tools", "search", "describe",
+    fn = new Function("tools", "search", "describe", "sesh",
       ${declareDenied},
       "return (async () => {\\n" + m.code + "\\n})()");
   } catch (e) { settle(false, 0, "compile: " + String(e && e.message || e)); return; }
   let p;
   try {
-    p = fn(tools, search, describe,
+    p = fn(tools, search, describe, sesh,
       ${passDenied});
   } catch (e) { settle(false, 0, String(e && e.message || e)); return; }
   Promise.resolve(p).then(
@@ -194,12 +233,38 @@ onmessage = (ev) => {
 
 export const runCode = Effect.fn("codemode.run")(function* (input: {
   code: string
-  bridge: RunBridge
+  // One entry per bound session, keyed by caller alias. Snapshots are
+  // frozen per alias at start (same benign fail directions, ×N).
+  sessions: Record<string, RunSessionSnapshot>
+  // Bare tools/search/describe bind here. Callers set it iff exactly
+  // one session is bound; multi-session code uses sesh.ALIAS.*.
+  defaultAlias?: string
+  // Page dispatch per alias (handle lookup + budgets live here, so the
+  // worker never sees ports or timeouts; session aliases/handles do
+  // ride search hits and describe records by design — same operator
+  // privilege, not secrets).
+  dispatch: (alias: string, tool: string, args: Record<string, unknown>) => Effect.Effect<unknown, { message: string }>
   timeoutMs: number
   maxToolCalls: number
   maxResultChars: number
   maxDoneChars: number
 }) {
+  const aliases = Object.keys(input.sessions)
+  if (aliases.length === 0) {
+    return yield* Effect.fail({ message: "no sessions bound: caller contract needs at least one." })
+  }
+  if (input.defaultAlias !== undefined && !Object.hasOwn(input.sessions, input.defaultAlias)) {
+    return yield* Effect.fail({ message: `bad defaultAlias '${input.defaultAlias}': not a bound session.` })
+  }
+  // Alias shape enforced at the boundary that builds the `sesh`
+  // namespace — not just the tool lane. Prototype-chain names would
+  // confuse routing with inheritance; non-identifiers break
+  // sesh.ALIAS access. Same rule as the tool lane, locked twice.
+  for (const alias of aliases) {
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(alias) || alias === "__proto__" || alias === "constructor" || alias === "prototype") {
+      return yield* Effect.fail({ message: `bad session alias '${alias}': want a plain identifier, not a prototype-chain name.` })
+    }
+  }
   if (input.code.trim().length === 0) {
     return yield* Effect.fail({ message: "code is empty." })
   }
@@ -241,6 +306,25 @@ export const runCode = Effect.fn("codemode.run")(function* (input: {
     }
     let calls = 0
     let settled = false
+    // Per-alias call counts (envelope) + first-dispatch order (origins
+    // contributor list). Both count invoke ATTEMPTS including snapshot
+    // misses (misses consume budget, same as toolCalls) — origins
+    // therefore lists attempted origins. Budgets stay global: one
+    // 25-call cap, one run timeout.
+    const perSession: Record<string, number> = {}
+    const usedAliases: Array<string> = []
+    const origins = (): Array<string> => {
+      const seen = new Set<string>()
+      const out: Array<string> = []
+      for (const alias of usedAliases) {
+        const origin = input.sessions[alias]?.origin ?? ""
+        if (!seen.has(origin)) {
+          seen.add(origin)
+          out.push(origin)
+        }
+      }
+      return out
+    }
     // In-flight bridge fibers: joined for defect-loudness, interrupted
     // on finish so runaway page calls don't outlive the run. Defects
     // (bugs, not page failures) reject the join below and fail the run
@@ -291,7 +375,7 @@ export const runCode = Effect.fn("codemode.run")(function* (input: {
       resume(eff)
     }
     worker.onmessage = (ev: MessageEvent) => {
-      const m = ev.data as { type: string; id?: number; op?: string; tool?: string; args?: unknown; query?: string; name?: string; value?: unknown; message?: string }
+      const m = ev.data as { type: string; id?: number; op?: string; session?: unknown; tool?: string; args?: unknown; query?: string; name?: string; value?: unknown; message?: string }
       if (m.type === "done") {
         // Forged `done` bypasses the worker-side cap (it posts direct),
         // so gate host-side too: over-budget finals fail closed even on
@@ -320,7 +404,7 @@ export const runCode = Effect.fn("codemode.run")(function* (input: {
           finish(Effect.fail({ message: `result exceeds final budget (${input.maxDoneChars} chars): chunk the read.` }))
           return
         }
-        finish(Effect.succeed({ value: v, toolCalls: calls }))
+        finish(Effect.succeed({ value: v, toolCalls: calls, perSession: { ...perSession }, origins: origins() }))
         return
       }
       if (m.type === "fail") {
@@ -343,10 +427,11 @@ export const runCode = Effect.fn("codemode.run")(function* (input: {
       // Order is deliberate: malformed traffic is refused BEFORE the
       // call counter moves, so agent mistakes don't consume budget.
       // Snapshot-misses (unknown tool names) DO consume budget: the
-      // miss is only known inside bridge.invoke, past the counter.
+      // miss is only known per alias snapshot, past the counter.
       // Fail-fast direction either way; typos cost one call each.
       // Only `invoke` counts toward the cap (search/describe are
-      // bounded reads).
+      // bounded reads). Aliases are routing, not tools: unknown
+      // aliases refuse pre-counter like malformed traffic.
       const reply = (ok: boolean, value: unknown, message: string): void => {
         try {
           worker.postMessage({ type: "result", id: m.id, ok, value, message })
@@ -483,6 +568,11 @@ export const runCode = Effect.fn("codemode.run")(function* (input: {
         return true
       }
       if (m.op === "invoke") {
+        if (typeof m.session !== "string" || !Object.hasOwn(input.sessions, m.session)) {
+          reply(false, null, `bridge: unknown session '${String(m.session)}' (bound: ${aliases.join(", ")})`)
+          return
+        }
+        const snapshot = input.sessions[m.session] as RunSessionSnapshot
         if (typeof m.tool !== "string") {
           reply(false, null, "bridge: invoke needs a string tool name")
           return
@@ -492,22 +582,70 @@ export const runCode = Effect.fn("codemode.run")(function* (input: {
           return
         }
         if (!gateRequest(`args for '${m.tool}'`, m.args)) return
+        // Counter moves before the snapshot check: misses consume
+        // budget (locked direction — typos cost one call each), and
+        // the limit binds misses too.
         calls++
+        perSession[m.session] = (perSession[m.session] ?? 0) + 1
+        usedAliases.push(m.session)
         if (calls > input.maxToolCalls) {
           finish(Effect.fail({ message: `tool call limit exceeded (${input.maxToolCalls}): ending run.` }))
           return
         }
-        runBridge(input.bridge.invoke(m.tool, m.args as Record<string, unknown>))
+        if (!snapshot.tools.some((t) => t.name === m.tool)) {
+          reply(false, null, `unknown tool '${m.tool}' on session '${m.session}'`)
+          return
+        }
+        runBridge(input.dispatch(m.session, m.tool, m.args as Record<string, unknown>))
         return
       }
       if (m.op === "search" && typeof m.query === "string") {
         if (!gateRequest("search query", m.query)) return
-        runBridge(input.bridge.search(m.query))
+        // Merged substring over every frozen snapshot, tagged per
+        // session. Ranking lives in the `search` tool; in-code search
+        // is intentionally the same documented limitation, ×N.
+        const needle = m.query.toLowerCase()
+        const hits: Array<{ name: string; description: string; session: string }> = []
+        for (const alias of aliases) {
+          const snapshot = input.sessions[alias] as RunSessionSnapshot
+          for (const t of snapshot.tools) {
+            if (t.name.toLowerCase().includes(needle)) {
+              hits.push({ name: t.name, description: t.description, session: alias })
+            }
+          }
+        }
+        runBridge(Effect.succeed(hits))
         return
       }
       if (m.op === "describe" && typeof m.name === "string") {
         if (!gateRequest("describe name", m.name)) return
-        runBridge(input.bridge.describe(m.name))
+        if (typeof m.session === "string" && !Object.hasOwn(input.sessions, m.session)) {
+          reply(false, null, `bridge: unknown session '${m.session}' (bound: ${aliases.join(", ")})`)
+          return
+        }
+        const scopes = typeof m.session === "string" ? [m.session] : aliases
+        const matches: Array<{ alias: string; tool: { name: string; description: string; inputSchema: unknown; annotations: unknown } }> = []
+        for (const alias of scopes) {
+          const snapshot = input.sessions[alias] as RunSessionSnapshot
+          const found = snapshot.tools.find((t) => t.name === m.name)
+          if (found !== undefined) matches.push({ alias, tool: found })
+        }
+        if (matches.length === 0) {
+          reply(false, null, `unknown tool '${m.name}'`)
+          return
+        }
+        if (matches.length > 1) {
+          reply(false, null, `ambiguous tool '${m.name}': bound on ${matches.map((x) => x.alias).join(", ")} — pass the session`)
+          return
+        }
+        const only = matches[0]
+        runBridge(Effect.succeed({
+          name: only.tool.name,
+          description: only.tool.description,
+          inputSchema: only.tool.inputSchema ?? {},
+          annotations: only.tool.annotations,
+          session: only.alias
+        }))
         return
       }
       reply(false, null, `unknown bridge op: ${String(m.op)}`)
@@ -516,7 +654,7 @@ export const runCode = Effect.fn("codemode.run")(function* (input: {
       finish(Effect.fail({ message: `sandbox error: ${String((e as ErrorEvent).message || e)}` }))
     }
     try {
-      worker.postMessage({ type: "start", code: input.code, maxResultChars: input.maxResultChars, maxDoneChars: input.maxDoneChars })
+      worker.postMessage({ type: "start", code: input.code, sessions: aliases, defaultAlias: input.defaultAlias ?? null, maxResultChars: input.maxResultChars, maxDoneChars: input.maxDoneChars })
     } catch (cause) {
       finish(Effect.fail({ message: `cannot start run: ${String(cause)}` }))
     }

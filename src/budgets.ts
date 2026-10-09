@@ -18,6 +18,15 @@ export const RUN_MAX_TOOL_CALLS = 25
 // keeping the structured-clone + compile step bounded. Past it the run
 // fails pre-dial, same as empty code.
 export const RUN_MAX_CODE_CHARS = 64000
+// Concurrent CDP dials admitted per multi-session sweep or fan-out: a
+// wedged browser farm degrades the sweep, never multiplies it. Covers
+// search --all and the execute catalog fetch alike.
+export const SEARCH_SWEEP_CONCURRENCY = 5
+// Sessions bound per execute: each alias dials a browser, so the count
+// (not just the concurrency) needs a ceiling — N snapshots + N sockets
+// before a single line of code runs. 8 browsers is already a heavy
+// working set; past it, close something first.
+export const RUN_MAX_SESSIONS = 8
 // Final-value blast cap, enforced worker-side pre-clone: the host
 // shapes + spills final values, but only after clone + stringify —
 // past 8M chars the refuse happens in the worker instead of OOMing

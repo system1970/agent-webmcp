@@ -2,45 +2,93 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { CHAR_BUDGET, RUN_MAX_DONE_CHARS, RUN_MAX_TOOL_CALLS, RUN_TIMEOUT_DEFAULT_MS } from "../budgets.ts"
 import { DENIED_GLOBALS, runCode } from "./runner.ts"
-import type { RunBridge } from "./runner.ts"
+import type { RunSessionSnapshot } from "./runner.ts"
 
-// Stub bridge: pure in-memory tools, no browser. Proves the runner's
-// mechanics (loops, branches, errors, isolation, limits) deterministically.
-const stubBridge = (calls: Array<string>): RunBridge => ({
-  invoke: (tool, args) => {
-    calls.push(tool)
+// Stub sessions: pure in-memory catalogs + dispatch, no browser. Two
+// aliases sharing one tool name (`echo`) to lock disambiguation.
+// Proves the runner's mechanics (routing, envelopes, limits,
+// isolation) deterministically.
+const stubSessions = (): Record<string, RunSessionSnapshot> => ({
+  main: {
+    handle: "s_main01",
+    origin: "https://main.test/",
+    tools: [
+      { name: "echo", description: "echoes x", inputSchema: {}, annotations: {} },
+      { name: "boom", description: "always fails", inputSchema: {}, annotations: {} },
+      { name: "big", description: "returns a large blob", inputSchema: {}, annotations: {} }
+    ]
+  },
+  shop: {
+    handle: "s_shop02",
+    origin: "https://shop.test/",
+    tools: [
+      { name: "echo", description: "shop echo", inputSchema: {}, annotations: {} },
+      { name: "priceOf", description: "price lookup", inputSchema: {}, annotations: {} }
+    ]
+  }
+})
+
+const stubDispatch = (calls: Array<string>) =>
+  (alias: string, tool: string, args: Record<string, unknown>): Effect.Effect<unknown, { message: string }> => {
+    calls.push(`${alias}:${tool}`)
     if (tool === "boom") return Effect.fail({ message: "boom failed" })
     if (tool === "echo") return Effect.succeed({ got: (args as { x?: unknown }).x ?? null })
     if (tool === "big") return Effect.succeed({ blob: "z".repeat(100) })
+    if (tool === "priceOf") return Effect.succeed({ price: 120, via: alias })
     return Effect.fail({ message: `unknown tool '${tool}'` })
-  },
-  search: (query) => Effect.succeed([{ name: "echo", description: `matches ${query}` }]),
-  describe: (name) => name === "echo"
-    ? Effect.succeed({ name, inputSchema: {} })
-    : Effect.fail({ message: `unknown tool '${name}'` })
-})
+  }
 
-const run = (code: string, opts?: { timeoutMs?: number; maxToolCalls?: number; maxResultChars?: number; maxDoneChars?: number }): Promise<{ value: unknown; toolCalls: number }> => {
-  const calls: Array<string> = []
-  return Effect.runPromise(runCode({
-    code,
-    bridge: stubBridge(calls),
-    timeoutMs: opts?.timeoutMs ?? RUN_TIMEOUT_DEFAULT_MS,
-    maxToolCalls: opts?.maxToolCalls ?? RUN_MAX_TOOL_CALLS,
-    maxResultChars: opts?.maxResultChars ?? CHAR_BUDGET.max,
-    maxDoneChars: opts?.maxDoneChars ?? RUN_MAX_DONE_CHARS
-  }).pipe(Effect.map((r) => ({ value: r.value, toolCalls: r.toolCalls }))))
+interface RunOpts {
+  timeoutMs?: number
+  maxToolCalls?: number
+  maxResultChars?: number
+  maxDoneChars?: number
+  aliases?: Array<string>
+  defaultAlias?: string | null
 }
 
-const runErr = (code: string, opts?: { timeoutMs?: number; maxToolCalls?: number; maxResultChars?: number; maxDoneChars?: number }): Promise<string> =>
-  Effect.runPromise(runCode({
+const sessionSubset = (aliases: Array<string>): Record<string, RunSessionSnapshot> => {
+  const all = stubSessions()
+  const out: Record<string, RunSessionSnapshot> = {}
+  for (const alias of aliases) {
+    const snapshot = all[alias]
+    if (snapshot !== undefined) out[alias] = snapshot
+  }
+  return out
+}
+
+const runArgs = (code: string, calls: Array<string>, opts?: RunOpts) => {
+  const aliases = opts?.aliases ?? ["main"]
+  return {
     code,
-    bridge: stubBridge([]),
+    sessions: sessionSubset(aliases),
+    defaultAlias: opts?.defaultAlias !== undefined
+      ? (opts.defaultAlias ?? undefined)
+      : (aliases.length === 1 ? aliases[0] : undefined),
+    dispatch: stubDispatch(calls),
     timeoutMs: opts?.timeoutMs ?? RUN_TIMEOUT_DEFAULT_MS,
     maxToolCalls: opts?.maxToolCalls ?? RUN_MAX_TOOL_CALLS,
     maxResultChars: opts?.maxResultChars ?? CHAR_BUDGET.max,
     maxDoneChars: opts?.maxDoneChars ?? RUN_MAX_DONE_CHARS
-  }).pipe(
+  }
+}
+
+const run = (code: string, opts?: RunOpts): Promise<{ value: unknown; toolCalls: number; calls: Array<string> }> => {
+  const calls: Array<string> = []
+  return Effect.runPromise(runCode(runArgs(code, calls, opts)).pipe(
+    Effect.map((r) => ({ value: r.value, toolCalls: r.toolCalls, calls }))
+  ))
+}
+
+const runFull = (code: string, opts?: RunOpts) => {
+  const calls: Array<string> = []
+  return Effect.runPromise(runCode(runArgs(code, calls, opts)).pipe(
+    Effect.map((r) => ({ ...r, calls }))
+  ))
+}
+
+const runErr = (code: string, opts?: RunOpts): Promise<string> =>
+  Effect.runPromise(runCode(runArgs(code, [], opts)).pipe(
     Effect.map(() => "unexpected success"),
     Effect.catch((e) => Effect.succeed(String((e as { message?: unknown }).message ?? e)))
   ))
@@ -164,10 +212,12 @@ describe("runner", () => {
       code: `
         const livePost = ({}).constructor.constructor("return postMessage")();
         livePost({ type: "done", value: "forged-end" });
-        livePost({ type: "call", id: 77, op: "invoke", tool: "echo", args: {} });
+        livePost({ type: "call", id: 77, op: "invoke", session: "main", tool: "echo", args: {} });
         return "never";
       `,
-      bridge: stubBridge(calls),
+      sessions: stubSessions(),
+      defaultAlias: "main",
+      dispatch: stubDispatch(calls),
       timeoutMs: RUN_TIMEOUT_DEFAULT_MS,
       maxToolCalls: RUN_MAX_TOOL_CALLS,
       maxResultChars: CHAR_BUDGET.max,
@@ -224,13 +274,17 @@ describe("runner", () => {
     // Forged giant CALL (escape path, bypasses the worker gate) is
     // refused by the HOST gate: no dispatch, no budget consumed, the
     // forged reply id (999) matches no waiter and drops silently.
+    // Carries a valid session so the failure proves the SIZE gate,
+    // not the alias check.
     const forged = await Effect.runPromise(runCode({
       code: `
         const livePost = ({}).constructor.constructor("return postMessage")();
-        livePost({ type: "call", id: 999, op: "invoke", tool: "echo", args: { x: "y".repeat(100) } });
+        livePost({ type: "call", id: 999, op: "invoke", session: "main", tool: "echo", args: { x: "y".repeat(100) } });
         return "survived";
       `,
-      bridge: stubBridge([]),
+      sessions: stubSessions(),
+      defaultAlias: "main",
+      dispatch: stubDispatch([]),
       timeoutMs: RUN_TIMEOUT_DEFAULT_MS,
       maxToolCalls: RUN_MAX_TOOL_CALLS,
       maxResultChars: 10,
@@ -264,6 +318,28 @@ describe("runner", () => {
     expect(await runErr(`return 1; /*${"x".repeat(70000)}*/`)).toMatch(/chunk the block/)
   })
 
+  test("runner rejects bad aliases itself", async () => {
+    // Built directly (not via sessionSubset, which drops unknown keys):
+    // the guard must fire on shape alone, independent of the tool lane.
+    const main = stubSessions().main as RunSessionSnapshot
+    for (const bad of ["__proto__", "constructor", "prototype", "9lives", "has space"]) {
+      const sessions = JSON.parse(JSON.stringify({ main, [bad]: main })) as Record<string, RunSessionSnapshot>
+      const outcome = await Effect.runPromise(runCode({
+        code: `return 1;`,
+        sessions,
+        dispatch: stubDispatch([]),
+        timeoutMs: RUN_TIMEOUT_DEFAULT_MS,
+        maxToolCalls: RUN_MAX_TOOL_CALLS,
+        maxResultChars: CHAR_BUDGET.max,
+        maxDoneChars: RUN_MAX_DONE_CHARS
+      }).pipe(
+        Effect.map(() => "unexpected success"),
+        Effect.catch((e) => Effect.succeed(String((e as { message?: unknown }).message ?? e)))
+      ))
+      expect(outcome).toMatch(/plain identifier/)
+    }
+  })
+
   test("final done value capped worker-side pre-clone", async () => {
     // Zero bridge calls, arbitrarily large synthesis: without the
     // worker-side cap the host would clone + stringify before spill.
@@ -274,5 +350,54 @@ describe("runner", () => {
 
   test("compile errors report cleanly", async () => {
     expect(await runErr(`const = = =`)).toMatch(/compile/)
+  })
+
+  test("routes same-name tools per session alias", async () => {
+    const out = await runFull(
+      `const a = await sesh.main.tools.echo({ x: 1 });
+       const b = await sesh.shop.tools.priceOf({ item: "apple" });
+       const c = await sesh.shop.tools.echo({ x: 2 });
+       return { a: a.got, b: b.price, c: c.got };`,
+      { aliases: ["main", "shop"] }
+    )
+    expect(out.value).toEqual({ a: 1, b: 120, c: 2 })
+    expect(out.calls).toEqual(["main:echo", "shop:priceOf", "shop:echo"])
+    expect(out.toolCalls).toBe(3)
+    expect(out.perSession).toEqual({ main: 1, shop: 2 })
+    expect(out.origins).toEqual(["https://main.test/", "https://shop.test/"])
+  })
+
+  test("bare tools refuse in multi-session mode, search still spans", async () => {
+    expect(await runErr(`return await tools.echo({});`, { aliases: ["main", "shop"] }))
+      .toMatch(/sesh\.ALIAS/)
+    const out = await run(`return (await search("ec")).map((t) => t.name + "@" + t.session);`, { aliases: ["main", "shop"] })
+    expect(out.value).toEqual(["echo@main", "echo@shop"])
+  })
+
+  test("describe disambiguates across sessions", async () => {
+    const both = await run(`return await describe("echo");`, { aliases: ["main", "shop"] }).then(
+      () => "unexpected success",
+      (e: unknown) => String((e as { message?: unknown }).message ?? e)
+    )
+    expect(both).toMatch(/ambiguous.*main.*shop/)
+    const pinned = await run(`return (await describe("echo", "shop")).description;`, { aliases: ["main", "shop"] })
+    expect(pinned.value).toBe("shop echo")
+    const single = await run(`return (await describe("priceOf")).description;`, { aliases: ["main", "shop"] })
+    expect(single.value).toBe("price lookup")
+  })
+
+  test("unknown session alias refused pre-counter", async () => {
+    const out = await Effect.runPromise(runCode(runArgs(`
+      const livePost = ({}).constructor.constructor("return postMessage")();
+      livePost({ type: "call", id: 998, op: "invoke", session: "nope", tool: "echo", args: {} });
+      return "survived";
+    `, [])))
+    expect(out.value).toBe("survived")
+    expect(out.toolCalls).toBe(0)
+  })
+
+  test("sesh unknown aliases read undefined", async () => {
+    const out = await run(`return [typeof sesh.nope, typeof sesh.main];`, { aliases: ["main", "shop"] })
+    expect(out.value).toEqual(["undefined", "object"])
   })
 })

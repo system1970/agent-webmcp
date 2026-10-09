@@ -1,174 +1,195 @@
 import { Effect, Schema } from "effect"
 import type { WebmcpTool } from "./definition.ts"
-import { ToolFailed, toInputSchema, catchSession } from "./definition.ts"
-import { findTool, registerTool } from "./definition.ts"
-import { withSession } from "../sessions/connect.ts"
-import { invokeTool, sessionTools } from "../transport/client.ts"
-import { LIST_WINDOW_MS, INVOKE_TIMEOUT_MS, CHAR_BUDGET } from "../budgets.ts"
+import { ToolFailed, toInputSchema, catchSession, registerTool } from "./definition.ts"
+import { invokeSessionTool, listSessionTools } from "../sessions/verbs.ts"
+import { runCode } from "../codemode/runner.ts"
+import type { RunSessionSnapshot } from "../codemode/runner.ts"
+import { RUN_TIMEOUT_DEFAULT_MS, RUN_TIMEOUT_MAX_MS, RUN_MAX_TOOL_CALLS, RUN_MAX_CODE_CHARS, RUN_MAX_DONE_CHARS, RUN_MAX_SESSIONS, INVOKE_TIMEOUT_MS, CHAR_BUDGET, SEARCH_SWEEP_CONCURRENCY } from "../budgets.ts"
 import { shapeResult } from "../spill.ts"
-import { asCliFailure } from "../failure.ts"
-import { TransportFailed } from "../transport/errors.ts"
-
-const Call = Schema.Struct({
-  tool: Schema.String,
-  args: Schema.Unknown
-})
 
 const Input = Schema.Struct({
-  calls: Schema.Array(Call),
-  // Legacy name, kept for contract stability (shipped pre-sessions as the
-  // reserved routing field): the VALUE is a session handle from `open`.
-  // New tools use `handle`; this one keeps `sessionId`.
-  sessionId: Schema.optional(Schema.String),
+  code: Schema.String,
+  // Single session: bare tools/search/describe bind to it. Exactly one
+  // of handle/sessions; sessions maps caller aliases to handles for
+  // multi-page flows (sesh.ALIAS.tools.* in code).
+  handle: Schema.optional(Schema.String),
+  sessions: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  timeoutMs: Schema.optional(Schema.Number),
   maxChars: Schema.optional(Schema.Number)
 })
 
-const MAX_CALLS = 5
+// Non-finite maxChars (NaN/Infinity) means "no usable budget": fall
+// back, like search's clampLimit. Finite values pass through —
+// shapeResult clamps huge to CHAR_BUDGET itself. Non-positive finite
+// is a caller bug, not a clamp case: throw RangeError so the single
+// call site below fails loud pre-dial (mirrors the CLI flag).
+export const sanitizeMaxChars = (maxChars: number | undefined): number | undefined => {
+  if (maxChars === undefined || !Number.isFinite(maxChars)) return undefined
+  if ((maxChars as number) <= 0) throw new RangeError(`bad maxChars '${maxChars}': want positive integer`)
+  return maxChars
+}
 
-// Shape one item's content (spilling past budget), never failing the
-// batch: even a spill failure becomes an ok:false item with the reason.
-// Spill path travels as structured data (see spill.ts canonical note).
-const shapeItem = (
-  tool: string,
-  ok: boolean,
-  content: string,
-  maxChars: number | undefined
-): Effect.Effect<{ tool: string; ok: boolean; result: string; spill: string | null }, never> =>
-  shapeResult(content, maxChars, CHAR_BUDGET).pipe(
-    Effect.map((shaped) => ({ tool, ok, result: shaped.text, spill: shaped.spilled })),
-    Effect.catch(() => Effect.succeed({
-      tool,
-      ok: false as const,
-      result: `${tool}: result too large and spill failed.`,
-      spill: null
-    }))
-  )
-
-// Run a batch of tool calls in parallel, one turn for many calls. Items never
-// fail the batch: unknown tools and tool failures become `{ ok: false }`
-// entries. sessionId routes page-tool calls to a session handle from
-// `open` (omit for engine-local tools only). Page results carry origin +
-// untrusted flags inside their JSON envelope.
+// Execute agent-written JS against session page tools, one turn for a
+// whole flow: loops, branches, filters in code. Single session binds
+// bare tools.<name>(args) plus search(query)/describe(name) globals;
+// multi-session binds sesh.ALIAS.tools.<name> (aliases caller-chosen,
+// dodging same-name collisions structurally). The worker is accident
+// containment (denied names shadowed, runaways killed, calls capped) —
+// not a security boundary: it runs with operator privilege and the
+// bridge is the deliberate channel. Page outputs stay data; the
+// envelope carries origins[] (contributor list) + untrusted by default
+// because page text may flow anywhere.
 export const execute: WebmcpTool = {
   name: "execute",
-  description: "Run multiple tool calls in one turn. Takes calls [{tool, args}], optional sessionId (a session handle from open: routes page-tool calls to that page, each with the 30s invoke default) and maxChars per result. Returns JSON [{tool, ok, result, spill}]: spill names the full-body file when past budget (trust the field, never a path parsed from result text). For harnesses without native script composition.",
+  description: `Run JavaScript code against session page tools — loops, branches, filters in code, one turn total. Runs with YOUR privilege (accident containment, not a sandbox: caps bind cooperating code; known holes: constructor-escape, dynamic import(), forged completion; worker kill on timeout is unconditional but detached spawns may survive it). Single session (handle): bare tools.<name>(args), search(query: page-tool names only, substring, case-insensitive), describe(name). Multi-session (sessions {alias: handle}, at most ${RUN_MAX_SESSIONS}): sesh.ALIAS.tools.<name>(args), merged search tagged per session, describe(name, session?). ${RUN_MAX_TOOL_CALLS} invoke calls max (search/describe free of the count but size-capped like every bridge op; only the whole-run timeout binds them, while invoke additionally carries the per-call ceiling); each page call capped at up to ${INVOKE_TIMEOUT_MS / 1000}s (less for short runs: min(run timeout, per-call ceiling)); bridge traffic capped both directions at ${CHAR_BUDGET.max} JSON chars (requests pre-dispatch, results pre-clone), final value at ${RUN_MAX_DONE_CHARS} chars (${RUN_MAX_DONE_CHARS / 1000000}M) (catchable chunk-the-read error past per-call; over-budget finals fail the run instead — no code to catch in; unmeasurable values refused measurably). Returns JSON {value, spilled, toolCalls, perSession, origins, untrusted:true}: value is JSON-encoded (parse twice) unless spilled is set — then value is a truncated prefix, read the file. Final value shaped to maxChars (default ${CHAR_BUDGET.fallback}, spills past budget). Run timeout via timeoutMs? (default ${RUN_TIMEOUT_DEFAULT_MS}, max ${RUN_TIMEOUT_MAX_MS}).`,
   inputSchema: toInputSchema(Input),
   execute: (args) =>
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const input = yield* Schema.decodeUnknownEffect(Input)(args).pipe(
         Effect.mapError((issue) => new ToolFailed({ tool: "execute", message: String(issue) }))
       )
-      if (input.calls.length === 0) {
-        return yield* Effect.fail(new ToolFailed({ tool: "execute", message: "no calls in batch" }))
+      // Deterministically rejectable inputs fail before any CDP dial:
+      // bad timeout, empty/oversized code, bad session wiring never
+      // reach a browser.
+      const timeoutMs = input.timeoutMs ?? RUN_TIMEOUT_DEFAULT_MS
+      if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > RUN_TIMEOUT_MAX_MS) {
+        return yield* Effect.fail(new ToolFailed({ tool: "execute", message: `bad timeoutMs '${input.timeoutMs}': want 1-${RUN_TIMEOUT_MAX_MS} ms` }))
       }
-      if (input.calls.length > MAX_CALLS) {
-        return yield* Effect.fail(
-          new ToolFailed({
-            tool: "execute",
-            message: `at most ${MAX_CALLS} calls per batch, got ${input.calls.length}`
-          })
-        )
+      if (input.code.trim().length === 0) {
+        return yield* Effect.fail(new ToolFailed({ tool: "execute", message: "code is empty." }))
       }
-      if (input.sessionId !== undefined) {
-        // Shape-check every item pre-dial: malformed batches fail without
-        // waking a browser (unknown names still resolve per-item inside,
-        // against the live catalog).
-        for (const call of input.calls) {
-          if (typeof call.args !== "object" || call.args === null || Array.isArray(call.args)) {
-            return yield* Effect.fail(new ToolFailed({
-              tool: "execute",
-              message: `args for '${call.tool}' must be a JSON object.`
-            }))
-          }
+      if (input.code.length > RUN_MAX_CODE_CHARS) {
+        return yield* Effect.fail(new ToolFailed({ tool: "execute", message: `code is ${input.code.length} chars (max ${RUN_MAX_CODE_CHARS}): chunk the block.` }))
+      }
+      let maxChars: number | undefined
+      try {
+        maxChars = sanitizeMaxChars(input.maxChars)
+      } catch (cause) {
+        return yield* Effect.fail(new ToolFailed({ tool: "execute", message: String((cause as Error | null)?.message ?? cause) }))
+      }
+      // Exactly one of handle/sessions; sessions needs ≥1 entry with
+      // non-empty aliases. A bare handle is sugar for a one-entry map
+      // keyed by the handle itself (valid identifier chars by
+      // construction: s_ + base36).
+      const hasHandle = input.handle !== undefined
+      const hasSessions = input.sessions !== undefined
+      if (hasHandle === hasSessions) {
+        return yield* Effect.fail(new ToolFailed({ tool: "execute", message: "pass exactly one of handle/sessions." }))
+      }
+      const entries: Array<[string, string]> = hasHandle
+        ? [[input.handle as string, input.handle as string]]
+        : Object.entries(input.sessions as Record<string, string>)
+      if (entries.length === 0) {
+        return yield* Effect.fail(new ToolFailed({ tool: "execute", message: "sessions needs at least one alias." }))
+      }
+      if (entries.length > RUN_MAX_SESSIONS) {
+        return yield* Effect.fail(new ToolFailed({ tool: "execute", message: `at most ${RUN_MAX_SESSIONS} sessions per run, got ${entries.length}: close something first.` }))
+      }
+      // Same handle under two aliases dials twice, splits perSession,
+      // and collapses origins — always a caller mistake, never intent.
+      const seenHandles = new Set<string>()
+      for (const [, handle] of entries) {
+        if (seenHandles.has(handle)) {
+          return yield* Effect.fail(new ToolFailed({ tool: "execute", message: `session '${handle}' bound twice: one alias per handle.` }))
         }
-        return yield* runSessionBatch(input.sessionId, input.calls, input.maxChars).pipe(
-          catchSession("execute")
-        )
+        seenHandles.add(handle)
       }
-      const maxChars = input.maxChars
-      const runOne = (call: { tool: string; args: unknown }) => {
-        const tool = findTool(call.tool)
-        if (tool === undefined) {
-          return shapeItem(call.tool, false, `unknown tool: ${call.tool}`, maxChars)
+      for (const [alias] of entries) {
+        if (alias.length === 0) {
+          return yield* Effect.fail(new ToolFailed({ tool: "execute", message: "session aliases must be non-empty strings." }))
         }
-        return tool.execute(call.args).pipe(
-          Effect.match({
-            onFailure: (failure) => ({
-              ok: false as const,
-              content: failure instanceof ToolFailed
-                ? `${failure.tool}: ${failure.message}`
-                : String(failure)
-            }),
-            onSuccess: (result) => ({ ok: true as const, content: result.content })
-          }),
-          Effect.flatMap(({ ok, content }) => shapeItem(call.tool, ok, content, maxChars))
-        )
+        // Aliases ride a Proxy get-trap plus a plain-object map: reject
+        // anything that isn't a safe identifier or that collides with
+        // the prototype chain (__proto__/constructor/prototype would
+        // confuse routing with inheritance — self-confusion, refused
+        // here instead of debugged later).
+        if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(alias) || alias === "__proto__" || alias === "constructor" || alias === "prototype") {
+          return yield* Effect.fail(new ToolFailed({ tool: "execute", message: `bad session alias '${alias}': want a plain identifier, not a prototype-chain name.` }))
+        }
       }
-      const results = yield* Effect.all(input.calls.map(runOne), { concurrency: MAX_CALLS })
-      return { content: JSON.stringify({ sessionId: input.sessionId ?? null, results }) }
+      // One catalog fetch per bound session (independent: fan out).
+      // Unknown handles fail loud pre-code, same as unknown tools
+      // fail loud in-code — explicit addressing is a precise claim.
+      // Fan-out capped like the search sweep: a wedged browser farm
+      // degrades a run, never multiplies it.
+      const snapshots = yield* Effect.all(
+        entries.map(([alias, handle]) =>
+          listSessionTools(handle).pipe(
+            catchSession("execute"),
+            Effect.map((catalog) => [alias, {
+              handle,
+              origin: catalog.url,
+              tools: catalog.tools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                inputSchema: (t as { inputSchema?: unknown }).inputSchema ?? {},
+                annotations: (t as { annotations?: unknown }).annotations ?? {}
+              }))
+            }] as const)
+          )
+        ),
+        { concurrency: SEARCH_SWEEP_CONCURRENCY }
+      ).pipe(
+        Effect.map((pairs) => Object.fromEntries(pairs) as Record<string, RunSessionSnapshot>)
+      )
+      const result = yield* runCode({
+        code: input.code,
+        sessions: snapshots,
+        ...(entries.length === 1 ? { defaultAlias: entries[0][0] } : {}),
+        // Per-call ceiling, not the run budget: one hung page tool
+        // must not consume the whole run. Capped at the run's own
+        // budget too — a 5s run must not admit a 30s page call that
+        // outlives the worker kill. Output size is capped runner-side
+        // for every op (maxResultChars), so N sessions of unbounded
+        // outputs can't OOM the host.
+        dispatch: (alias, tool, callArgs) => {
+          const snapshot = snapshots[alias] as RunSessionSnapshot
+          return invokeSessionTool(snapshot.handle, tool, callArgs, Math.min(timeoutMs, INVOKE_TIMEOUT_MS)).pipe(
+            Effect.mapError((f) => ({ message: `${f._tag}: ${f.message}` })),
+            // Page-level Error throws catchable into code (compensation
+            // flows depend on it: try invoke, catch, compensate). Infra
+            // failures already reject above; status is the page's own
+            // verdict — non-Completed is a failure, never data.
+            Effect.flatMap((r) => r.status === "Completed"
+              ? Effect.succeed(r.output as unknown)
+              : Effect.fail({
+                message: `${tool} on '${alias}' failed (${r.status})${r.errorText ? `: ${r.errorText}` : ""}`
+              }))
+          )
+        },
+        timeoutMs,
+        maxToolCalls: RUN_MAX_TOOL_CALLS,
+        // Result ceiling for EVERY bridge op (invoke/search/describe),
+        // enforced runner-side: one large catalog/schema can't blow the
+        // structured-clone. Same budget as the final shaping so the
+        // failure mode is uniform: chunk the read. The final `done`
+        // value has its own wider cap (RUN_MAX_DONE_CHARS) so the spill
+        // path keeps working under it.
+        maxResultChars: CHAR_BUDGET.max,
+        maxDoneChars: RUN_MAX_DONE_CHARS
+      }).pipe(
+        Effect.mapError((f) => new ToolFailed({ tool: "execute", message: f.message }))
+      )
+      const text = yield* Effect.try(() => JSON.stringify(result.value) ?? "null").pipe(
+        Effect.mapError((cause) => new ToolFailed({ tool: "execute", message: `result is not JSON-serializable: ${String(cause)}` }))
+      )
+      // Clamp via shapeResult (CLI/MCP divergence is deliberate, same
+      // as before: the CLI validates positive-int at the flag; finite
+      // out-of-range values clamp to CHAR_BUDGET here).
+      const shaped = yield* shapeResult(text, maxChars, CHAR_BUDGET).pipe(
+        Effect.mapError((cause) => new ToolFailed({ tool: "execute", message: `spill failed: ${cause instanceof Error ? cause.message : String(cause)}` }))
+      )
+      return {
+        content: JSON.stringify({
+          value: shaped.text,
+          spilled: shaped.spilled,
+          toolCalls: result.toolCalls,
+          perSession: result.perSession,
+          origins: result.origins,
+          untrusted: true
+        })
+      }
     })
 }
-
-// One connection for the whole batch (not one dial per item): the CDP
-// socket multiplexes by request id, so parallel invokes share it.
-const runSessionBatch = Effect.fn("execute.sessionBatch")(function* (
-  handle: string,
-  calls: ReadonlyArray<{ tool: string; args: unknown }>,
-  maxChars: number | undefined
-) {
-  return yield* withSession(handle, (conn, record, sessionId) =>
-    Effect.gen(function*() {
-      const tools = yield* sessionTools(conn, sessionId, LIST_WINDOW_MS)
-      const runOne = (call: { tool: string; args: unknown }) => {
-        const match = tools.filter((t) => t.name === call.tool)
-        if (match.length === 0) {
-          return shapeItem(call.tool, false, JSON.stringify({
-            error: `unknown tool '${call.tool}' on ${handle}`,
-            available: tools.map((t) => t.name),
-            origin: record.url,
-            untrusted: true
-          }), maxChars)
-        }
-        if (match.length > 1) {
-          return shapeItem(call.tool, false, `ambiguous tool '${call.tool}' on ${handle}: ${match.length} frames.`, maxChars)
-        }
-        const target = match[0]
-        // Explicit default (not transport-implied): the description
-        // promises 30s, the code passes 30s.
-        return invokeTool(
-          conn,
-          sessionId,
-          { frameId: target.frameId, toolName: call.tool, args: call.args as Record<string, unknown> },
-          INVOKE_TIMEOUT_MS
-        ).pipe(
-          Effect.match({
-            onFailure: (failure) => ({
-              ok: false as const,
-              // Same one-line format as the CLI print path — reason,
-              // operation, fix survive; only non-transport defects
-              // stringify raw.
-              content: failure instanceof TransportFailed
-                ? asCliFailure(failure).message
-                : String(failure)
-            }),
-            onSuccess: (result) => ({
-              ok: true as const,
-              content: JSON.stringify({
-                tool: call.tool,
-                status: result.status,
-                output: result.output,
-                errorText: result.errorText,
-                origin: record.url,
-                untrusted: true
-              })
-            })
-          }),
-          Effect.flatMap(({ ok, content }) => shapeItem(call.tool, ok, content, maxChars))
-        )
-      }
-      const results = yield* Effect.all(calls.map(runOne), { concurrency: MAX_CALLS })
-      return { content: JSON.stringify({ sessionId: handle, results }) }
-    }))
-})
 
 registerTool(execute)

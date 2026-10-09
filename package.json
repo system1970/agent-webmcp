@@ -16,6 +16,7 @@
     "eval:transport": "bun ./scripts/eval-transport.ts",
     "eval:sessions": "bun ./scripts/eval-sessions.ts",
     "eval:mcp": "bun ./scripts/eval-mcp.ts",
+    "eval:xpage": "bun ./scripts/eval-xpage.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

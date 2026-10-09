@@ -7,12 +7,11 @@ import { open } from "./commands/open.ts"
 import { list } from "./commands/list.ts"
 import { invoke } from "./commands/invoke.ts"
 import { close } from "./commands/close.ts"
-import { run } from "./commands/run.ts"
 import { search } from "./commands/search.ts"
 import { execute } from "./commands/execute.ts"
 import { skill } from "./commands/skill.ts"
 import { getVersion } from "./version.ts"
-import { RUN_TIMEOUT_MAX_MS } from "./budgets.ts"
+import { RUN_TIMEOUT_MAX_MS, INVOKE_TIMEOUT_MAX_MS } from "./budgets.ts"
 
 // Pi-shaped dispatch: a flat table of commands, each a name plus an Effect.
 // No framework: parsing is prefix matching on argv, errors are tagged values
@@ -60,7 +59,7 @@ const commands: ReadonlyArray<Command> = [
   {
     name: "invoke",
     description: "Call one page tool by name with JSON args.",
-    usage: "invoke <handle> <tool> '<json>' [--timeout ms] [--json]",
+    usage: `invoke <handle> <tool> '<json>' [--timeout ms 1-${INVOKE_TIMEOUT_MAX_MS}] [--json]`,
     run: invoke
   },
   {
@@ -70,21 +69,15 @@ const commands: ReadonlyArray<Command> = [
     run: close
   },
   {
-    name: "run",
-    description: "Run JS code against a session's page tools (loops/branches in-code; tools.<name>, in-run search/describe). Accident-contained, runs with your privilege.",
-    usage: `run --session H [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--json] [--max-chars N] '<code>' (--handle aliases --session)`,
-    run: run
-  },
-  {
     name: "search",
-    description: "Find tools by words (engine + session page tools with --handle).",
-    usage: "search [--json] [--handle H] [--limit 1–50] <query...>",
+    description: "Find tools by words (engine + session page tools with --handle/--all).",
+    usage: "search [--json] [--handle H ...] [--all] [--limit 1–50] <query...>",
     run: search
   },
   {
     name: "execute",
-    description: "Run up to 5 tool calls in one turn (page calls with --session).",
-    usage: "execute [--json] [--session H] [--max-chars 1k–64k] '<json-calls>' (--handle aliases --session)",
+    description: "Run JS code against session page tools, one turn per flow (single --session, --handle aliases it; multi: repeat --as ALIAS=H). Accident-contained, runs with your privilege.",
+    usage: `execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json] '<code>'`,
     run: execute
   },
   {
