@@ -12,6 +12,10 @@ Bun + TypeScript + Effect v4 (`effect@4.0.0-rc`). `bun install`,
 - All side effects go through `Effect` (`Console` inside the runtime). Past
   `runPromiseExit` the runtime has settled, so the `main.ts` edge uses raw
   process I/O by design. `main` stays an `Effect`, run once at the bottom.
+  Exemption: `Effect.callback` escape hatches (transport, codemode runner,
+  serve self-reap) run raw timers/workers/continuations inside the hatch
+  with settle guards; stderr diagnostics there use guarded raw writes
+  (stdout is the MCP wire).
 - `bun check` clean before claiming done. `bun run typecheck` (`tsc --noEmit`)
 is the parity escape hatch. No `check` script: it would shadow Bun's builtin.
 - After implementing and before committing, run `bun run review` (standing
