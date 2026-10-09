@@ -1,6 +1,6 @@
 // Preflight: deterministic pre-review gate. Usage:
 // `bun ./scripts/preflight.ts` (check) or with `--write` (fix MAP hashes).
-// No browser, no network, no model. Seven checks, dense lines; failures
+// No browser, no network, no model. Eight checks, dense lines; failures
 // accumulate and the run exits 1 so one invocation shows everything:
 //
 // 1. map-sync: MAP.md Files-covered hashes equal sha256(file).slice(0,12).
@@ -12,6 +12,8 @@
 // 6. `bun test scripts/review` green (the gate's own unit tests).
 // 7. desc-budget: every tool blurb fits the budget (detail lives in
 //    SKILL.md, never accretes into descriptions).
+// 8. user-surface: strangers discover tools via SKILL and run on their
+//    own machines — every registry tool documented, no my-machine paths.
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { Effect } from "effect"
@@ -140,6 +142,30 @@ const pass = (msg: string): void => console.log(`PASS ${msg}`)
   if (fat.length > 0) {
     fail(`desc-budget: over ${DESC_BUDGET} chars: ${fat.join(", ")} (move detail to SKILL.md)`)
   } else if (!failed) pass(`desc-budget (${allTools.length} tools)`)
+}
+
+// 8. user-surface: strangers discover tools via SKILL and run on their
+// own machines — every registry tool named there, no my-machine paths
+// in shipped code. Import-time only (registers, never dials).
+{
+  await import("../src/tools/registry.ts")
+  const { allTools } = await import("../src/tools/definition.ts")
+  const skill = await Bun.file(`${root}/skills/agent-webmcp/SKILL.md`).text()
+  // Anchor to backticked tool-record headings (`open { ...}`), never bare
+  // substring: common-word names (open/list/close/...) all occur in prose.
+  const undoc = allTools.map((t) => t.name).filter((n) => !skill.includes(`\`${n} {`))
+  if (undoc.length > 0) {
+    fail(`user-surface: tools missing a SKILL.md record entry: ${undoc.join(", ")}`)
+  } else {
+    const home = Bun.spawnSync(
+      ["git", "grep", "-l", "home/pracurser", "--", "src", "skills"],
+      { cwd: root, stdout: "pipe", stderr: "pipe" }
+    )
+    const hits = new TextDecoder().decode(home.stdout ?? new Uint8Array())
+      .split("\n").map((l) => l.trim()).filter((l) => l !== "")
+    if (hits.length > 0) fail(`user-surface: my-machine paths in ${hits.join(", ")}`)
+    else if (!failed) pass("user-surface")
+  }
 }
 
 if (failed) process.exit(1)

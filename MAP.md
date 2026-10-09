@@ -348,10 +348,11 @@ when the code moves. Only this region's agent writes this file.
   `docs/review-learnings.md:1`
 - `bun run preflight` gates reviews deterministically: map-sync,
   help-truth, envelope-snapshot, `bun check`, `bun test src`,
-  `bun test scripts/review`, desc-budget. `scripts/preflight.ts:1`
+  `bun test scripts/review`, desc-budget, user-surface.
+  `scripts/preflight.ts:1`
 - `bun run review` tiers by diff size: trivial (<=10 non-hot lines) skips
-  the model; lite (<=400) one pass; full (>400 or hot path) adds a verifier
-  pass over BLOCKINGs. Exits 1 on confirmed BLOCKING; `--plan` +
+  the model; lite/full get one pass (full flags size). `--verify` opts
+  into a verifier pass over BLOCKINGs (off by default); `--plan` +
   `--dry-run` supported; same-sha reruns hit `reviews/.patch-cache.json`.
   Entry orchestrates only (`scripts/review.ts:1`); jobs live in
   `scripts/review/` (git, brief, cache, verdict, runners, record —
@@ -416,7 +417,7 @@ when the code moves. Only this region's agent writes this file.
 
 | File | Hash | Told about |
 |---|---|---|
-| `AGENTS.md` | `485e6229cd95` | agent-webmcp |
+| `AGENTS.md` | `03c992768671` | agent-webmcp |
 | `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
 | `package.json` | `3a21d525667f` | agent-webmcp |
 | `tsconfig.json` | `3443c8284415` | agent-webmcp |
@@ -433,8 +434,8 @@ when the code moves. Only this region's agent writes this file.
 | `src/tools/composition.test.ts` | `3e9d03d04073` | agent-webmcp |
 | `docs/sessions.md` | `7b52ca56e77f` | agent-webmcp |
 | `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
-| `scripts/review.ts` | `fc5b5a968a6d` | agent-webmcp |
-| `skills/agent-webmcp/SKILL.md` | `93649765f25d` | agent-webmcp, pi |
+| `scripts/review.ts` | `d8fc00a1288b` | agent-webmcp |
+| `skills/agent-webmcp/SKILL.md` | `46cbdea7df77` | agent-webmcp, pi |
 | `.github/workflows/check.yml` | `d838043029ae` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
@@ -470,16 +471,16 @@ when the code moves. Only this region's agent writes this file.
 | `src/spill.ts` | `31bf50a2fb40` | agent-webmcp |
 | `src/codemode/runner.ts` | `9f2b4978e1ff` | agent-webmcp |
 | `src/codemode/runner.test.ts` | `10ff9955523f` | agent-webmcp |
-| `docs/run-accepted-risk.md` | `d21cbe404b16` | agent-webmcp |
+| `docs/run-accepted-risk.md` | `3a3c7e6b8025` | agent-webmcp |
 | `src/commands/mcp-serve.test.ts` | `7506f8a3e6d2` | agent-webmcp |
 | `docs/research/cross-page-composition.md` | `cbb976ebb2f9` | agent-webmcp |
-| `docs/decisions.md` | `2b2b37d7762d` | agent-webmcp |
-| `docs/review-learnings.md` | `1d0bf41db55b` | agent-webmcp |
-| `scripts/preflight.ts` | `fda60d04e3f7` | agent-webmcp |
+| `docs/decisions.md` | `f17ee84ba17a` | agent-webmcp |
+| `docs/review-learnings.md` | `9bd7754f5218` | agent-webmcp |
+| `scripts/preflight.ts` | `9331bf42050e` | agent-webmcp |
 | `scripts/review-eval.ts` | `190eabb5786a` | agent-webmcp |
 | `scripts/review-eval.json` | `c19d5da15ab0` | agent-webmcp |
 | `scripts/review/git.ts` | `8c23538e6fd3` | agent-webmcp |
-| `scripts/review/brief.ts` | `3cdfac9de880` | agent-webmcp |
+| `scripts/review/brief.ts` | `05437060508b` | agent-webmcp |
 | `scripts/review/cache.ts` | `d6004758de1f` | agent-webmcp |
 | `scripts/review/verdict.ts` | `47b6388dc15c` | agent-webmcp |
 | `scripts/review/runners.ts` | `c0a17821a8fe` | agent-webmcp |
@@ -491,6 +492,7 @@ when the code moves. Only this region's agent writes this file.
 | `src/commands/status.ts` | `bb7104d43f2c` | agent-webmcp |
 | `src/sessions/verbs.test.ts` | `2fd8a2e04da2` | agent-webmcp |
 | `scripts/eval-real.ts` | `b276c47f0340` | agent-webmcp |
+| `docs/users.md` | `1260c48cb460` | agent-webmcp |
 | `scripts/eval-xpage.ts` | `689fef7a7a22` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |
 | `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |

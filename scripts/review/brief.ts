@@ -21,6 +21,7 @@ export const buildBrief = (input: BriefInput): string => [
   "the attached working-tree diff on two axes: (1) Standards — effect-wrapped",
   "side effects, help-truth, least privilege, no stubs, mechanism-only comments;",
   "(2) Spec — match the approved plan below, no scope creep, no speculative machinery.",
+  "Install — stranger-machine assumptions (my-paths, fixed ports, manual steps, undocumented surface, untested platforms).",
   "Diff hunks are the target; full files are context. Do not flag theoretical-only risks,",
   "unchanged code, formatting-only edits, or timestamped research staleness.",
   "Re-litigation of docs/decisions.md without new evidence is out of scope.",

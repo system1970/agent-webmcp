@@ -1,13 +1,13 @@
 // Send the working-tree diff to the standing code reviewer.
-// Usage: `bun run review [--staged] [--runner pi|opencode] [--plan FILE] [--dry-run]`
+// Usage: `bun run review [--staged] [--runner pi|opencode] [--plan FILE] [--dry-run] [--verify]`
 // Nothing to diff means nothing to review.
 //
 // Tiers by diff size (Cloudflare risk-tier shape, our lines): trivial
 // (<=10 non-hot lines) skips the model — `bun run preflight` governs those.
-// lite (<=400) gets one reviewer pass. full (>400 lines, or a hot path:
-// src/transport/, src/codemode/runner.ts, src/budgets.ts — hot always gets
-// eyes regardless of size) adds a verifier
-// pass that reads each BLOCKING's file:line and kills the unverified.
+// Everything else gets one reviewer pass (lite <=400, full above or hot
+// path — the label signals size, not a second pass). `--verify` opts into
+// a verifier pass that reads each BLOCKING's file:line and kills the
+// unverified (off by default: two self-reviews spent it for zero kills).
 //
 // Fail-closed: a runner failure records and exits 1 (a gate that cannot
 // confirm the review never reports green — dry-run included). Confirmed
@@ -45,6 +45,7 @@ import { parseVerdict, gateRed } from "./review/verdict.ts"
 
 const stagedOnly = Bun.argv.includes("--staged")
 const dryRun = Bun.argv.includes("--dry-run")
+const wantVerify = Bun.argv.includes("--verify")
 const runnerIdx = Bun.argv.indexOf("--runner")
 const runnerEq = Bun.argv.find((a) => a.startsWith("--runner="))?.split("=")[1]
 const runnerNext = runnerIdx >= 0 ? Bun.argv[runnerIdx + 1] : undefined
@@ -145,15 +146,15 @@ let verdictLine: string
 const blocking = parseVerdict(main.output)
 verdictLine = blocking === null ? "no verdict line (unconfirmable)" : `${blocking} BLOCKING`
 
-// Full tier: verifier pass reads each BLOCKING's file:line and kills the
+// Opt-in verifier: reads each BLOCKING's file:line and kills the
 // unverified (Cloudflare coordinator shape, one agent instead of seven).
 let verifierSection = ""
 let confirmed = blocking
-if (tier === "full" && (blocking ?? 0) > 0 && !dryRun) {
+if (wantVerify && (blocking ?? 0) > 0 && !dryRun) {
   const reviewTmp = `${process.env.TMPDIR ?? "/tmp"}/agent-webmcp-verify-${process.pid}-${Math.random().toString(36).slice(2)}.md`
   await Bun.write(reviewTmp, main.output)
   Bun.spawnSync(["chmod", "600", reviewTmp])
-  console.log("reviewer: full tier — running verifier pass over BLOCKING findings")
+  console.log("reviewer: --verify — running verifier pass over BLOCKING findings")
   try {
     const verify = await dispatch(runner, runnerExplicit, VERIFY_BRIEF, [tmp, reviewTmp])
     verifierSection = `\n## verifier output (${verify.runnerName})\n\n${verify.output.trim() || "(no output)"}`

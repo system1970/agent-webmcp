@@ -23,3 +23,7 @@ a witness + date. Prune rows whose witness file is gone or older than
   reads it — not just a shape assertion. Envelopes pass shape checks
   while breaking every consumer (showcase took 3 tries). Approved
   2026-10-09. `src/sessions/verbs.ts:283`
+- L7: stranger-machine rule — flag my-paths, fixed ports, manual
+  steps, undocumented surface, untested platforms; new errors carry
+  reason + fix for readers with no repo access. Approved 2026-10-09.
+  `docs/users.md:1`

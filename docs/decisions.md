@@ -27,3 +27,10 @@ without new evidence is out of scope. New rows need owner approval.
 - Preflight (map/help/envelope/check/test) governs what scripts can
   check; reviewer governs judgment only. 2026-10-09, final.
   `scripts/preflight.ts:1`
+- Single-operator assumption LIFTED 2026-10-09: prior "final until
+  multi-tenant" rows become ordered roadmap, riskiest first. New code
+  passes the stranger test (`docs/users.md`); the per-machine analysis
+  stands, distribution consequences are new work. Owner-ordered.
+- Docs freeze until users: one-in-one-out for new doc files (decisions,
+  learnings, users, risk, research suffice). Website install path
+  exempt — product surface, not process. 2026-10-09.

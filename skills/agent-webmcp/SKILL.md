@@ -80,6 +80,9 @@ Sessions first — page tools only exist inside one:
 
 Composition (engine-local, no session needed):
 
+- `describe { tool, handle?, maxChars? }` — one tool's full record
+  (schema + annotations + origin/session) for page and engine tools
+  alike. Second step of the loop after `search`, before `invoke`.
 - `search { query, limit?, handle?, handles?, all? }` — word-overlap ranking over
   tool names (3x) and descriptions. Returns `{ query, tools, skipped }`.
   Pass `handle`/`handles` to include

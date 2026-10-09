@@ -56,6 +56,16 @@ escalation. True isolation (seccomp userns, dedicated uid, no-net
 worker) would cost a platform layer Unit 6 explicitly deferred, for a
 threat that doesn't exist in single-operator use.
 
+## Distribution (installer reality)
+
+Local install keeps the per-machine argument above: each operator runs
+their own agent on their own box. Scale breaks four other things, in
+this order: cold disclosure (compress to install-time UX — strangers
+won't read this doc), heterogeneous machines (Chromium floor, OS,
+paths), unattended runs (no human confirming consequential acts), and
+supply chain (binary provenance). The reopen list below gains one row:
+an installer base large enough that manual disclosure fails.
+
 ## What the worker still buys
 
 Denied-name shadowing (incl. bridge internals `__nextId`/`__pending`),
