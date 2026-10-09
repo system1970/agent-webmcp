@@ -100,7 +100,6 @@ const evalLive = Effect.fn("eval.live")(function* () {
         const after = yield* sessionTools(conn, page.sessionId, 4000)
         yield* Console.log(`eval3 live -> after=[${after.map((t) => t.name).join(", ")}]`)
         const reshaped = after.some((t) => t.name === "listFlights")
-        yield* Console.log(`eval3 live -> stats=${JSON.stringify(conn.stats)}`)
         yield* closePage(conn, page.targetId)
         return result.status === "Completed" && reshaped
       })),

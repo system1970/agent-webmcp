@@ -155,7 +155,6 @@ const stubConn = (): { conn: Connection; emit: (method: string, params: unknown,
         listeners.delete(listener)
       }
     },
-    stats: { malformedFrames: 0, listenerErrors: 0 },
     close: Effect.void
   }
   return {

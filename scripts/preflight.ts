@@ -3,7 +3,7 @@
 // No browser, no network, no model. Nine checks, dense lines; failures
 // accumulate and the run exits 1 so one invocation shows everything:
 //
-// 1. map-sync: MAP.md Files-covered hashes equal sha256(file).slice(0,12).
+// 1. map-sync: MAP.hashes rows equal sha256(file).slice(0,12).
 // 2. help-truth: no bare `1-300000` literal in src/ or skills/ (ceilings
 //    interpolate from budgets.ts; SKILL.md cites the constants).
 // 3. envelope-snapshot: local-only search returns {query, tools, skipped};
@@ -29,25 +29,31 @@ const fail = (msg: string): void => {
 }
 const pass = (msg: string): void => console.log(`PASS ${msg}`)
 
-// 1. map-sync.
+// 1. map-sync: MAP.hashes rows equal sha256(file).slice(0,12). The
+// table lives beside MAP.md, not in it — hashes are machine data for
+// this check, never agent reading. MAP.md prose stays human-only.
 {
-  const mapPath = `${root}/MAP.md`
-  const lines = (await Bun.file(mapPath).text()).split("\n")
-  const row = /^\| `([^`]+)` \| `([0-9a-f]+)` \|/
+  const hashPath = `${root}/MAP.hashes`
+  const lines = (await Bun.file(hashPath).text()).split("\n")
+  const row = /^([0-9a-f]{12})  (\S+)(?:  (\S+(?:, \S+)*))?$/
   let checked = 0
   const fixed: Array<string> = []
   const missing: Array<string> = []
   const dropped: Array<string> = []
   const next = lines.map((line) => {
+    if (line.trim() === "") return line
     const m = row.exec(line)
-    if (m === null) return line
-    const [, rel, claimed] = m
+    if (m === null) {
+      fail(`map-sync: malformed row in MAP.hashes: '${line.slice(0, 60)}'`)
+      return line
+    }
+    const [, claimed, rel] = m
     let bytes: Buffer
     try {
       bytes = readFileSync(`${root}/${rel}`)
     } catch {
-      // The file is gone (moved or deleted): MAP rule 4 lets the row go,
-      // but only --write performs the deletion so check mode stays loud.
+      // The file is gone (moved or deleted): the row goes, but only
+      // --write performs the deletion so check mode stays loud.
       if (write) {
         dropped.push(rel)
         return null
@@ -60,15 +66,15 @@ const pass = (msg: string): void => console.log(`PASS ${msg}`)
     if (actual !== claimed) {
       if (write) {
         fixed.push(rel)
-        return line.replace(`\`${claimed}\``, `\`${actual}\``)
+        return line.replace(claimed, actual)
       }
       fail(`map-sync: ${rel} claims ${claimed}, file is ${actual} (run preflight --write)`)
     }
     return line
   })
-  for (const rel of missing) fail(`map-sync: ${rel} listed in MAP.md but unreadable`)
+  for (const rel of missing) fail(`map-sync: ${rel} listed in MAP.hashes but unreadable`)
   if (write && (fixed.length > 0 || dropped.length > 0)) {
-    await Bun.write(mapPath, next.filter((l): l is string => l !== null).join("\n"))
+    await Bun.write(hashPath, next.filter((l): l is string => l !== null).join("\n"))
     if (fixed.length > 0) console.log(`map-sync: rewrote ${fixed.length} hash(es): ${fixed.join(", ")}`)
     if (dropped.length > 0) console.log(`map-sync: dropped ${dropped.length} gone-file row(s): ${dropped.join(", ")}`)
   }

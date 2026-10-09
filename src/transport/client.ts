@@ -30,14 +30,6 @@ export interface InvocationResult {
 
 export type CdpListener = (method: string, params: unknown, sessionId: string | undefined) => void
 
-// Frame-level diagnostics. Malformed frames and throwing listeners are
-// counted, never fatal: one bad frame must not kill a live session, but
-// the evidence must not disappear either. Read via conn.stats.
-export interface ConnStats {
-  readonly malformedFrames: number
-  readonly listenerErrors: number
-}
-
 // One CDP connection. `call` is the fallible work (an Effect); `subscribe`
 // is sync wiring — adding a listener to a set, like constructing the
 // object. Both the registration AND the listener body run outside the
@@ -53,7 +45,6 @@ export interface Connection {
     timeoutMs?: number
   ) => Effect.Effect<unknown, TransportFailed>
   readonly subscribe: (listener: CdpListener) => () => void
-  readonly stats: ConnStats
   readonly close: Effect.Effect<void>
 }
 
@@ -182,9 +173,6 @@ export const dial = Effect.fn("transport.dial")(function* (endpoint: string, tim
   let nextId = 1
   const pending = new Map<number, Pending>()
   const listeners = new Set<CdpListener>()
-  // Mutable inside, readonly outside: the interface exposes ConnStats with
-  // readonly fields, so callers can read diagnostics but not rewrite them.
-  const counters = { malformedFrames: 0, listenerErrors: 0 }
 
   yield* Effect.sync(() => {
     socket.onmessage = (ev) => {
@@ -192,7 +180,6 @@ export const dial = Effect.fn("transport.dial")(function* (endpoint: string, tim
     try {
       msg = JSON.parse(String(ev.data))
     } catch {
-      counters.malformedFrames++
       return
     }
     if (msg.id !== undefined) {
@@ -207,9 +194,7 @@ export const dial = Effect.fn("transport.dial")(function* (endpoint: string, tim
       for (const listener of listeners) {
         try {
           listener(msg.method, msg.params, msg.sessionId)
-        } catch {
-          counters.listenerErrors++
-        }
+        } catch {}
       }
     }
   }
@@ -296,7 +281,7 @@ export const dial = Effect.fn("transport.dial")(function* (endpoint: string, tim
     } catch {}
   })
 
-  return { endpoint, call, subscribe, get stats(): ConnStats { return counters }, close }
+  return { endpoint, call, subscribe, close }
 })
 
 // Attach to a page target: create it, bind a flattened session, enable the
@@ -564,8 +549,11 @@ export const sessionTools = Effect.fn("transport.sessionTools")(function* (
 // Every entry is Schema-decoded; malformed entries are quarantined
 // (skipped and counted), never keyed as `undefined::undefined`.
 // Quarantine, not failure: this runs on a live subscription where one bad
-// tool must not evict the verified catalog — but the count keeps the
-// evidence (see ConnStats pattern for frames). Strict fail-protocol decode
+// tool must not evict the verified catalog. Malformed entries are
+// quarantined, counted, and logged (see below) — one bad tool must
+// not kill a live session. (Socket-level frame/parse drops are
+// uncounted by design: no consumer ever read those counters.)
+// Strict fail-protocol decode
 // lives on the request paths (attach/invoke), where a malformed reply
 // answers a question we asked. Keyed by name+frameId — the same tool name
 // in two frames is two tools (cross-frame collisions are expected per spec).

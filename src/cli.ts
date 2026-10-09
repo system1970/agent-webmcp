@@ -6,12 +6,10 @@ import { mcpServe } from "./commands/mcp-serve.ts"
 import { open } from "./commands/open.ts"
 import { list } from "./commands/list.ts"
 import { close } from "./commands/close.ts"
-import { search } from "./commands/search.ts"
-import { execute } from "./commands/execute.ts"
 import { register } from "./commands/register.ts"
 import { skill } from "./commands/skill.ts"
 import { getVersion } from "./version.ts"
-import { RUN_TIMEOUT_MAX_MS, INVOKE_TIMEOUT_MAX_MS } from "./budgets.ts"
+import { INVOKE_TIMEOUT_MAX_MS } from "./budgets.ts"
 
 // Pi-shaped dispatch: a flat table of commands, each a name plus an Effect.
 // No framework: parsing is prefix matching on argv, errors are tagged values
@@ -61,18 +59,6 @@ const commands: ReadonlyArray<Command> = [
     description: "Release a session (kills browsers we launched, never foreign ones). Needs --yes.",
     usage: "close <handle|--all> [--yes] [--json|--plain]",
     run: close
-  },
-  {
-    name: "search",
-    description: "Find tools by words (engine + session page tools with --handle/--all).",
-    usage: "search [--json|--plain] [--handle H ...] [--all] [--limit 1–50] <query...>",
-    run: search
-  },
-  {
-    name: "execute",
-    description: "Run JS code against session page tools, one turn per flow (single --session, --handle aliases it; multi: repeat --as ALIAS=H). Accident-contained, runs with your privilege.",
-    usage: `execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json|--plain] '<code>'`,
-    run: execute
   },
   {
     name: "register",

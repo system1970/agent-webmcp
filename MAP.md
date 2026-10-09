@@ -9,147 +9,51 @@ when the code moves. Only this region's agent writes this file.
 
 1. Facts only. No guesses. If the code does not say it, the map does not say it.
 2. Every fact ends with a source. `path:line`.
-3. Every file described here has a hash. If the hash is not the hash of the
-   file now, this map is old. Re-read the file. Write the map again.
-4. Add to the map. Do not rewrite history. Delete a line only when the file it
-   names is gone.
+3. File hashes live in `MAP.hashes` (machine data, checked by
+   `bun run preflight`); prose here never carries hashes.
+4. History may be corrected when the code it describes moves — stale
+   history misleads worse than no history. Delete a line only when the
+   file it names is gone.
 5. Use short sentences. One meaning per word. Say the thing straight.
+6. Timeless over versioned: describe what the code IS, not what a unit
+   did. Test counts, verb enumerations, and eval scores rot fastest —
+   leave them to the dated log below, or out.
 
 ## The map
 
 <!-- The agent writes here. -->
 
-### Shape of the repo
+### Shape of the code
 
-- Fresh Bun + TypeScript + Effect v4 CLI scaffold. No browser code yet.
-  `AGENTS.md:5`, `package.json:14`
-- `src/` holds the CLI. `website/` holds the docs site (own `AGENTS.md`).
-  `AGENTS.md:10`, `website/AGENTS.md:1`
-- Entry point is `src/main.ts`. Binary name is `agent-webmcp`.
-  `src/main.ts:1`, `package.json:7`
-- `repos/` holds vendored reference copies via `git subtree --squash`.
-  `AGENTS.md:17`
-- `repos/effect` pins `Effect-TS/effect` at `effect@4.0.0-rc.112`.
-  `AGENTS.md:21`
-- `repos/effect/LLMS.md` is the agent-facing Effect guide. Read it first.
-  `AGENTS.md:26`
-- `.vscode/settings.json` excludes `repos/**` from auto-import (`:2`),
-  file view (`:4`), watcher (`:7`), and search (`:10`).
-  `.vscode/settings.json:2`
-
-### The CLI: skeleton (pi-shaped)
-
-- Commands are a flat table in `src/cli.ts`. No framework.
-  `src/cli.ts:10`
-- Commands are `doctor` and `mcp`. `src/cli.ts:22`
-- `doctor` reports bun, platform, effect, tools. `--json` for scripts.
-  `src/commands/doctor.ts:6`
-- `.pi/mcp.json` does not exist in this repo. Pi registration lives one
-  level up at Projects scope, as server `agent-webmcp`. `AGENTS.md:19`
-- The Projects-level entry spawns `mcp serve` via absolute repo path.
+- Bun + TypeScript + Effect v4 CLI (`agent-webmcp`); `src/main.ts:1`
+  is the entry, `src/cli.ts:10` a flat command table, no framework.
+- Six verbs, one registry (`open list search register execute
+  close`); MCP serves all six, CLI mirrors the four lifecycle verbs
+  (open/list/close/register). `src/tools/registry.ts:8`
+- Data-from-print split: `src/sessions/verbs.ts` holds the data fns;
+  commands parse argv and print, MCP tools pass JSON.
+  `src/sessions/verbs.ts:1`
+- Failure lanes: `UsageError` (exit 2), `TransientFailure` (exit 3,
+  safe to retry), `CliFailure` (exit 1), defects dump.
+  `src/failure.ts:1`, `src/main.ts:9`
+- `mcp serve` exposes the registry over stdio (stdout is the
+  protocol, stderr diagnostics, self-reaps on stdin EOF).
   `src/commands/mcp-serve.ts:20`
-- Projects scope still needs one human trust approval inside pi.
-  `AGENTS.md:19`
-- `mcp list` prints the registry. `--json` for scripts.
-  `src/commands/mcp-list.ts:6`
-- `mcp serve` exposes the registry over stdio. `src/commands/mcp-serve.ts:20`
-- `mcp serve` self-reaps on stdin EOF (SDK never listens for it; Bun
-  busy-spins EOF-stdin loops — orphaned servers burned cores).
-  `src/commands/mcp-serve.ts:53`
-- Stdout is the protocol in serve mode. Diagnostics go to stderr.
-  `src/commands/mcp-serve.ts:15`
-- `UsageError` exits `2`. Everything else exits `1`. `src/main.ts:7`
-- Version comes from generated consts. `src/version.ts:6`
-- `bun run gen` derives `src/generated/versions.ts` from package.json
-  files. package.json is the single source of truth.
-  `scripts/gen-versions.ts:2`, `package.json:11`
-- The generated module is committed so fresh clones check green without
-  running gen. Re-run gen when a version changes. `scripts/gen-versions.ts:2`
-- `bun run compile` only bundles; versions ride along in the module.
-  `scripts/compile.ts:1`
-- In dev and binary alike, versions are plain consts: no file reads,
-  no defines. `src/version.ts:6`
-- Verified: binary installed at `~/.local/bin/agent-webmcp` reports `0.0.1`
-  and correct effect version from a foreign cwd. `src/version.ts:6`
-- Verified: the installed binary serves MCP over stdio.
-  `src/commands/mcp-serve.ts:20`
-- `tsconfig.json` covers `src/` and `scripts/`. `tsconfig.json:13`
-- Verified: `doctor` reports bun `1.4.3`, effect `4.0.0-rc.112`.
-  `src/commands/doctor.ts:6`
-- Verified: full MCP loop over stdio (initialize, tools/list, tools/call
-  against the derived schema, unknown tool isError).
-  `src/commands/mcp-serve.ts:20`
-
-### The tools: one registry, two doors
-
-- A tool is name, description, an Effect input schema, and an Effect execute.
-  `src/tools/definition.ts:9`
-- The MCP `inputSchema` is derived via `toInputSchema`, which calls
-  `Schema.toJsonSchemaDocument`. One schema is the truth.
-  `src/tools/definition.ts:28`
-- Tool inputs stay anonymous: named schemas land in `definitions`, which
-  the helper does not forward yet. `src/tools/definition.ts:28`
-- The registry is one list. CLI and MCP both read it.
-  `src/tools/registry.ts:8`
-- The tools are `search` and `execute`: composition surface, no fetch
-  placeholder (`web_fetch` removed). `src/tools/registry.ts:8`
-- `search` ranks tools by word overlap over name (3x) + description.
-  `src/tools/search.ts:31`
-- `search` clamps `limit` to 1–50 (default 8) via pure `clampLimit`;
-  non-finite falls back to default. `src/tools/search.ts:20`
-- `search` points agents at `execute`, the door that exists.
-  `src/tools/search.ts:40`
-- `execute` runs a batch of at most 5 in parallel and never fails the
-  batch on item errors: unknown tools and tool failures become
-  `{ ok: false }` entries. Oversized batches fail loudly.
-  `src/tools/execute.ts:74`
-- `execute` shapes results with per-item `maxChars`, clamped 1k–64k
-  (default 8000). `src/tools/execute.ts:45`
-- `execute` imports `findTool` from the registry; the cycle is safe
-  because use is deferred to call time. `src/tools/execute.ts:4`
-- Sessions are designed in `docs/sessions.md` but unwired: any `sessionId`
-  fails as unknown, engine-local tools run sessionless.
-  `src/tools/execute.ts:38`, `docs/sessions.md:11`
-- Verified: one `execute` turn ran search + search + unknown tool in
-  parallel with truncation bounds and per-item ok flags.
-  `src/tools/execute.ts:74`
-- `composition.test.ts` (18 tests) locks search ranking, limit clamping,
-  and execute semantics: flags, bounds, rejections.
-  `src/tools/composition.test.ts:21`
-- `bun test src` is scoped: bare `bun test` also runs vendored effect
-  tests. `package.json:14`
-- `bun run check:gen` fails when the generated versions module drifts.
-  CI runs gen-check + `bun check` + `bun test src`.
-  `.github/workflows/check.yml:1`
-- `skills/agent-webmcp/SKILL.md` teaches harness-agnostic use: setup,
-  reconnect note, Pattern A (native scripts) / Pattern B (no scripts).
-  `skills/agent-webmcp/SKILL.md:1`
-- `bun run review` sends the working-tree diff to the standing
-  code-reviewer subagent; BLOCKING findings gate commits. Intent-to-add
-  stages new files so the diff sees them (announced on stderr); both diff
-  and status exclude `bun.lock` + `repos/`. Every run records itself to
-  `reviews/YYYY-MM-DD-HHMM-<runner>.md` (gitignored, local only).
-  Both runners proven against the same model (pi verified end-to-end
-  2026-10-08; opencode earlier). Works wherever OPENCODE_API_KEY resolves.
-  `AGENTS.md:15`, `scripts/review.ts:29`
-- Input is validated with `Schema.decodeUnknownEffect`, v4 API.
-  `src/tools/search.ts:33`
-- v4 has no `Effect.catchAll`/`Effect.either`: main uses `catchTag` plus
-  `runPromiseExit`, serve uses runPromise with try/catch. Inside the
-  runtime side effects go through `Console`; past `runPromiseExit` the
-  edge uses raw process I/O by design. `src/main.ts:4`,
-  `src/commands/mcp-serve.ts:37`
-- `bun check` is the native typecheck. It is green. `AGENTS.md:6`
-- `bun run typecheck` is `tsc --noEmit`. It is the parity escape hatch.
-  `package.json:11`
-- No `check` script exists. A `check` script would shadow Bun's builtin.
-  `package.json:10`
+- Versions are generated consts (`bun run gen`, committed).
+  `src/version.ts:6`
+- `skill show` prints the bundled SKILL.md — version-matched by
+  construction, cannot drift. `src/commands/skill.ts:1`
+- `repos/` holds read-only vendored reference copies
+  (`repos/effect/LLMS.md` first when writing Effect code).
+  `AGENTS.md:31`
+- Neighbor regions' docs misname this stack (Rust/Go claims) — this
+  repo's files win over theirs. `AGENTS.md:5`
 
 ### The transport: WebMCP over CDP (Unit 1)
 
 - Transport is a minimal CDP client: `Target` (attach), `Page`
-  (navigate/lifecycle), `WebMCP` (tools), plus `Runtime.evaluate` for the
-  page-support probe only — never for driving pages.
+  (navigate/lifecycle), `WebMCP` (tools), plus `Runtime.evaluate`
+  (probes, snapshots, and the `register` authoring path).
   `src/transport/client.ts:1`
 - The live protocol (probed from Chromium 152 `/json/protocol`, not docs):
   `WebMCP.enable/disable`, `invokeTool {frameId, toolName, input}` returning
@@ -171,8 +75,8 @@ when the code moves. Only this region's agent writes this file.
 - Browsers below the floor (no WebMCP even with the flag, pre-152) fail
   with webmcpFloorFix: 152+. `src/transport/errors.ts:17`
 - `TransportFailed` names operation + reason + numeric CDP code + fix.
-  Reasons: `no-browser`, `flags-missing`, `timeout`, `protocol`.
-  `src/transport/errors.ts:6`
+  Reasons: `no-browser`, `flags-missing`, `timeout`, `protocol`,
+  `navigated`. `src/transport/errors.ts:6`
 - `invokeTool` awaits the terminal `toolResponded` for its invocationId;
   Completed-with-Error returns as page data, only stalls fail — and stalls
   cancel first. Default timeout 30s, never indefinite.
@@ -198,10 +102,10 @@ when the code moves. Only this region's agent writes this file.
   `catch` or use function form; `Effect.callback` replaces `Effect.async`
   (interrupt cleanup unregisters listeners); no `Effect.catchAll`, use
   `Effect.catch`. `src/transport/client.ts:1`
-- `transport.test.ts` (13 tests) locks error shape, catalog merge +
-  quarantine (incl. future-tolerant annotations), tryPromise-fails
-  pin, and wait semantics (timeout-tag mapping, session filter) on a
-  stub connection — no browser needed.
+- `transport.test.ts` locks error shape, catalog merge + quarantine
+  (incl. future-tolerant annotations), evaluatePage throw/value/garbage
+  paths, tryPromise-fails pin, and wait semantics (timeout-tag mapping,
+  session filter) on stub connections — no browser needed.
   `src/transport/transport.test.ts:1`
 - `scripts/eval-transport.ts` runs 3 live evals, zero tokens (bad endpoint,
   two-pages, live list+invoke+Completed); manual, not CI (no browser there).
@@ -220,23 +124,19 @@ when the code moves. Only this region's agent writes this file.
   sockets: every verb dials, reattaches the recorded target, works,
   closes. Tmp dies on reboot, as do browsers — records never outlive
   the machine. `src/sessions/store.ts:1`
-- `open [--cdp URL [--target SUB]] [--port N] [--json] <url>` launches
-  detached (survives the CLI; `close` kills) or borrows a foreign tab
-  (navigates it — stated in help; never closes/kills foreign). Probe
-  failures (no surface at all: old browsers) refuse below-floor; pages
+- `open` launches detached (survives the CLI; `close --yes` kills)
+  or borrows a foreign tab (navigates it — stated in help; never
+  closes/kills foreign). Probe failures refuse below-floor; pages
   with surface but no tools open fine and list empty.
   `src/commands/open.ts:14`
-- `list <handle> [tool] [--json]`: stat-like rows (name, desc bits,
+- `list <handle> [tool]`: stat-like rows (name, desc bits,
   schema size); full schema on demand; tool-less pages print a fact,
-  exit 0. `src/commands/list.ts:1`
-- `invoke <handle> <tool> '<json>'`: Completed-with-Error is data;
-  output always delimited + origin-labeled + untrusted; ambiguous
-  same-name frames fail with candidates. `src/commands/invoke.ts:9`
-- `close <handle|--all>`: closes targets, kills owned browsers +
+  exit 0. Piped output defaults to JSON. `src/commands/list.ts:1`
+- `close <handle|--all> --yes`: closes targets, kills owned browsers +
   profiles, drops records. Dead browsers are not errors.
   `src/commands/close.ts:1`
-- `CliFailure` is the middle lane: clean stderr + exit 1. Usage stays
-  exit 2, defects stay dumps. `src/failure.ts:1`
+- Lanes: `CliFailure` exit 1, `TransientFailure` exit 3 (safe to
+  retry), usage exit 2, defects dump. `src/failure.ts:1`
 - Proven live: `WebMCP.enable` does NOT backfill on fresh sessions —
   reattached catalogs seed from `snapshotTools` (page surface) merged
   with the live window (`sessionTools`, events win).
@@ -252,10 +152,10 @@ when the code moves. Only this region's agent writes this file.
   wrongly; held-subscription sessions (daemon) will carry true frameIds.
   Event entries without frameIds quarantine instead — opposite evidence,
   opposite default, both counted.
-- `eval:sessions` runs 11 checks across separate CLI processes
-  (open/list/invoke/unknown-tool/tool-less/close/usage-2/cli-search/
-  cli-execute/foreign-target/foreign-alive), all green 2026-10-09.
-  `scripts/eval-sessions.ts:1`
+- `eval:sessions` runs 7 checks across separate CLI processes
+  (open/list/tool-less/close/usage-2/foreign-target/foreign-alive),
+  green 2026-10-09. Composition moved to MCP evals; the CLI door
+  covers lifecycle only. `scripts/eval-sessions.ts:1`
 
 ### Research
 
@@ -265,16 +165,16 @@ when the code moves. Only this region's agent writes this file.
   Sections 1–5 cite primary sources; section 6 is synthesis.
   `docs/research/webmcp-codemode.md:1`
 
-### Stale docs vs live code (read these before trusting a guide)
+### Stale docs vs live code
 
-- Root `../AGENTS.md` calls this region a Rust CLI. It is Bun TS.
-  `AGENTS.md:5`
-- `../orkestrate/AGENTS.md` calls this region a Go browser CLI. It is Bun TS.
-  `AGENTS.md:5`
-- Live user instruction wins over both: Bun + TS + Effect v4 from scratch.
-  `AGENTS.md:5`
+- Neighbor regions misname this stack (`../AGENTS.md`: Rust CLI,
+  `../orkestrate/AGENTS.md`: Go browser CLI). It is Bun + TS + Effect.
+  This repo's files win over theirs. `AGENTS.md:5`
 
 ### Codemode discovery (Unit 5) + code execution (Unit 6) + cross-page (Unit 7)
+
+Superseded by Unit 13 (six verbs; `describe`/`invoke`/`status` cut) —
+history below, read as history:
 
 - `search` hits carry compact signatures (`name(req: type, opt?: …)`),
   derived from the JSON Schemas we already carry — discovery without a
@@ -285,14 +185,12 @@ when the code moves. Only this region's agent writes this file.
 - Overflow spills to `/tmp/opencode/agent-webmcp-spill/` (0700 dir
   only when we create it, 0600 files, no daemon GC — /tmp dies on
   reboot) with the path in a structured `spill` field on the execute
-  envelope (describe nests it inside its content JSON — parse, same trust
-  rule), never regexed from text (forged markers are a
-  prompt-injection vector). `describe` budgets large schemas the same
-  way. `src/spill.ts:1`
+  envelope, never regexed from text (forged markers are a
+  prompt-injection vector). `src/spill.ts:1`
 - Skill teaches the positioning: harness codemode composes directly
   (primary), our code-only `execute` matches the shape where the
-  harness can't run code (fallback); loop is search → describe →
-  invoke, schemas on demand. `skills/agent-webmcp/SKILL.md:1`
+  harness can't run code (fallback); loop is search → list →
+  execute, schemas on demand. `skills/agent-webmcp/SKILL.md:1`
 - `execute {code}` runs agent JS in an accident-contained worker
   against one session (bare tools.*) or N sessions under caller
   aliases (sesh.ALIAS.tools.*): denied names shadowed from one list —
@@ -305,10 +203,8 @@ when the code moves. Only this region's agent writes this file.
   structured-cloned, returns carry origins[] + perSession counts.
   7 tools then; 8 with status (Unit 8).
   `src/codemode/runner.ts:1`, `src/tools/execute.ts:1`
-- `eval:mcp` 14/14 (list-8, describe-record, spill round-trip, execute-control-flow,
-  call-status, status-undisturbed),
-  green 2026-10-09.
-  Extends the earlier surface with code-path execute checks.
+- `eval:mcp` (then 14/14 on the 8-verb surface; since reworked
+  execute-native for six verbs — see current eval).
   `scripts/eval-mcp.ts:1`
 - `eval:xpage` 7/7 (initialize, open-both, open-toolcounts, multisearch-tags, code-join,
   compensation, close-both over two local fixture pages),
@@ -324,6 +220,15 @@ when the code moves. Only this region's agent writes this file.
   locked import-time (preflight `schema-object`), wire-level (eval-mcp
   `tools-schemas-object`), and memory (G21 + L10).
   `src/tools/definition.ts:59`
+
+### Unit 15 — strip pass (dead code + CLI composition mirrors)
+
+- Deleted write-only `ConnStats`; runner keeps only the platform
+  ceiling (tool owns the rest, same messages). `src/transport/client.ts:1`,
+  `src/codemode/runner.ts:280`
+- CLI drops `search` + `execute` mirrors (composition belongs on MCP;
+  lifecycle open/list/close/register stay). Sessions eval covers the
+  CLI door with 7 checks. `src/cli.ts:47`
 
 ### Unit 14 — agent ergonomics (JSON default, exit taxonomy, write gate)
 
@@ -439,24 +344,25 @@ when the code moves. Only this region's agent writes this file.
   Entry orchestrates only (`scripts/review.ts:1`); jobs live in
   `scripts/review/` (git, brief, cache, verdict, runners, record —
   each unit-tested). `scripts/review/git.ts:1`
-- `bun run review:eval` scores 20 golden findings (12 verified, 8
-  tracked at baseline): fixes stay fixed or the run fails.
+- `bun run review:eval` scores 26 golden findings (20 verified, 6
+  tracked): fixes stay fixed or the run fails.
   `scripts/review-eval.ts:1`, `scripts/review-eval.json:1`
 
-### MCP surface (Unit 3: describe; Unit 5: codemode discovery; Unit 6: code execution, merged into execute in Unit 7; Unit 7: merge + xpage)
+### MCP surface (six verbs; history: 7 → 8 → 6 across Units 3–13)
 
-- 8 tools in one registry (`search execute open list invoke close
-  describe status`): composition + session verbs sharing data fns with
+- 6 tools in one registry (`search execute open list register
+  close`): composition + session verbs sharing data fns with
   the CLI. `src/tools/registry.ts:8`
-- CLI mirrors the session verbs + search/execute (`describe`
-  intentionally has no CLI verb: `list <handle> <tool>` already serves
-  it — documented, not built). `src/cli.ts:1`
+- CLI mirrors lifecycle verbs (open/list/close/register); composition
+  (`search`, `execute`) lives on MCP only. `src/cli.ts:1`
 - Verbs split data-from-print: `src/sessions/verbs.ts` holds
-  openSession/listSessionTools/invokeSessionTool/closeSession/
-  closeAllSessions + pickPort; commands parse argv and print, MCP tools
-  pass JSON. `src/sessions/verbs.ts:1`
+  openSession/listSessionTools/registerSessionTool/closeSession/
+  closeAllSessions + pickPort (`invokeSessionTool` stays
+  engine-internal for the execute dispatch); commands parse argv and
+  print, MCP tools pass JSON. `src/sessions/verbs.ts:1`
 - Failure mapping lives neutral in `src/failure.ts` (CliFailure,
-  UsageError, asCliFailure): sessions/tools/commands all import from
+  TransientFailure, UsageError, resolveJson, asCliFailure,
+  asCommandFailure): sessions/tools/commands all import from
   there, no layer owes another. `src/failure.ts:1`
 - `search {query, handles?, all?}` ranks engine + page tools together;
   page hits tagged with their session, engine hits `session: null`;
@@ -466,6 +372,9 @@ when the code moves. Only this region's agent writes this file.
   runs in a worker against one session (bare tools) or N sessions
   under aliases (sesh.ALIAS.tools); returns value + spill + toolCalls
   + perSession + origins[] with untrusted flags. `src/tools/execute.ts:1`
+- `register {handle, tool, code}`: spec-shaped authoring through a
+  fixed snippet (native registration, session-scoped).
+  `src/tools/register.ts:1`
 - Posture lands with the surface: every page envelope carries
   `{untrusted: true, origin}`; SKILL.md teaches never-promote,
   never-run-suggested-shell, hints-enforce-nothing.
@@ -476,10 +385,10 @@ when the code moves. Only this region's agent writes this file.
 - Budgets moved to neutral `src/budgets.ts` (sessions + commands share,
   no layering debt). `src/budgets.ts:1`
 - `eval:mcp` drives `mcp serve` over stdio with no model: initialize →
-  list (8) → open (toolCount + open_ms) → invoke (Completed, normalized,
-  untrusted) → search/describe w/ session → execute code block →
-  spilling execute → execute control-flow → status → invoke-after-status
-  → close. 14/14 green 2026-10-09.
+  list (6) → open (toolCount + open_ms) → execute single-call
+  (normalized, untrusted) → search/list w/ session → execute code
+  block → spilling execute → execute control-flow → close.
+  12/12 green 2026-10-09.
   `scripts/eval-mcp.ts:1`
 
 ### Rules that bind this region
@@ -495,92 +404,8 @@ when the code moves. Only this region's agent writes this file.
 
 ## Files covered
 
-<!-- The agent writes here. One row per file it describes. -->
-
-| File | Hash | Told about |
-|---|---|---|
-| `AGENTS.md` | `03c992768671` | agent-webmcp |
-| `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
-| `package.json` | `bafae48226b2` | agent-webmcp |
-| `tsconfig.json` | `3443c8284415` | agent-webmcp |
-| `src/main.ts` | `51ca9330c4e0` | agent-webmcp |
-| `src/cli.ts` | `ee2aab1bc1aa` | agent-webmcp |
-| `src/version.ts` | `1067c7fbdd05` | agent-webmcp |
-| `src/commands/doctor.ts` | `1ca98d076742` | agent-webmcp |
-| `src/commands/mcp-list.ts` | `dec84e5ad272` | agent-webmcp |
-| `src/commands/mcp-serve.ts` | `a96ba79b1535` | agent-webmcp |
-| `src/tools/definition.ts` | `96d61b33a2ca` | agent-webmcp |
-| `src/tools/registry.ts` | `a4774df10fcd` | agent-webmcp |
-| `src/tools/search.ts` | `0d963c4d5c47` | agent-webmcp |
-| `src/tools/execute.ts` | `4d2226c11c59` | agent-webmcp |
-| `src/tools/composition.test.ts` | `52d8560068f5` | agent-webmcp |
-| `docs/sessions.md` | `7b52ca56e77f` | agent-webmcp |
-| `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
-| `scripts/review.ts` | `d8fc00a1288b` | agent-webmcp |
-| `skills/agent-webmcp/SKILL.md` | `d6726ad30dd2` | agent-webmcp, pi |
-| `.github/workflows/check.yml` | `d838043029ae` | agent-webmcp |
-| `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
-| `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
-| `docs/research/codemode-opencode-vs-cloudflare.md` | `b4268f2625ec` | agent-webmcp |
-| `scripts/compile.ts` | `abe2cc9c570f` | agent-webmcp |
-| `src/transport/errors.ts` | `564b7b8e0799` | agent-webmcp |
-| `src/transport/client.ts` | `c3dfc74ea2a8` | agent-webmcp |
-| `src/transport/launch.ts` | `c0aaf9104547` | agent-webmcp |
-| `src/transport/transport.test.ts` | `c4151d10cb13` | agent-webmcp |
-| `scripts/eval-transport.ts` | `3282f5671797` | agent-webmcp |
-| `src/failure.ts` | `f15b82305cab` | agent-webmcp |
-| `src/commands/open.ts` | `fa32ce488e0f` | agent-webmcp |
-| `src/commands/list.ts` | `73bf423f5501` | agent-webmcp |
-| `src/commands/close.ts` | `cfa0b9234af9` | agent-webmcp |
-| `src/sessions/store.ts` | `a62c0fe0d4f3` | agent-webmcp |
-| `src/sessions/connect.ts` | `07af85055e7e` | agent-webmcp |
-| `src/sessions/store.test.ts` | `ffd6a1bc64e0` | agent-webmcp |
-| `src/transport/devtools.ts` | `d387cffadc5d` | agent-webmcp |
-| `scripts/eval-sessions.ts` | `e65cd53ac921` | agent-webmcp |
-| `src/tools/open.ts` | `36d436fbf6eb` | agent-webmcp |
-| `src/tools/list.ts` | `f423ae1f0dfd` | agent-webmcp |
-| `src/tools/close.ts` | `37248234a66b` | agent-webmcp |
-| `src/sessions/verbs.ts` | `8c9e2a0e76c4` | agent-webmcp |
-| `src/commands/skill.ts` | `4c6074d3b4ca` | agent-webmcp |
-| `src/budgets.ts` | `e921c3a3e6df` | agent-webmcp |
-| `src/md.d.ts` | `592511bb79fe` | agent-webmcp |
-| `scripts/eval-mcp.ts` | `90262c984215` | agent-webmcp |
-| `src/commands/search.ts` | `3afa3fc32c62` | agent-webmcp |
-| `src/commands/execute.ts` | `78bc97429c1e` | agent-webmcp |
-| `src/spill.ts` | `2a9dc7dfe6f3` | agent-webmcp |
-| `src/codemode/runner.ts` | `9f2b4978e1ff` | agent-webmcp |
-| `src/codemode/runner.test.ts` | `10ff9955523f` | agent-webmcp |
-| `docs/run-accepted-risk.md` | `3a3c7e6b8025` | agent-webmcp |
-| `src/commands/mcp-serve.test.ts` | `7506f8a3e6d2` | agent-webmcp |
-| `docs/research/cross-page-composition.md` | `cbb976ebb2f9` | agent-webmcp |
-| `docs/decisions.md` | `5ff001b3e343` | agent-webmcp |
-| `docs/review-learnings.md` | `430aead59a7b` | agent-webmcp |
-| `scripts/preflight.ts` | `5ca1c63636cf` | agent-webmcp |
-| `scripts/review-eval.ts` | `190eabb5786a` | agent-webmcp |
-| `scripts/review-eval.json` | `fe568db6ce80` | agent-webmcp |
-| `scripts/review/git.ts` | `8c23538e6fd3` | agent-webmcp |
-| `scripts/review/brief.ts` | `05437060508b` | agent-webmcp |
-| `scripts/review/cache.ts` | `d6004758de1f` | agent-webmcp |
-| `scripts/review/verdict.ts` | `47b6388dc15c` | agent-webmcp |
-| `scripts/review/runners.ts` | `c0a17821a8fe` | agent-webmcp |
-| `scripts/review/record.ts` | `abdc71ab6ff8` | agent-webmcp |
-| `scripts/review/git.test.ts` | `af9317e33956` | agent-webmcp |
-| `scripts/review/verdict.test.ts` | `9994730be9da` | agent-webmcp |
-| `scripts/review/cache.test.ts` | `5c42e028eaf0` | agent-webmcp |
-| `src/sessions/verbs.test.ts` | `c2fcfa9a9c4c` | agent-webmcp |
-| `scripts/eval-real.ts` | `e5d138ed3075` | agent-webmcp |
-| `scripts/eval-cloudflare.ts` | `839a0c0d3d9e` | agent-webmcp |
-| `docs/users.md` | `1260c48cb460` | agent-webmcp |
-| `scripts/eval-xpage.ts` | `167b549cd14a` | agent-webmcp |
-| `src/tools/register.ts` | `7460ab498862` | agent-webmcp |
-| `src/commands/register.ts` | `7f86bc480351` | agent-webmcp |
-| `scripts/eval-lib.ts` | `088ce2de9a49` | agent-webmcp |
-| `docs/research/agentic-cli-vs-mcp.md` | `069538ff18e7` | agent-webmcp |
-| `LICENSE` | `6c253b662168` | agent-webmcp |
-| `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
-
-Hash is the first 12 characters of `sha256sum`. Told about lists the agents to
-tell when this file changes. Use `agent-webmcp` for this repo.
+File hashes live in `MAP.hashes` (machine data for `bun run preflight`;
+never agent reading). Add rows there, not here.
 
 ## Agents to tell
 

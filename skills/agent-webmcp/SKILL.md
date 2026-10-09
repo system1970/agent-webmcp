@@ -23,13 +23,12 @@ agent-webmcp open --json <url>                  # prints {handle, toolCount, ...
 agent-webmcp list <handle> [--json] [tool]      # rows on a TTY, JSON when piped
 agent-webmcp close <handle|--all> --yes         # deliberate: kills browsers
 agent-webmcp register <handle> '<json-tool>' '<js-body>' --yes [--timeout ms] [--json]  # author a custom tool
-agent-webmcp search [--json] [--handle H ...] [--all] [--limit N] <query...>
-agent-webmcp execute [--session H | --as ALIAS=H ...] [--timeout ms] [--max-chars N] [--json] '<code>'
 agent-webmcp mcp list [--json]                  # inspect the served surface
 agent-webmcp skill show                         # this document
 ```
 
-Piped output is JSON unless `--plain` forces rows; `--json` forces it
+Composition (`search`, `execute`) lives on MCP only — the shell is
+the wrong shape for envelopes. Piped output is JSON unless `--plain` forces rows; `--json` forces it
 everywhere. `--json` is the machine door: single-quote JSON args so the
 shell passes them whole (`'{"sku":"gadget","qty":1}'`; `execute` takes code:
 `'return await tools.priceOf({sku:"gadget"});'`). Exit codes are the

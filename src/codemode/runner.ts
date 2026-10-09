@@ -271,23 +271,15 @@ export const runCode = Effect.fn("codemode.run")(function* (input: {
   if (input.code.length > RUN_MAX_CODE_CHARS) {
     return yield* Effect.fail({ message: `code is ${input.code.length} chars (max ${RUN_MAX_CODE_CHARS}): chunk the block.` })
   }
-  if (!Number.isInteger(input.timeoutMs) || input.timeoutMs <= 0) {
-    return yield* Effect.fail({ message: `bad timeoutMs '${input.timeoutMs}': caller contract is a positive integer.` })
-  }
-  // libuv ceiling: setTimeout past 2^31-1ms overflows (fires
-  // immediately). Tool/CLI clamp far below; direct callers get the
-  // platform truth here.
-  if (input.timeoutMs > 2147483647) {
-    return yield* Effect.fail({ message: `bad timeoutMs '${input.timeoutMs}': exceeds the platform ceiling (2147483647 ms).` })
-  }
-  if (!Number.isInteger(input.maxToolCalls) || input.maxToolCalls <= 0) {
-    return yield* Effect.fail({ message: `bad maxToolCalls '${input.maxToolCalls}': caller contract is a positive integer.` })
-  }
-  if (!Number.isInteger(input.maxResultChars) || input.maxResultChars <= 0) {
-    return yield* Effect.fail({ message: `bad maxResultChars '${input.maxResultChars}': caller contract is a positive integer.` })
-  }
-  if (!Number.isInteger(input.maxDoneChars) || input.maxDoneChars <= 0) {
-    return yield* Effect.fail({ message: `bad maxDoneChars '${input.maxDoneChars}': caller contract is a positive integer.` })
+  // Boundaries below this point are the tool's contract (tools/execute.ts
+  // validates timeout range and call/result/done budgets before dialing).
+  // Only the platform truth the tool never checks stays here: libuv
+  // setTimeout past 2^31-1ms overflows (fires immediately), so a direct
+  // caller passing a huge timeout gets a loud refusal instead of an
+  // instant-timeout mystery. (Code-length wording matches the tool's;
+  // timeout wording is runner-specific.)
+  if (!Number.isInteger(input.timeoutMs) || input.timeoutMs <= 0 || input.timeoutMs > 2147483647) {
+    return yield* Effect.fail({ message: `bad timeoutMs '${input.timeoutMs}': want a positive integer at most 2147483647 ms.` })
   }
   return yield* Effect.callback<RunResult, { message: string }>((resume) => {
     let worker: Worker
