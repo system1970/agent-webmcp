@@ -325,6 +325,19 @@ when the code moves. Only this region's agent writes this file.
   `tools-schemas-object`), and memory (G21 + L10).
   `src/tools/definition.ts:59`
 
+### Unit 10 — internal-tab adapter (polyfill + harness convention)
+
+- Desktop tabs expose no WebMCP surface and no automation channel:
+  unreachable from engine or plugin (four independent verifications).
+  The bridge is harness-level: idempotent `modelContext` polyfill via
+  `evaluate` (register/getTools/executeTool over a local registry),
+  tabID as session handle, list/invoke through the polyfill, close
+  what opens. Verified live: single-tab list/invoke/miss + two-tab
+  join (`gadget`: onHand 7, ship 5), zero tabs remaining. Recipe on
+  the docs site + SKILL pointer; no engine diff. Upstream asks
+  (renderer flags, debuggable channel) recorded, undrafted.
+  `website/app/docs/custom-tools/page.tsx:1`
+
 ### Unit 9 — custom-WebMCP authoring (annotation mapping + recipe)
 
 - Spec `Hint` spellings map to engine base names at both catalog
@@ -455,7 +468,7 @@ when the code moves. Only this region's agent writes this file.
 | `docs/sessions.md` | `7b52ca56e77f` | agent-webmcp |
 | `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
 | `scripts/review.ts` | `d8fc00a1288b` | agent-webmcp |
-| `skills/agent-webmcp/SKILL.md` | `46cbdea7df77` | agent-webmcp, pi |
+| `skills/agent-webmcp/SKILL.md` | `d80cbf64be51` | agent-webmcp, pi |
 | `.github/workflows/check.yml` | `d838043029ae` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
@@ -498,7 +511,7 @@ when the code moves. Only this region's agent writes this file.
 | `docs/review-learnings.md` | `5ecb535fa0f1` | agent-webmcp |
 | `scripts/preflight.ts` | `5ca1c63636cf` | agent-webmcp |
 | `scripts/review-eval.ts` | `190eabb5786a` | agent-webmcp |
-| `scripts/review-eval.json` | `31d719297003` | agent-webmcp |
+| `scripts/review-eval.json` | `e0b477166859` | agent-webmcp |
 | `scripts/review/git.ts` | `8c23538e6fd3` | agent-webmcp |
 | `scripts/review/brief.ts` | `05437060508b` | agent-webmcp |
 | `scripts/review/cache.ts` | `d6004758de1f` | agent-webmcp |

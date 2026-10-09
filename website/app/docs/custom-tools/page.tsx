@@ -94,6 +94,56 @@ agent-webmcp invoke <handle> getStock '{"sku":"widget"}'`}
         they load. Then compose: one <code className="font-mono text-[13px] text-ink">execute</code> block
         joins tools across sessions in a single turn.
       </p>
+      <h2 className="mt-8 text-xl font-medium text-ink">Internal tabs</h2>
+      <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        The desktop app&apos;s built-in browser exposes no WebMCP surface
+        (no flags at launch) and no automation channel — the engine cannot
+        attach to its tabs. Drive them from the harness instead: open a
+        tab, install a small <code className="font-mono text-[13px] text-ink">modelContext</code> polyfill
+        with <code className="font-mono text-[13px] text-ink">evaluate</code>, then
+        list and invoke through it. The tab ID is the session handle;
+        close what you open.
+      </p>
+      <CodeBlock
+        code={`// once per tab (idempotent): open, then evaluate this
+(() => {
+  if (document.modelContext && document.modelContext.__awm) return "present";
+  const tools = new Map();
+  document.modelContext = {
+    __awm: true,
+    registerTool: (t) => { tools.set(t.name, t); return true; },
+    getTools: async () => [...tools.values()].map((t) => ({
+      name: t.name, description: t.description ?? "",
+      inputSchema: t.inputSchema ?? {}, annotations: t.annotations ?? {} })),
+    executeTool: async (name, args) => {
+      const t = tools.get(name);
+      if (!t) throw new Error("unknown tool '" + name + "'");
+      return await t.execute(args ?? {});
+    }
+  };
+  return "installed";
+})()
+// list:   (async () => await document.modelContext.getTools())()
+// invoke: (async () => await document.modelContext.executeTool("getStock", { sku: "widget" }))()
+// (wrap in async IIFE — top-level await is rejected)`}
+        lang="js"
+      />
+      <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
+        <li>
+          Register tools after the polyfill with the same recipe above —
+          they resolve through <code className="font-mono text-[13px] text-ink">getTools</code>/
+          <code className="font-mono text-[13px] text-ink">executeTool</code> identically.
+        </li>
+        <li>
+          Values arrive JSON-serializable only; unknown tools fail with{" "}
+          <code className="font-mono text-[13px] text-ink">unknown tool &apos;name&apos;</code> —
+          fail loud, same as sessions.
+        </li>
+        <li>
+          Chain tabs like sessions: one block, one invoke per tab, join in
+          code. Verified live across two tabs, zero remaining after close.
+        </li>
+      </ul>
     </article>
   );
 }

@@ -176,6 +176,15 @@ Same tools, one turn per step: `open` → `search`/`list` to find →
 `invoke` → `close`. Never call page tools one-per-turn in a loop when
 a single `execute` code block carries the step.
 
+## Internal tabs (desktop browser)
+
+The desktop app's tabs expose no WebMCP surface and no automation
+channel — the engine cannot attach. Drive them from the harness:
+`tabs.open` (tab ID is the handle), `evaluate` the `modelContext`
+polyfill once per tab, then list/invoke through `getTools`/
+`executeTool`, `tabs.close` when done. Full recipe (polyfill +
+convention): website custom-tools page, Internal tabs section.
+
 ## Which composition to use
 
 Two tiers, richest first — drop down only when the harness can't:
