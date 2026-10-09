@@ -62,7 +62,40 @@ const SessionAttached = Schema.Struct({ sessionId: Schema.String })
 const WireAnnotations = Schema.Struct({
   readOnly: Schema.optional(Schema.Boolean),
   untrustedContent: Schema.optional(Schema.Boolean),
-  autosubmit: Schema.optional(Schema.Boolean)
+  autosubmit: Schema.optional(Schema.Boolean),
+  // Spec-style Hint spellings (docs/research/webmcp-codemode.md:63):
+  // pages send these; the engine reasons over base names (normalize
+  // below). consequentialHint/debugging have no counterpart here and
+  // stay dropped — the authoring recipe documents it
+  // (website/app/docs/custom-tools/page.tsx).
+  // Wrong-typed Hint values fail the item decode like any malformed
+  // entry (quarantined, counted) — tolerant of unknown keys, strict
+  // on known ones.
+  readOnlyHint: Schema.optional(Schema.Boolean),
+  untrustedContentHint: Schema.optional(Schema.Boolean)
+})
+
+// Spec Hint → engine base mapping. Base wins on conflict (the
+// engine-native claim stands when a page says it twice). Pure:
+// unit-tested directly.
+export const normalizeAnnotations = (raw: {
+  readonly readOnly?: boolean
+  readonly untrustedContent?: boolean
+  readonly autosubmit?: boolean
+  readonly readOnlyHint?: boolean
+  readonly untrustedContentHint?: boolean
+}): PageTool["annotations"] => ({
+  ...(typeof raw.readOnly === "boolean"
+    ? { readOnly: raw.readOnly }
+    : typeof raw.readOnlyHint === "boolean"
+      ? { readOnly: raw.readOnlyHint }
+      : {}),
+  ...(typeof raw.untrustedContent === "boolean"
+    ? { untrustedContent: raw.untrustedContent }
+    : typeof raw.untrustedContentHint === "boolean"
+      ? { untrustedContent: raw.untrustedContentHint }
+      : {}),
+  ...(typeof raw.autosubmit === "boolean" ? { autosubmit: raw.autosubmit } : {})
 })
 
 const WireTool = Schema.Struct({
@@ -493,7 +526,7 @@ export const snapshotTools = Effect.fn("transport.snapshotTools")(function* (
           name: tool.name,
           description: tool.description ?? "",
           inputSchema: tool.inputSchema,
-          annotations: tool.annotations ?? {},
+          annotations: normalizeAnnotations(tool.annotations ?? {}),
           frameId: mainFrame
         })
       } catch {
@@ -560,7 +593,7 @@ export const mergeToolEvent = (
             name: tool.name,
             description: tool.description ?? "",
             inputSchema: tool.inputSchema,
-            annotations: tool.annotations ?? {},
+            annotations: normalizeAnnotations(tool.annotations ?? {}),
             frameId: tool.frameId
           })
         } catch {

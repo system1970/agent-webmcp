@@ -319,6 +319,20 @@ when the code moves. Only this region's agent writes this file.
   joins consume normalized values with zero unwrapping; slow pages read
   toolCount 0 at open and settle via windowed list. `scripts/eval-real.ts:1`
 
+### Unit 9 — custom-WebMCP authoring (annotation mapping + recipe)
+
+- Spec `Hint` spellings map to engine base names at both catalog
+  paths (`normalizeAnnotations()`, base wins on conflict):
+  `readOnlyHint → readOnly`, `untrustedContentHint →
+  untrustedContent`; `consequentialHint`/debugging dropped, documented.
+  Wrong-typed Hints quarantine the item, never siblings. Verified live
+  (`getStock` surfaces `readOnly:true`; was `{}`). Pure + unit-tested.
+  `src/transport/client.ts:62`
+- Recipe lives on the docs site (its law: install, verbs, authoring):
+  registerTool pattern, JSON-shaped returns, annotation table, verify
+  loop — replaces a page describing a `tools add` CLI that never
+  existed. `website/app/docs/custom-tools/page.tsx:1`
+
 ### Unit 8 — retro grounding (normalize + status + reality gate)
 
 - Page outputs normalize to one shape in `invokeSessionTool`:
@@ -442,9 +456,9 @@ when the code moves. Only this region's agent writes this file.
 | `docs/research/codemode-opencode-vs-cloudflare.md` | `b4268f2625ec` | agent-webmcp |
 | `scripts/compile.ts` | `abe2cc9c570f` | agent-webmcp |
 | `src/transport/errors.ts` | `564b7b8e0799` | agent-webmcp |
-| `src/transport/client.ts` | `16e5820f0bf9` | agent-webmcp |
+| `src/transport/client.ts` | `08e03c1fbab3` | agent-webmcp |
 | `src/transport/launch.ts` | `c0aaf9104547` | agent-webmcp |
-| `src/transport/transport.test.ts` | `33223e399ba8` | agent-webmcp |
+| `src/transport/transport.test.ts` | `69641fbb7e14` | agent-webmcp |
 | `scripts/eval-transport.ts` | `3282f5671797` | agent-webmcp |
 | `src/failure.ts` | `4ca144d8ce8e` | agent-webmcp |
 | `src/commands/open.ts` | `a2e7696dbea7` | agent-webmcp |

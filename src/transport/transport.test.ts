@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { TransportFailed, webmcpFloorFix, WEBMCP_LAUNCH_FLAGS } from "./errors.ts"
-import { mergeToolEvent, waitForEvent } from "./client.ts"
+import { mergeToolEvent, normalizeAnnotations, waitForEvent } from "./client.ts"
 import type { CdpListener, Connection, PageTool } from "./client.ts"
 
 const tool = (name: string, frameId = "F1"): PageTool => ({
@@ -113,6 +113,32 @@ describe("mergeToolEvent", () => {
     })
     expect(result.catalog.size).toBe(1)
     expect(result.quarantined).toBe(0)
+  })
+
+  test("spec Hint spellings normalize to base names (live :8901 shape)", () => {
+    expect(normalizeAnnotations({ readOnlyHint: true })).toEqual({ readOnly: true })
+    expect(normalizeAnnotations({ untrustedContentHint: true })).toEqual({ untrustedContent: true })
+    expect(normalizeAnnotations({})).toEqual({})
+  })
+
+  test("base names win over Hint on conflict", () => {
+    expect(normalizeAnnotations({ readOnly: false, readOnlyHint: true })).toEqual({ readOnly: false })
+  })
+
+  test("merge path maps Hint annotations (getStock arrives readOnly)", () => {
+    const result = mergeToolEvent(new Map(), "WebMCP.toolsAdded", {
+      tools: [{ ...tool("getStock"), annotations: { readOnlyHint: true } }]
+    })
+    expect(result.catalog.get("F1::getStock")?.annotations).toEqual({ readOnly: true })
+    expect(result.quarantined).toBe(0)
+  })
+
+  test("wrong-typed Hint values quarantine the item, never siblings", () => {
+    const result = mergeToolEvent(new Map(), "WebMCP.toolsAdded", {
+      tools: [{ ...tool("bad"), annotations: { readOnlyHint: "yes" } }, tool("fine")]
+    })
+    expect([...result.catalog.keys()]).toEqual(["F1::fine"])
+    expect(result.quarantined).toBe(1)
   })
 })
 

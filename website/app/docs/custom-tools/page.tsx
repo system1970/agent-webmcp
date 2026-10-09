@@ -2,7 +2,7 @@ import { CodeBlock } from "../code-block";
 
 export const metadata = {
   title: "Custom tools · agent-webmcp docs",
-  description: "Craft the page's missing tools, verify them, compose them.",
+  description: "Author page tools agents can call: registerTool recipe, annotations, return shapes.",
 };
 
 export default function CustomToolsPage() {
@@ -12,39 +12,88 @@ export default function CustomToolsPage() {
         Custom tools
       </h1>
       <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
-        When the page lacks tools the task needs, craft them: page
+        When the page lacks tools the task needs, author them: page
         JavaScript that registers through the page&apos;s own{" "}
-        <code className="font-mono text-[13px] text-ink">document.modelContext</code>,
-        exactly like a site-native tool. Crafted tools are indistinguishable
-        from found ones at invoke time.
+        <code className="font-mono text-[13px] text-ink">document.modelContext</code>.
+        The engine reads them like site-native tools — open, list, invoke,
+        close, no special path.
+      </p>
+      <h2 className="mt-8 text-xl font-medium text-ink">Recipe</h2>
+      <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        Save this as <code className="font-mono text-[13px] text-ink">shop.html</code> and
+        serve its directory (<code className="font-mono text-[13px] text-ink">python3 -m http.server 8901</code>) —
+        every line below runs against it.
       </p>
       <CodeBlock
-        code={`agent-webmcp tools add --file heading.js --for example.com --name page_heading
-agent-webmcp tools verify page_heading --session demo
-agent-webmcp tools list --query heading`}
-        lang="bash"
+        code={`<h1>Demo shop</h1>
+<script>
+const STOCK = { "widget": 42, "gadget": 7 };
+document.modelContext.registerTool({
+  name: "getStock",
+  description: "Look up on-hand stock for a SKU.",
+  inputSchema: {
+    type: "object",
+    properties: { sku: { type: "string" } },
+    required: ["sku"]
+  },
+  annotations: { readOnlyHint: true },
+  execute: async (args) => ({ sku: args.sku, onHand: STOCK[args.sku] ?? 0 })
+});
+</script>`}
+        lang="html"
       />
       <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
         <li>
-          Tools are host-scoped (<code className="font-mono text-[13px] text-ink">--for</code> takes
-          exact hosts, <code className="font-mono text-[13px] text-ink">*.suffix</code>, or{" "}
-          <code className="font-mono text-[13px] text-ink">*</code>) and live
-          under <code className="font-mono text-[13px] text-ink">~/.agent-webmcp/tools/</code>.
+          <code className="font-mono text-[13px] text-ink">name</code> is
+          the verb; <code className="font-mono text-[13px] text-ink">description</code> ranks
+          in search — write it for the agent, not the user.
         </li>
         <li>
-          <code className="font-mono text-[13px] text-ink">verify</code>{" "}
-          reloads, injects, and confirms every registered name in{" "}
-          <code className="font-mono text-[13px] text-ink">list</code>. Only
-          verified tools auto-inject on{" "}
-          <code className="font-mono text-[13px] text-ink">open</code> —
-          unverified tools never run unannounced.
+          <code className="font-mono text-[13px] text-ink">inputSchema</code> is
+          a JSON Schema object (not a string). Required args first.
         </li>
         <li>
-          The craft loop is discover → craft → verify → compose → expose:
-          page tools and crafted tools become one toolkit over MCP and CLI
-          alike.
+          Return JSON-shaped data (objects, arrays), never display strings:
+          the engine normalizes outputs to one shape, and code that joins
+          tools consumes values directly — a string forces every caller to
+          parse it back out.
         </li>
       </ul>
+      <h2 className="mt-8 text-xl font-medium text-ink">Annotations</h2>
+      <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        The engine reasons over three flags. Spec-style{" "}
+        <code className="font-mono text-[13px] text-ink">Hint</code> spellings
+        map to them (base spelling wins on conflict); anything else —
+        including <code className="font-mono text-[13px] text-ink">consequentialHint</code> — is
+        dropped, not enforced. Hints inform confirmation UX; they enforce nothing.
+      </p>
+      <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
+        <li>
+          <code className="font-mono text-[13px] text-ink">readOnlyHint → readOnly</code>:
+          safe to call without asking (lookups, searches).
+        </li>
+        <li>
+          <code className="font-mono text-[13px] text-ink">untrustedContentHint → untrustedContent</code>:
+          output carries page data worth quarantining.
+        </li>
+        <li>
+          <code className="font-mono text-[13px] text-ink">autosubmit</code>:
+          passes through as-is.
+        </li>
+      </ul>
+      <h2 className="mt-8 text-xl font-medium text-ink">Verify</h2>
+      <CodeBlock
+        code={`agent-webmcp open --json http://localhost:8901/shop.html
+agent-webmcp list <handle> --json   # annotations + schemas, as the agent sees them
+agent-webmcp invoke <handle> getStock '{"sku":"widget"}'`}
+        lang="bash"
+      />
+      <p className="mt-3 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        If <code className="font-mono text-[13px] text-ink">toolCount</code> is 0
+        at open, list again before concluding empty — pages register tools as
+        they load. Then compose: one <code className="font-mono text-[13px] text-ink">execute</code> block
+        joins tools across sessions in a single turn.
+      </p>
     </article>
   );
 }
