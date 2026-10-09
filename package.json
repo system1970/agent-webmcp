@@ -7,6 +7,9 @@
     "test": "bun test src",
     "typecheck": "tsc --noEmit",
     "gate": "bun ./scripts/gate.ts",
+    "gen": "bun ./scripts/gen-versions.ts",
+    "compile": "bun ./scripts/compile.ts",
+    "start": "bun ./src/main.ts",
     "prepare": "effect-tsgo patch --typescript --no-oxlint"
   },
   "dependencies": {
@@ -16,7 +19,7 @@
   "devDependencies": {
     "@effect/tsgo": "0.51.1",
     "@types/bun": "latest",
-    "devtools-protocol": "^0.0.1714151",
+    "devtools-protocol": "0.0.1714151",
     "typescript": "7.0.2"
   }
 }
