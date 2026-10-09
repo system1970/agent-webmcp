@@ -325,6 +325,20 @@ when the code moves. Only this region's agent writes this file.
   `tools-schemas-object`), and memory (G21 + L10).
   `src/tools/definition.ts:59`
 
+### Unit 12 — inject + Cloudflare authoring (agent wires a real site)
+
+- `inject` 9th verb (tool + CLI + registry): agent JS runs in the page
+  via the CDP evaluate channel; throws surface as `errorText`, stalls
+  fail, result labeled untrusted. `src/tools/inject.ts:1`,
+  `src/commands/inject.ts:1`
+- Cloudflare docs gates first-party tools (`search`, `list-directories`)
+  on `navigator.modelContext`; our flagged headless carries the real
+  `document.modelContext` — a 10-line bridge + event re-dispatch
+  registers them natively (CDP invoke, their AI backend). Custom
+  `topHits` (search + page fetch) authored the same way. Their chat
+  path 403s preflight for everyone incl. their UI — cut, not chased.
+  `scripts/eval-cloudflare.ts:1` (10/10 green 2026-10-09)
+
 ### Unit 11 — multi-tab codemode (fan-out joins + close discipline)
 
 - Canonical join block: open N, polyfill everywhere, `Promise.all`
@@ -464,32 +478,32 @@ when the code moves. Only this region's agent writes this file.
 |---|---|---|
 | `AGENTS.md` | `03c992768671` | agent-webmcp |
 | `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
-| `package.json` | `3a21d525667f` | agent-webmcp |
+| `package.json` | `bafae48226b2` | agent-webmcp |
 | `tsconfig.json` | `3443c8284415` | agent-webmcp |
 | `src/main.ts` | `8a628cf70a0d` | agent-webmcp |
-| `src/cli.ts` | `b3dc3799c554` | agent-webmcp |
+| `src/cli.ts` | `351af958035f` | agent-webmcp |
 | `src/version.ts` | `1067c7fbdd05` | agent-webmcp |
 | `src/commands/doctor.ts` | `1ca98d076742` | agent-webmcp |
 | `src/commands/mcp-list.ts` | `dec84e5ad272` | agent-webmcp |
 | `src/commands/mcp-serve.ts` | `a96ba79b1535` | agent-webmcp |
 | `src/tools/definition.ts` | `96d61b33a2ca` | agent-webmcp |
-| `src/tools/registry.ts` | `05e9a3ad40ef` | agent-webmcp |
+| `src/tools/registry.ts` | `42ba1bb7ae11` | agent-webmcp |
 | `src/tools/search.ts` | `c95ce1895a7d` | agent-webmcp |
 | `src/tools/execute.ts` | `4d2226c11c59` | agent-webmcp |
-| `src/tools/composition.test.ts` | `3e9d03d04073` | agent-webmcp |
+| `src/tools/composition.test.ts` | `d9710bb5d339` | agent-webmcp |
 | `docs/sessions.md` | `7b52ca56e77f` | agent-webmcp |
 | `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
 | `scripts/review.ts` | `d8fc00a1288b` | agent-webmcp |
-| `skills/agent-webmcp/SKILL.md` | `4574b9083faa` | agent-webmcp, pi |
+| `skills/agent-webmcp/SKILL.md` | `f4990772505d` | agent-webmcp, pi |
 | `.github/workflows/check.yml` | `d838043029ae` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
 | `docs/research/codemode-opencode-vs-cloudflare.md` | `b4268f2625ec` | agent-webmcp |
 | `scripts/compile.ts` | `abe2cc9c570f` | agent-webmcp |
 | `src/transport/errors.ts` | `564b7b8e0799` | agent-webmcp |
-| `src/transport/client.ts` | `08e03c1fbab3` | agent-webmcp |
+| `src/transport/client.ts` | `c3dfc74ea2a8` | agent-webmcp |
 | `src/transport/launch.ts` | `c0aaf9104547` | agent-webmcp |
-| `src/transport/transport.test.ts` | `69641fbb7e14` | agent-webmcp |
+| `src/transport/transport.test.ts` | `c4151d10cb13` | agent-webmcp |
 | `scripts/eval-transport.ts` | `3282f5671797` | agent-webmcp |
 | `src/failure.ts` | `4ca144d8ce8e` | agent-webmcp |
 | `src/commands/open.ts` | `a2e7696dbea7` | agent-webmcp |
@@ -505,7 +519,7 @@ when the code moves. Only this region's agent writes this file.
 | `src/tools/list.ts` | `f423ae1f0dfd` | agent-webmcp |
 | `src/tools/invoke.ts` | `970b53aacfb3` | agent-webmcp |
 | `src/tools/close.ts` | `37248234a66b` | agent-webmcp |
-| `src/sessions/verbs.ts` | `13657fd80e60` | agent-webmcp |
+| `src/sessions/verbs.ts` | `a42218597944` | agent-webmcp |
 | `src/commands/skill.ts` | `4c6074d3b4ca` | agent-webmcp |
 | `src/budgets.ts` | `e921c3a3e6df` | agent-webmcp |
 | `src/md.d.ts` | `592511bb79fe` | agent-webmcp |
@@ -520,10 +534,10 @@ when the code moves. Only this region's agent writes this file.
 | `src/commands/mcp-serve.test.ts` | `7506f8a3e6d2` | agent-webmcp |
 | `docs/research/cross-page-composition.md` | `cbb976ebb2f9` | agent-webmcp |
 | `docs/decisions.md` | `f17ee84ba17a` | agent-webmcp |
-| `docs/review-learnings.md` | `5ecb535fa0f1` | agent-webmcp |
+| `docs/review-learnings.md` | `87e360ee11a8` | agent-webmcp |
 | `scripts/preflight.ts` | `5ca1c63636cf` | agent-webmcp |
 | `scripts/review-eval.ts` | `190eabb5786a` | agent-webmcp |
-| `scripts/review-eval.json` | `ca5e42671a59` | agent-webmcp |
+| `scripts/review-eval.json` | `29bed7a24499` | agent-webmcp |
 | `scripts/review/git.ts` | `8c23538e6fd3` | agent-webmcp |
 | `scripts/review/brief.ts` | `05437060508b` | agent-webmcp |
 | `scripts/review/cache.ts` | `d6004758de1f` | agent-webmcp |
@@ -537,6 +551,9 @@ when the code moves. Only this region's agent writes this file.
 | `src/commands/status.ts` | `bb7104d43f2c` | agent-webmcp |
 | `src/sessions/verbs.test.ts` | `2fd8a2e04da2` | agent-webmcp |
 | `scripts/eval-real.ts` | `b276c47f0340` | agent-webmcp |
+| `src/tools/inject.ts` | `9b5ca68dc26b` | agent-webmcp |
+| `src/commands/inject.ts` | `cb9ee541dc91` | agent-webmcp |
+| `scripts/eval-cloudflare.ts` | `642e56b7e29d` | agent-webmcp |
 | `docs/users.md` | `1260c48cb460` | agent-webmcp |
 | `scripts/eval-xpage.ts` | `689fef7a7a22` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |

@@ -10,5 +10,6 @@ import "./invoke.ts"
 import "./close.ts"
 import "./describe.ts"
 import "./status.ts"
+import "./inject.ts"
 
 export { allTools, findTool } from "./definition.ts"

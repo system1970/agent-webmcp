@@ -10,6 +10,7 @@ import { close } from "./commands/close.ts"
 import { search } from "./commands/search.ts"
 import { execute } from "./commands/execute.ts"
 import { status } from "./commands/status.ts"
+import { inject } from "./commands/inject.ts"
 import { skill } from "./commands/skill.ts"
 import { getVersion } from "./version.ts"
 import { RUN_TIMEOUT_MAX_MS, INVOKE_TIMEOUT_MAX_MS } from "./budgets.ts"
@@ -86,6 +87,12 @@ const commands: ReadonlyArray<Command> = [
     description: "Read-only observability: open sessions and spill usage (records only, never dials).",
     usage: "status [--json]",
     run: status
+  },
+  {
+    name: "inject",
+    description: "Run JS in the session page; authoring door for custom tools (registers, probes, unpublished flows).",
+    usage: `inject <handle> '<js>' [--timeout ms 1-${INVOKE_TIMEOUT_MAX_MS}] [--json]`,
+    run: inject
   },
   {
     name: "skill",

@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import {
   attachPage, closePage, dial, navigate, probePageSupport, reattach,
-  sessionTools, snapshotTools, invokeTool
+  sessionTools, snapshotTools, invokeTool, evaluatePage
 } from "../transport/client.ts"
 import type { PageTool } from "../transport/client.ts"
 import { browserWs, pageTargets } from "../transport/devtools.ts"
@@ -12,7 +12,7 @@ import type { Launched } from "../transport/launch.ts"
 import { newHandle, nowIso, saveSession, listSessions, loadSession, removeSession } from "./store.ts"
 import type { SessionRecord } from "./store.ts"
 import { withSession } from "./connect.ts"
-import { LIST_WINDOW_MS, INVOKE_TIMEOUT_MS, INVOKE_TIMEOUT_MAX_MS, PORT_MIN, PORT_MAX } from "../budgets.ts"
+import { LIST_WINDOW_MS, INVOKE_TIMEOUT_MS, INVOKE_TIMEOUT_MAX_MS, PORT_MIN, PORT_MAX, RUN_MAX_CODE_CHARS } from "../budgets.ts"
 import { spillStats } from "../spill.ts"
 import { CliFailure, asCliFailure } from "../failure.ts"
 import { rmSync, readlinkSync } from "node:fs"
@@ -361,6 +361,43 @@ export const invokeSessionTool = Effect.fn("verbs.invokeSessionTool")(function* 
         origin: record.url,
         untrusted: true as const
       }
+      return out
+    }))
+})
+
+export interface InjectResult {
+  readonly value: unknown
+  readonly errorText: string | undefined
+  readonly origin: string
+  readonly untrusted: true
+}
+
+// Authoring door: run the agent's JS in the page (register custom tools,
+// probe DOM, drive flows the page never published). Page throws surface
+// as errorText (the code ran, the page said no); transport stalls fail.
+// The value is the agent's own expression result AND page-influenced —
+// labeled untrusted like every page envelope. Budgets: code length
+// capped pre-dial (mirrors execute); timeoutMin/Max shared with invoke.
+export const injectSessionCode = Effect.fn("verbs.injectSessionCode")(function* (
+  handle: string,
+  code: string,
+  timeoutMs = INVOKE_TIMEOUT_MS
+) {
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > INVOKE_TIMEOUT_MAX_MS) {
+    return yield* Effect.fail(new CliFailure({ message: `bad timeoutMs '${timeoutMs}': want 1-${INVOKE_TIMEOUT_MAX_MS} ms` }))
+  }
+  if (code.trim().length === 0) {
+    return yield* Effect.fail(new CliFailure({ message: "inject: code is empty." }))
+  }
+  if (code.length > RUN_MAX_CODE_CHARS) {
+    return yield* Effect.fail(new CliFailure({ message: `inject: code is ${code.length} chars (max ${RUN_MAX_CODE_CHARS}): chunk the block.` }))
+  }
+  return yield* withSession(handle, (conn, record, sessionId) =>
+    Effect.gen(function* () {
+      const result = yield* evaluatePage(conn, sessionId, code, timeoutMs)
+      const out: InjectResult = result.ok
+        ? { value: result.value, errorText: undefined, origin: record.url, untrusted: true as const }
+        : { value: null, errorText: result.errorText, origin: record.url, untrusted: true as const }
       return out
     }))
 })

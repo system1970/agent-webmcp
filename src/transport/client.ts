@@ -737,6 +737,40 @@ export const probePageSupport = Effect.fn("transport.probePageSupport")(function
   return decoded.result?.value === true
 })
 
+// Run caller JS in the page and return its JSON-serializable value.
+// The authoring door (verbs.injectSessionCode): same Runtime.evaluate
+// channel as the probe/snapshot, but the expression is the agent's own.
+// Page exceptions surface as page data (completed with errorText),
+// never transport failures — the code ran, the page said no. Timeout
+// guards hangs; non-serializable results fail loud (returnByValue).
+export const evaluatePage = Effect.fn("transport.evaluatePage")(function* (
+  conn: Connection,
+  sessionId: string,
+  expression: string,
+  timeoutMs = 30000
+) {
+  const reply = yield* conn.call(
+    "Runtime.evaluate",
+    { expression, awaitPromise: true, returnByValue: true },
+    sessionId,
+    timeoutMs
+  )
+  const decoded = yield* Schema.decodeUnknownEffect(EvalResult)(reply).pipe(
+    Effect.mapError((issue) => decodeFailed("Runtime.evaluate", "{result: {value}}", issue))
+  )
+  // Thrown expressions arrive as exceptionDetails with no result —
+  // never silent success. Text sliced: page stack traces are unbounded.
+  const raw = reply as { exceptionDetails?: { text?: unknown; exception?: { description?: unknown } } }
+  if (decoded.result === undefined && raw.exceptionDetails !== undefined) {
+    const text = typeof raw.exceptionDetails.text === "string" ? raw.exceptionDetails.text : ""
+    const desc = typeof raw.exceptionDetails.exception?.description === "string"
+      ? raw.exceptionDetails.exception.description.split("\n")[0] ?? ""
+      : ""
+    return { ok: false as const, errorText: `${text}: ${desc}`.slice(0, 500) || "page threw" }
+  }
+  return { ok: true as const, value: decoded.result?.value }
+})
+
 // Best-effort by contract: closing a dead or already-closed target is not
 // an error worth failing over. Callers needing certainty re-list.
 export const closePage = Effect.fn("transport.closePage")(function* (

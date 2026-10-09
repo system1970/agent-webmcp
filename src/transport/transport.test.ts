@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { TransportFailed, webmcpFloorFix, WEBMCP_LAUNCH_FLAGS } from "./errors.ts"
-import { mergeToolEvent, normalizeAnnotations, waitForEvent } from "./client.ts"
+import { mergeToolEvent, normalizeAnnotations, waitForEvent, evaluatePage } from "./client.ts"
 import type { CdpListener, Connection, PageTool } from "./client.ts"
 
 const tool = (name: string, frameId = "F1"): PageTool => ({
@@ -165,6 +165,40 @@ const stubConn = (): { conn: Connection; emit: (method: string, params: unknown,
     }
   }
 }
+
+describe("evaluatePage", () => {
+  // Programmed Runtime.evaluate replies: values pass through untouched
+  // (an `{error:...}` OBJECT is data, never a failure signal), throws
+  // surface as errorText, malformed replies fail protocol. L6 lock for
+  // the inject result shape — every field consumed here, no browser.
+  const replyConn = (reply: unknown): Connection => ({
+    ...stubConn().conn,
+    call: () => Effect.succeed(reply)
+  })
+  const run = <A>(e: Effect.Effect<A, TransportFailed>): Promise<A> => Effect.runPromise(e)
+
+  test("value passes through, error-keyed objects included", async () => {
+    expect(await run(evaluatePage(replyConn({ result: { value: { error: "none" } } }), "S", "1")))
+      .toEqual({ ok: true, value: { error: "none" } })
+    expect(await run(evaluatePage(replyConn({ result: { value: 42 } }), "S", "1")))
+      .toEqual({ ok: true, value: 42 })
+  })
+
+  test("thrown expression surfaces errorText, never silent success", async () => {
+    expect(await run(evaluatePage(
+      replyConn({ exceptionDetails: { text: "Uncaught", exception: { description: "TypeError: x\n    at y" } } }),
+      "S", "1"
+    ))).toEqual({ ok: false, errorText: "Uncaught: TypeError: x" })
+  })
+
+  test("empty-object reply decodes to undefined value; garbage fails protocol", async () => {
+    expect(await run(evaluatePage(replyConn({ nope: 1 }), "S", "1")))
+      .toEqual({ ok: true, value: undefined })
+    const failure = await Effect.runPromise(evaluatePage(replyConn(42), "S", "1").pipe(Effect.flip))
+    expect(failure).toBeInstanceOf(TransportFailed)
+    expect((failure as TransportFailed).reason).toBe("protocol")
+  })
+})
 
 describe("waitForEvent", () => {
   test("no matching event fails timeout with the operation named", async () => {

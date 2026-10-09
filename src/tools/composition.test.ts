@@ -6,9 +6,10 @@ import { ToolFailed } from "./definition.ts"
 import { allTools, findTool } from "./registry.ts"
 import { search, clampLimit, signature } from "./search.ts"
 import { execute, sanitizeMaxChars } from "./execute.ts"
+import { inject } from "./inject.ts"
 import { describe as describeTool } from "./describe.ts"
 import { saveSession } from "../sessions/store.ts"
-import { RUN_TIMEOUT_MAX_MS, INVOKE_TIMEOUT_MS } from "../budgets.ts"
+import { RUN_TIMEOUT_MAX_MS, INVOKE_TIMEOUT_MS, INVOKE_TIMEOUT_MAX_MS } from "../budgets.ts"
 import { shapeResult } from "../spill.ts"
 import type { WebmcpTool } from "./definition.ts"
 
@@ -55,11 +56,12 @@ const deadRecord = (handle: string) => ({
 })
 
 describe("registry", () => {
-  test("lists all eight tools", () => {
+  test("lists all nine tools", () => {
     expect(allTools.map((t) => t.name).sort()).toEqual([
       "close",
       "describe",
       "execute",
+      "inject",
       "invoke",
       "list",
       "open",
@@ -357,6 +359,25 @@ describe("execute", () => {
   test("execute rejects non-record sessions", async () => {
     const failure = await err(execute, { sessions: ["nope"], code: "return 1" })
     expect(failure).toBeInstanceOf(ToolFailed)
+  })
+})
+
+describe("inject", () => {
+  // Authoring door: validation fails pre-dial (no browser needed).
+  // Live page runs are eval-cloudflare's job.
+  test("inject requires code", async () => {
+    const failure = await err(inject, { handle: "s_deadbeef01" })
+    expect(failure).toBeInstanceOf(ToolFailed)
+  })
+
+  test("inject rejects empty code without a browser", async () => {
+    const failure = await err(inject, { handle: "s_deadbeef01", code: "   " })
+    expect((failure as ToolFailed).message).toMatch(/empty/)
+  })
+
+  test("inject rejects bad timeout without a browser", async () => {
+    const failure = await err(inject, { handle: "s_deadbeef01", code: "1", timeoutMs: 999999999 })
+    expect((failure as ToolFailed).message).toMatch(new RegExp(`1-${INVOKE_TIMEOUT_MAX_MS}`))
   })
 })
 

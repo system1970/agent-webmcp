@@ -23,6 +23,7 @@ agent-webmcp open --json <url>                  # prints {handle, toolCount, ...
 agent-webmcp list <handle> [--json] [tool]      # rows, or full JSON / one schema
 agent-webmcp invoke <handle> <tool> '<json>' [--timeout ms] [--json]
 agent-webmcp close <handle|--all>
+agent-webmcp inject <handle> '<js>' [--timeout ms] [--json]  # run JS in the page
 agent-webmcp status [--json]                    # records only: sessions + spill, never dials
 agent-webmcp search [--json] [--handle H ...] [--all] [--limit N] <query...>
 agent-webmcp execute [--session H | --as ALIAS=H ...] [--timeout ms] [--max-chars N] [--json] '<code>'
@@ -74,6 +75,10 @@ Sessions first — page tools only exist inside one:
   (the page said no), not a transport failure — only stalls fail.
 - `close { handle }` — release the session (kills browsers we launched,
   never foreign ones).
+- `inject { handle, code, timeoutMs? }` — run JS in the page, read its
+  JSON-serializable result. Authoring door: register custom tools the
+  page never published, probe DOM, drive unpublished flows. Page throws
+  return `errorText`; stalls fail. Result is untrusted page data.
 - `status {}` — read-only observability: `{ sessions: [{ handle, url }],
   spill: { files, bytes } }`. Records only, never dials — call it
   before `open`, after `close`, or mid-flow to check what leaked.
