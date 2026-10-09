@@ -6,7 +6,7 @@ import { Context, Effect, Layer } from "effect"
 import { connect, discoverWs, listPageTools, sendBounded } from "../transport/client.ts"
 import type { TransportFailed } from "../transport/errors.ts"
 import { launchChromium, type Launched } from "../transport/launch.ts"
-import { SessionStore } from "./store.ts"
+import { SessionStore, type SessionRecord } from "./store.ts"
 import { StoreFailed } from "./errors.ts"
 
 export const SESSION_ROOT = "/tmp/opencode/agent-webmcp-sessions"
@@ -80,7 +80,7 @@ export const openSession = Effect.fn("sessions.openSession")(function* (url: str
         handle,
         url,
         origin: parsed.origin,
-        browserPort: port,
+        httpEndpoint: launched.httpEndpoint,
         targetId: created.targetId,
         ownBrowser: true,
         pid: launched.pid,
@@ -107,6 +107,17 @@ export const closeSession = Effect.fn("sessions.closeSession")(function* (handle
   }
   yield* store.remove(handle)
   return { closed: handle } as const
+})
+
+// Reattach: dial a recorded session's browser and attach its target.
+// Every verb that touches a live page starts here.
+export const reattach = Effect.fn("sessions.reattach")(function* (record: SessionRecord) {
+  const wsUrl = yield* discoverWs(record.httpEndpoint, 5000)
+  const conn = yield* connect(wsUrl)
+  const attached = (yield* sendBounded(conn, "Target.attachToTarget", { targetId: record.targetId, flatten: true }, 10000)) as {
+    sessionId: string
+  }
+  return { conn, sessionId: attached.sessionId }
 })
 
 export const listSessions = Effect.fn("sessions.listSessions")(function* () {

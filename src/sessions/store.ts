@@ -10,7 +10,7 @@ export const SessionRecord = Schema.Struct({
   handle: Schema.String,
   url: Schema.String,
   origin: Schema.String,
-  browserPort: Schema.Number,
+  httpEndpoint: Schema.String,
   targetId: Schema.String,
   ownBrowser: Schema.Boolean,
   pid: Schema.Number,
