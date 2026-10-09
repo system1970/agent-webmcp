@@ -6,13 +6,15 @@
   "scripts": {
     "test": "bun test src",
     "typecheck": "tsc --noEmit",
-    "gate": "bun ./scripts/gate.ts"
+    "gate": "bun ./scripts/gate.ts",
+    "prepare": "effect-tsgo patch --typescript --no-oxlint"
   },
   "dependencies": {
     "effect": "4.0.2"
   },
   "devDependencies": {
+    "@effect/tsgo": "0.51.1",
     "@types/bun": "latest",
-    "typescript": "^5.9.3"
+    "typescript": "7.0.2"
   }
 }
