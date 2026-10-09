@@ -61,7 +61,7 @@ describe("tools", () => {
   })
 
   test("registry: five verbs, unique names, findable", () => {
-    expect(allTools.map((t) => t.name).sort()).toEqual(["close", "list", "open", "register", "search"])
+    expect(allTools.map((t) => t.name).sort()).toEqual(["close", "execute", "list", "open", "register", "search"])
     expect(findTool("open")?.description.length).toBeGreaterThan(0)
     expect(findTool("nope")).toBeUndefined()
   })
