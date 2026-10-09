@@ -6,8 +6,7 @@ import { ToolFailed } from "./definition.ts"
 import { allTools, findTool } from "./registry.ts"
 import { search, clampLimit, signature } from "./search.ts"
 import { execute, sanitizeMaxChars } from "./execute.ts"
-import { inject } from "./inject.ts"
-import { describe as describeTool } from "./describe.ts"
+import { register } from "./register.ts"
 import { saveSession } from "../sessions/store.ts"
 import { RUN_TIMEOUT_MAX_MS, INVOKE_TIMEOUT_MS, INVOKE_TIMEOUT_MAX_MS } from "../budgets.ts"
 import { shapeResult } from "../spill.ts"
@@ -56,29 +55,24 @@ const deadRecord = (handle: string) => ({
 })
 
 describe("registry", () => {
-  test("lists all nine tools", () => {
+  test("lists all six tools", () => {
     expect(allTools.map((t) => t.name).sort()).toEqual([
       "close",
-      "describe",
       "execute",
-      "inject",
-      "invoke",
       "list",
       "open",
-      "search",
-      "status"
+      "register",
+      "search"
     ].sort())
   })
 
-  test("execute tool record carries code/session inputs", async () => {
-    const record = JSON.parse(await ok(describeTool, { tool: "execute" })) as {
-      name: string
-      inputSchema: { properties: { handle: unknown; sessions: unknown; code: unknown; timeoutMs: unknown } }
-    }
-    expect(record.name).toBe("execute")
-    expect(record.inputSchema.properties.code).toBeDefined()
-    expect(record.inputSchema.properties.timeoutMs).toBeDefined()
-    expect(record.inputSchema.properties.sessions).toBeDefined()
+  test("execute tool record carries code/session inputs", () => {
+    const record = findTool("execute")
+    const props = (record?.inputSchema as { properties: Record<string, unknown> }).properties
+    expect(record?.name).toBe("execute")
+    expect(props.code).toBeDefined()
+    expect(props.timeoutMs).toBeDefined()
+    expect(props.sessions).toBeDefined()
   })
 
   test("execute rejects bad timeout without a browser", async () => {
@@ -362,44 +356,27 @@ describe("execute", () => {
   })
 })
 
-describe("inject", () => {
-  // Authoring door: validation fails pre-dial (no browser needed).
-  // Live page runs are eval-cloudflare's job.
-  test("inject requires code", async () => {
-    const failure = await err(inject, { handle: "s_deadbeef01" })
+describe("register", () => {
+  // Spec-shaped authoring: validation fails pre-dial (no browser
+  // needed). Live page runs are eval-cloudflare's job.
+  const tool = { name: "getStock", description: "Stock.", inputSchema: { type: "object" } }
+  test("register requires tool + code", async () => {
+    const failure = await err(register, { handle: "s_deadbeef01" })
     expect(failure).toBeInstanceOf(ToolFailed)
   })
 
-  test("inject rejects empty code without a browser", async () => {
-    const failure = await err(inject, { handle: "s_deadbeef01", code: "   " })
-    expect((failure as ToolFailed).message).toMatch(/empty/)
+  test("register rejects bad names without a browser", async () => {
+    const failure = await err(register, { handle: "s_deadbeef01", tool: { ...tool, name: "has space" }, code: "async () => ({})" })
+    expect((failure as ToolFailed).message).toMatch(/bad tool name/)
   })
 
-  test("inject rejects bad timeout without a browser", async () => {
-    const failure = await err(inject, { handle: "s_deadbeef01", code: "1", timeoutMs: 999999999 })
+  test("register rejects empty code without a browser", async () => {
+    const failure = await err(register, { handle: "s_deadbeef01", tool, code: "   " })
+    expect((failure as ToolFailed).message).toMatch(/code is empty/)
+  })
+
+  test("register rejects bad timeout without a browser", async () => {
+    const failure = await err(register, { handle: "s_deadbeef01", tool, code: "async () => ({})", timeoutMs: 999999999 })
     expect((failure as ToolFailed).message).toMatch(new RegExp(`1-${INVOKE_TIMEOUT_MAX_MS}`))
-  })
-})
-
-describe("describe", () => {
-  test("engine tool returns its record", async () => {
-    const record = JSON.parse(await ok(describeTool, { tool: "search" })) as {
-      name: string
-      inputSchema: { properties: { query: unknown } }
-      session: null
-    }
-    expect(record.name).toBe("search")
-    expect(record.inputSchema.properties.query).toBeDefined()
-    expect(record.session).toBeNull()
-  })
-
-  test("unknown engine tool fails with guidance", async () => {
-    const failure = await err(describeTool, { tool: "nope" })
-    expect((failure as ToolFailed).message).toMatch(/Pass handle to describe a page tool/)
-  })
-
-  test("bad session handle fails as invalid, not unknown", async () => {
-    const failure = await err(describeTool, { handle: "abc", tool: "x" })
-    expect((failure as ToolFailed).message).toMatch(/invalid session handle/)
   })
 })

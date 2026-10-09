@@ -1,12 +1,8 @@
-import { beforeAll, afterEach, describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { CliFailure } from "../failure.ts"
-import { saveSession } from "./store.ts"
-import type { SessionRecord } from "./store.ts"
-import { normalizeOutput, statusSessions } from "./verbs.ts"
+import type { TransportFailed } from "../transport/errors.ts"
+import { normalizeOutput, registerSessionTool } from "./verbs.ts"
 
 // L6 regression lock: consumption shape, not wire shape. Every case is a
 // real envelope the transport has delivered (showcase) or a scalar the
@@ -39,48 +35,36 @@ describe("normalizeOutput", () => {
   })
 })
 
-// Isolated dirs: this suite never touches live sessions or live spill.
-// Env overrides are test-harness setup (bun:test scaffolding), exempt
-// from the Effect discipline law like store.test.ts.
-const SESSIONS_TEST = mkdtempSync(join(tmpdir(), "awm-status-sessions-"))
-const SPILL_TEST = mkdtempSync(join(tmpdir(), "awm-status-spill-"))
-beforeAll(() => {
-  process.env.AGENT_SESSIONS_DIR = SESSIONS_TEST
-  process.env.AGENT_SPILL_DIR = SPILL_TEST
-})
-afterEach(() => {
-  rmSync(SESSIONS_TEST, { recursive: true, force: true })
-  rmSync(SPILL_TEST, { recursive: true, force: true })
-  mkdirSync(SESSIONS_TEST, { recursive: true })
-  mkdirSync(SPILL_TEST, { recursive: true })
-})
-
-const record = (handle: string, url: string, createdAt = "2026-10-09T00:00:00.000Z"): SessionRecord => ({
-  handle,
-  browserHttp: "http://localhost:9",
-  targetId: "T",
-  url,
-  ownBrowser: false,
-  createdAt
-})
-
-const runOk = <A>(effect: Effect.Effect<A, CliFailure>): Promise<A> => Effect.runPromise(effect)
-
-describe("statusSessions", () => {
-  test("empty world reads empty (records only, never dials)", async () => {
-    const report = await runOk(statusSessions())
-    expect(report.sessions).toEqual([])
-    expect(report.spill).toEqual({ files: 0, bytes: 0 })
+// Register validation fails pre-dial (no browser needed). Live page runs
+// are eval-cloudflare's job.
+describe("registerSessionTool", () => {
+  const runErr = (effect: Effect.Effect<unknown, CliFailure | TransportFailed>): Promise<CliFailure | TransportFailed> =>
+    Effect.runPromise(Effect.flip(effect))
+  const def = {
+    name: "getStock",
+    description: "Look up stock.",
+    inputSchema: { type: "object" },
+    code: "async (args) => ({})"
+  }
+  test("bad names fail loud", async () => {
+    // Spec-shaped: pattern + length only. Prototype-chain spellings are
+    // harmless here (string Map keys, never property access — unlike
+    // session aliases, which stay guarded).
+    for (const name of ["", "has space", "a".repeat(129)]) {
+      const failure = await runErr(registerSessionTool("s_deadbeef01", { ...def, name }))
+      expect(failure.message).toMatch(/bad tool name/)
+    }
   })
-  test("sessions list handle+url, spill counts files+bytes", async () => {
-    await runOk(saveSession(record("s_stata", "https://a.test/", "2026-10-09T00:00:00.000Z")))
-    await runOk(saveSession(record("s_statb", "https://b.test/", "2026-10-09T00:00:01.000Z")))
-    writeFileSync(join(SPILL_TEST, "spill-x.txt"), "12345678")
-    const report = await runOk(statusSessions())
-    expect(report.sessions).toEqual([
-      { handle: "s_stata", url: "https://a.test/" },
-      { handle: "s_statb", url: "https://b.test/" }
-    ])
-    expect(report.spill).toEqual({ files: 1, bytes: 8 })
+  test("empty description and code fail loud", async () => {
+    const d = await runErr(registerSessionTool("s_deadbeef01", { ...def, description: "  " }))
+    expect(d.message).toMatch(/description is empty/)
+    const c = await runErr(registerSessionTool("s_deadbeef01", { ...def, code: "  " }))
+    expect(c.message).toMatch(/code is empty/)
+  })
+  test("non-object schema fails loud", async () => {
+    const failure = await runErr(registerSessionTool("s_deadbeef01", {
+      ...def, inputSchema: [] as unknown as Record<string, unknown>
+    }))
+    expect(failure.message).toMatch(/inputSchema must be a JSON Schema object/)
   })
 })

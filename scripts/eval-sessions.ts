@@ -45,16 +45,23 @@ const main = Effect.fn("eval.main")(function* () {
   const listed = yield* cli("list", handle)
   results.push(yield* check("list", listed.code === 0 && listed.out.includes("searchFlights"), listed.out.split("\n")[0] ?? ""))
 
-  // 3. invoke round-trips page data with the untrusted banner.
-  const invoked = yield* cli("invoke", handle, "searchFlights", `{"origin":"SFO","destination":"JFK"}`)
+  // 3. execute round-trips page data with the untrusted banner
+  // (single calls ride code blocks — no one-per-turn verb).
+  const invoked = yield* cli(
+    "execute", "--session", handle,
+    `return await tools.searchFlights({ origin: "SFO", destination: "JFK" });`
+  )
   results.push(yield* check(
-    "invoke",
-    invoked.code === 0 && invoked.out.includes("status: Completed") && invoked.out.includes("untrusted data"),
+    "execute-single",
+    invoked.code === 0 && invoked.out.includes("value:") && invoked.out.includes("untrusted"),
     invoked.out.split("\n")[0] ?? ""
   ))
 
   // 4. Unknown tool names the available ones (exit 1, clean line).
-  const missed = yield* cli("invoke", handle, "nope", "{}")
+  const missed = yield* cli(
+    "execute", "--session", handle,
+    `return await tools.nope({});`
+  )
   results.push(yield* check(
     "unknown-tool",
     missed.code === 1 && missed.out.includes("unknown tool 'nope'"),
@@ -106,25 +113,37 @@ const main = Effect.fn("eval.main")(function* () {
   let codeOk = false
   let attempts = 0
   if (/^s_[a-z0-9]+$/.test(xHandle)) {
-    // Fresh opens race SPA tool registration: retry with sleeps until
-    // the tool answers (bounded — a real agent re-lists when missing).
-    for (let attempt = 0; attempt < 5 && !codeOk; attempt++) {
-      attempts = attempt + 1
-      if (attempt > 0) {
-        yield* Effect.sleep("2 seconds")
+    // Deterministic waits, both list-gated (no blind sleeps): phase 1
+    // waits for searchFlights (open race); one search run registers
+    // the results page; phase 2 waits for listFlights (registration
+    // lags the search call). A real agent re-lists when missing.
+    const pollFor = Effect.fn("eval.pollFor")(function* (name: string) {
+      for (let i = 0; i < 6; i++) {
+        if (i > 0) yield* Effect.sleep("2 seconds")
+        if ((yield* cli("list", xHandle)).out.includes(name)) return true
       }
-      const ran = yield* cli(
-        "execute", "--json", "--session", xHandle,
-        `await tools.searchFlights({ origin: "SFO", destination: "JFK" });
-        const v = await tools.listFlights({});
-        return { t: typeof v, len: JSON.stringify(v).length };`
+      return false
+    })
+    if (yield* pollFor("searchFlights")) {
+      attempts = 1
+      yield* cli(
+        "execute", "--session", xHandle,
+        `return await tools.searchFlights({ origin: "SFO", destination: "JFK" });`
       )
-      try {
-        const report = JSON.parse(ran.out) as { value: string; toolCalls: number; untrusted: boolean }
-        const inner = JSON.parse(report.value) as { t: string; len: number }
-        codeOk = ran.code === 0 && report.toolCalls === 2 && report.untrusted === true
-          && (inner.t === "object" || inner.t === "string") && inner.len > 100
-      } catch {}
+      if (yield* pollFor("listFlights")) {
+        attempts = 2
+        const ran = yield* cli(
+          "execute", "--json", "--session", xHandle,
+          `const v = await tools.listFlights({});
+          return { t: typeof v, len: JSON.stringify(v).length };`
+        )
+        try {
+          const report = JSON.parse(ran.out) as { value: string; toolCalls: number; untrusted: boolean }
+          const inner = JSON.parse(report.value) as { t: string; len: number }
+          codeOk = ran.code === 0 && report.toolCalls === 1 && report.untrusted === true
+            && (inner.t === "object" || inner.t === "string") && inner.len > 100
+        } catch {}
+      }
     }
     yield* cli("close", xHandle).pipe(
       Effect.flatMap((closed) =>

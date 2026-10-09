@@ -34,3 +34,6 @@ without new evidence is out of scope. New rows need owner approval.
 - Docs freeze until users: one-in-one-out for new doc files (decisions,
   learnings, users, risk, research suffice). Website install path
   exempt — product surface, not process. 2026-10-09.
+- `docs/research/agentic-cli-vs-mcp.md` (staged before the freeze,
+  kept 2026-10-09): directly answers the standing CLI-weight question;
+  next new research file still requires a removal. Owner-ordered.

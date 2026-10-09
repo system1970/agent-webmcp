@@ -27,10 +27,10 @@ a witness + date. Prune rows whose witness file is gone or older than
   steps, undocumented surface, untested platforms; new errors carry
   reason + fix for readers with no repo access. Approved 2026-10-09.
   `docs/users.md:1`
-- L8: edits never span a header line — anchor oldString strictly
-  inside the section (`###` in MAP, `describe(`/`test(` in tests).
-  Bit thrice (Units 8, 9 MAP; transport test describe). Approved
-  2026-10-09. `MAP.md:322`
+- L8: MAP section inserts keep the neighbor header in BOTH old and
+  new strings (`old: "### Unit N…"`, `new: "### Unit N+1…\n…\n### Unit
+  N…"`). Never anchor below a header and rewrite it. Bit four times
+  before this prescription. Approved 2026-10-09. `MAP.md:322`
 - L9: kill by exact pid, never bare `pkill -f` — the pattern matches
   your own cmdline and SIGTERMs your shell (8902 cleanup). Approved
   2026-10-09.

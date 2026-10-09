@@ -13,7 +13,6 @@ import { newHandle, nowIso, saveSession, listSessions, loadSession, removeSessio
 import type { SessionRecord } from "./store.ts"
 import { withSession } from "./connect.ts"
 import { LIST_WINDOW_MS, INVOKE_TIMEOUT_MS, INVOKE_TIMEOUT_MAX_MS, PORT_MIN, PORT_MAX, RUN_MAX_CODE_CHARS } from "../budgets.ts"
-import { spillStats } from "../spill.ts"
 import { CliFailure, asCliFailure } from "../failure.ts"
 import { rmSync, readlinkSync } from "node:fs"
 
@@ -365,60 +364,92 @@ export const invokeSessionTool = Effect.fn("verbs.invokeSessionTool")(function* 
     }))
 })
 
-export interface InjectResult {
-  readonly value: unknown
-  readonly errorText: string | undefined
+export interface RegisterInput {
+  readonly name: string
+  readonly title?: string
+  readonly description: string
+  readonly inputSchema: Record<string, unknown>
+  readonly annotations?: Record<string, unknown>
+  readonly code: string
+}
+
+export interface RegisterResult {
+  readonly tool: string
   readonly origin: string
   readonly untrusted: true
 }
 
-// Authoring door: run the agent's JS in the page (register custom tools,
-// probe DOM, drive flows the page never published). Page throws surface
-// as errorText (the code ran, the page said no); transport stalls fail.
-// The value is the agent's own expression result AND page-influenced —
-// labeled untrusted like every page envelope. Budgets: code length
-// capped pre-dial (mirrors execute); timeoutMin/Max shared with invoke.
-export const injectSessionCode = Effect.fn("verbs.injectSessionCode")(function* (
+const TOOL_NAME_PATTERN = /^[A-Za-z0-9_.-]+$/
+
+// Authoring door, spec-shaped: registers one custom tool NATIVELY via
+// the page's own document.modelContext (same dictionary as
+// ModelContextTool, minus the live execute plus a code body). The fixed
+// snippet below is the only JS that ever runs in-page for authoring —
+// the agent supplies data (tool def + body source), never page code.
+// The body compiles debugger-side (CSP-exempt); the registered tool is
+// indistinguishable from site-native (CDP invoke, toolchange events).
+// Session-scoped: close drops the page and everything on it.
+// Spec rejections (duplicates, empty names) fail loud as CliFailure.
+export const registerSessionTool = Effect.fn("verbs.registerSessionTool")(function* (
   handle: string,
-  code: string,
+  input: RegisterInput,
   timeoutMs = INVOKE_TIMEOUT_MS
 ) {
   if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > INVOKE_TIMEOUT_MAX_MS) {
     return yield* Effect.fail(new CliFailure({ message: `bad timeoutMs '${timeoutMs}': want 1-${INVOKE_TIMEOUT_MAX_MS} ms` }))
   }
-  if (code.trim().length === 0) {
-    return yield* Effect.fail(new CliFailure({ message: "inject: code is empty." }))
+  if (!TOOL_NAME_PATTERN.test(input.name) || input.name.length > 128) {
+    return yield* Effect.fail(new CliFailure({
+      message: `register: bad tool name '${input.name}': want 1-128 chars of [A-Za-z0-9_.-] (spec rejection, pre-dial).`
+    }))
   }
-  if (code.length > RUN_MAX_CODE_CHARS) {
-    return yield* Effect.fail(new CliFailure({ message: `inject: code is ${code.length} chars (max ${RUN_MAX_CODE_CHARS}): chunk the block.` }))
+  if (input.description.trim().length === 0) {
+    return yield* Effect.fail(new CliFailure({ message: "register: description is empty (spec rejects empty descriptions)." }))
   }
+  if (typeof input.inputSchema !== "object" || input.inputSchema === null || Array.isArray(input.inputSchema)) {
+    return yield* Effect.fail(new CliFailure({ message: "register: inputSchema must be a JSON Schema object." }))
+  }
+  if (input.code.trim().length === 0) {
+    return yield* Effect.fail(new CliFailure({ message: "register: code is empty." }))
+  }
+  if (input.code.length > RUN_MAX_CODE_CHARS) {
+    return yield* Effect.fail(new CliFailure({ message: `register: code is ${input.code.length} chars (max ${RUN_MAX_CODE_CHARS}): chunk the tool.` }))
+  }
+  const def = JSON.stringify({
+    name: input.name,
+    ...(input.title !== undefined ? { title: input.title } : {}),
+    description: input.description,
+    inputSchema: input.inputSchema,
+    ...(input.annotations !== undefined ? { annotations: input.annotations } : {})
+  })
+  const snippet = "(async () => {"
+    + " const execute = (" + input.code + ");"
+    + " if (typeof execute !== 'function') return JSON.stringify({ error: 'code is not a function expression' });"
+    + " const def = " + def + "; def.execute = execute;"
+    + " try { await document.modelContext.registerTool(def); }"
+    + " catch (e) { return JSON.stringify({ error: String((e && e.message) || e).slice(0, 300) }); }"
+    + " return JSON.stringify({ registered: def.name });"
+    + "})()"
   return yield* withSession(handle, (conn, record, sessionId) =>
     Effect.gen(function* () {
-      const result = yield* evaluatePage(conn, sessionId, code, timeoutMs)
-      const out: InjectResult = result.ok
-        ? { value: result.value, errorText: undefined, origin: record.url, untrusted: true as const }
-        : { value: null, errorText: result.errorText, origin: record.url, untrusted: true as const }
+      const result = yield* evaluatePage(conn, sessionId, snippet, timeoutMs)
+      if (!result.ok) {
+        return yield* Effect.fail(new CliFailure({ message: `register: page threw: ${result.errorText}` }))
+      }
+      let parsed: unknown
+      try {
+        parsed = typeof result.value === "string" ? JSON.parse(result.value) : result.value
+      } catch {
+        return yield* Effect.fail(new CliFailure({ message: "register: page returned non-JSON (contract broken)." }))
+      }
+      const rec = parsed as { registered?: unknown; error?: unknown }
+      if (typeof rec.error === "string") {
+        return yield* Effect.fail(new CliFailure({ message: `register: page refused: ${rec.error}` }))
+      }
+      if (rec.registered !== input.name) {
+        return yield* Effect.fail(new CliFailure({ message: "register: page returned no confirmation (contract broken)." }))
+      }
+      const out: RegisterResult = { tool: input.name, origin: record.url, untrusted: true as const }
       return out
     }))
-})
-
-export interface StatusReport {
-  readonly sessions: Array<{ handle: string; url: string }>
-  readonly spill: { files: number; bytes: number }
-}
-
-// Read-only observability: store records + spill dir stats. Records only,
-// never dials — a status check that woke browsers would be a side effect.
-export const statusSessions = Effect.fn("verbs.status")(function* () {
-  const records = yield* listSessions()
-  const stats = yield* Effect.try(() => spillStats()).pipe(
-    Effect.mapError((cause) => new CliFailure({
-      message: `status: cannot stat spill dir: ${cause instanceof Error ? cause.message : String(cause)}`
-    }))
-  )
-  const report: StatusReport = {
-    sessions: records.map((r) => ({ handle: r.handle, url: r.url })),
-    spill: stats
-  }
-  return report
 })

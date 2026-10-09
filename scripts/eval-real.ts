@@ -11,90 +11,13 @@
 // (library_search). The stdio client below is the fourth copy of the
 // JSON-RPC pump (G15 tracks extracting scripts/mcp-harness.ts).
 import { Console, Effect } from "effect"
+import { check, makeRpc, startServer, textOf } from "./eval-lib.ts"
+import type { McpServer } from "./eval-lib.ts"
 
 const STORE = "https://kylerisley.com/tools/webmcp-playground/"
 const LIB = "https://vibing.inc/webmcp"
 
-interface McpServer {
-  readonly call: (method: string, params: unknown) => Promise<unknown>
-  readonly stop: () => void
-  readonly errTail: Array<string>
-}
-
-const startServer = (): McpServer => {
-  const entry = `${import.meta.dir}/../src/main.ts`
-  const proc = Bun.spawn(["bun", entry, "mcp", "serve"], {
-    stdout: "pipe",
-    stderr: "pipe",
-    stdin: "pipe"
-  })
-  let nextId = 1
-  const pending = new Map<number, (msg: unknown) => void>()
-  const errTail: Array<string> = []
-  let buffer = ""
-  // Fire-and-forget pump by design: appends to locals the fiber reads
-  // after awaits (same shape as eval-mcp/eval-xpage).
-  const pump = (async () => {
-    const reader = proc.stdout.getReader()
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += new TextDecoder().decode(value)
-      const parts = buffer.split("\n")
-      buffer = parts.pop() ?? ""
-      for (const line of parts) {
-        const text = line.trim()
-        if (text === "") continue
-        try {
-          const msg = JSON.parse(text) as { id?: number }
-          if (msg.id !== undefined && pending.has(msg.id)) {
-            pending.get(msg.id)?.(msg)
-            pending.delete(msg.id)
-          }
-        } catch {}
-      }
-    }
-  })()
-  void pump
-  const drainErr = (async () => {
-    const reader = proc.stderr.getReader()
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      errTail.push(new TextDecoder().decode(value))
-      if (errTail.length > 20) errTail.shift()
-    }
-  })()
-  void drainErr
-  const call = (method: string, params: unknown): Promise<unknown> =>
-    new Promise((resolve, reject) => {
-      const id = nextId++
-      pending.set(id, resolve)
-      setTimeout(() => {
-        if (pending.delete(id)) reject(new Error(`mcp timeout on ${method}`))
-      }, 60000)
-      proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n")
-    })
-  return {
-    call,
-    stop: () => {
-      try {
-        proc.kill("SIGKILL")
-      } catch {}
-    },
-    errTail
-  }
-}
-
-const check = Effect.fn("eval.check")(function* (name: string, cond: boolean, detail: string) {
-  yield* Console.log(`${cond ? "PASS" : "FAIL"} ${name} :: ${detail.slice(0, 120)}`)
-  return cond
-})
-
-const textOf = (response: unknown): string => {
-  const content = (response as { result?: { content?: Array<{ text?: string }> } }).result?.content
-  return content?.map((c) => c.text ?? "").join("\n") ?? ""
-}
+// Harness from ./eval-lib.ts (shared pump, rpc, check).
 
 const main = Effect.fn("eval.main")(function* () {
   const results: Array<boolean> = []
@@ -106,16 +29,7 @@ const runChecks = Effect.fn("eval.checks")(function* (
   server: McpServer,
   results: Array<boolean>
 ) {
-  let lastError = ""
-  const rpc = (method: string, params: unknown): Effect.Effect<unknown> =>
-    Effect.tryPromise(() => server.call(method, params)).pipe(
-      Effect.catch((cause) => {
-        lastError = String(cause)
-        return Effect.succeed(null)
-      })
-    )
-  const detail = (text: string): string =>
-    text !== "" ? text : `rpc failed: ${lastError}${server.errTail.length > 0 ? ` :: serve stderr: ${server.errTail.join("").slice(-300)}` : ""}`
+  const { rpc, detail } = makeRpc(server)
 
   const init = (yield* rpc("initialize", {
     protocolVersion: "2024-11-05",
@@ -210,7 +124,7 @@ const runChecks = Effect.fn("eval.checks")(function* (
       && report.untrusted === true
   } catch {}
   results.push(yield* check("xpage-join", joinOk, detail(`${joined.slice(0, 120)} toolCalls=${toolCalls}`)))
-  yield* Console.log(`toolCalls: ${toolCalls} (one block; open->list->describe->act would cost 4+ turns)`)
+  yield* Console.log(`toolCalls: ${toolCalls} (one block; open->list->act would cost 3+ turns)`)
 
   const closeS = textOf(yield* rpc("tools/call", { name: "close", arguments: { handle: hS } }))
   const closeL = textOf(yield* rpc("tools/call", { name: "close", arguments: { handle: hL } }))

@@ -1,103 +1,17 @@
-// Unit 8 eval: the MCP surface over stdio, no model. Usage:
+// Unit 13 eval: the MCP surface over stdio, no model. Usage:
 // `bun run eval:mcp`. Manual (needs network + chromium).
-// initialize -> tools/list (8 tools) -> call open (toolCount + open_ms)
-// -> call invoke (Completed, normalized output, untrusted:true) ->
-// search/describe w/ session -> execute code block (invoke in code) ->
+// initialize -> tools/list (6 tools) -> call open (toolCount + open_ms)
+// -> execute single-call (normalized output, untrusted:true) ->
+// search/list w/ session -> execute code block (invoke in code) ->
 // spilling execute (big code value) -> execute control-flow
-// (loop/branch/filter in-code) -> call status -> call close.
+// (loop/branch/filter in-code) -> call close.
+//
+// Harness from ./eval-lib.ts (shared pump, rpc, check, splitReport).
 import { Console, Effect } from "effect"
+import { check, makeRpc, splitReport, startServer, textOf } from "./eval-lib.ts"
+import type { McpServer } from "./eval-lib.ts"
 
 const DEMO = "https://googlechromelabs.github.io/webmcp-tools/demos/react-flightsearch/"
-
-// Minimal JSON-RPC client over a spawned `mcp serve`. One writer, one
-// line-reader; responses matched by id.
-interface McpServer {
-  readonly call: (method: string, params: unknown) => Promise<unknown>
-  readonly notify: (method: string, params: unknown) => void
-  readonly stop: () => void
-  readonly errTail: Array<string>
-}
-
-const startServer = (): McpServer => {
-  // Resolved from the script's own dir: the eval must run from any cwd.
-  const entry = `${import.meta.dir}/../src/main.ts`
-  const proc = Bun.spawn(["bun", entry, "mcp", "serve"], {
-    stdout: "pipe",
-    stderr: "pipe",
-    stdin: "pipe"
-  })
-  let nextId = 1
-  const pending = new Map<number, (msg: unknown) => void>()
-  const lines: Array<string> = []
-  const errTail: Array<string> = []
-  let buffer = ""
-  // Fire-and-forget pump by design: it only appends to locals the fiber
-  // reads after awaits. The manual timer below (not Effect.timeout) owns
-  // map hygiene — an outer interrupt cannot clean a callback map.
-  const pump = (async () => {
-    const reader = proc.stdout.getReader()
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += new TextDecoder().decode(value)
-      const parts = buffer.split("\n")
-      buffer = parts.pop() ?? ""
-      for (const line of parts) {
-        const text = line.trim()
-        if (text === "") continue
-        try {
-          const msg = JSON.parse(text) as { id?: number }
-          if (msg.id !== undefined && pending.has(msg.id)) {
-            pending.get(msg.id)?.(msg)
-            pending.delete(msg.id)
-          } else {
-            lines.push(text)
-          }
-        } catch {}
-      }
-    }
-  })()
-  void pump
-  const drainErr = (async () => {
-    const reader = proc.stderr.getReader()
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      errTail.push(new TextDecoder().decode(value))
-      if (errTail.length > 20) errTail.shift()
-    }
-  })()
-  void drainErr
-  const call = (method: string, params: unknown): Promise<unknown> =>
-    new Promise((resolve, reject) => {
-      const id = nextId++
-      pending.set(id, resolve)
-      setTimeout(() => {
-        if (pending.delete(id)) reject(new Error(`mcp timeout on ${method}`))
-      }, 60000)
-      proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n")
-    })
-  const notify = (method: string, params: unknown): void => {
-    proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n")
-  }
-  const stop = (): void => {
-    try {
-      proc.kill("SIGKILL")
-    } catch {}
-  }
-  const server: McpServer = { call, notify, stop, errTail }
-  return server
-}
-
-const check = Effect.fn("eval.check")(function* (name: string, cond: boolean, detail: string) {
-  yield* Console.log(`${cond ? "PASS" : "FAIL"} ${name} :: ${detail.slice(0, 100)}`)
-  return cond
-})
-
-const textOf = (response: unknown): string => {
-  const content = (response as { result?: { content?: Array<{ text?: string }> } }).result?.content
-  return content?.map((c) => c.text ?? "").join("\n") ?? ""
-}
 
 const main = Effect.fn("eval.main")(function* () {
   const results: Array<boolean> = []
@@ -115,18 +29,7 @@ const runChecks = Effect.fn("eval.checks")(function* (
   server: McpServer,
   results: Array<boolean>
 ) {
-  // Last rpc failure, preserved for check detail: a crashed serve must
-  // report its cause, never FAIL with empty detail.
-  let lastError = ""
-  const rpc = (method: string, params: unknown): Effect.Effect<unknown> =>
-    Effect.tryPromise(() => server.call(method, params)).pipe(
-      Effect.catch((cause) => {
-        lastError = String(cause)
-        return Effect.succeed(null)
-      })
-    )
-  const detail = (text: string): string =>
-    text !== "" ? text : `rpc failed: ${lastError}${server.errTail.length > 0 ? ` :: serve stderr: ${server.errTail.join("").slice(-300)}` : ""}`
+  const { rpc, detail } = makeRpc(server)
 
   const init = (yield* rpc("initialize", {
     protocolVersion: "2024-11-05",
@@ -140,9 +43,9 @@ const runChecks = Effect.fn("eval.checks")(function* (
     result: { tools: Array<{ name: string; inputSchema?: { type?: unknown } }> }
   } | null
   const names = listed?.result.tools.map((t) => t.name).sort() ?? []
-  const want = ["close", "describe", "execute", "invoke", "list", "open", "search", "status"]
+  const want = ["close", "execute", "list", "open", "register", "search"]
   results.push(yield* check(
-    "tools-list-8",
+    "tools-list-6",
     want.every((n) => names.includes(n)),
     detail(names.join(","))
   ))
@@ -150,7 +53,7 @@ const runChecks = Effect.fn("eval.checks")(function* (
   // {type:"object"} — opencode rejects the whole list on one typeless
   // tool (status shipped anyOf; preflight schema-object locks it
   // import-time, this locks what actually crosses stdio).
-  const schemasOk = (listed?.result.tools ?? []).length === 8
+  const schemasOk = (listed?.result.tools ?? []).length === 6
     && (listed?.result.tools ?? []).every((t) => t.inputSchema?.type === "object")
   results.push(yield* check(
     "tools-schemas-object",
@@ -183,17 +86,22 @@ const runChecks = Effect.fn("eval.checks")(function* (
   let invokedOk = false
   let untrustedOk = false
   if (handle !== "") {
+    // Single calls ride code blocks (no one-per-turn verb): the value
+    // arrives normalized with the untrusted envelope.
     const invoked = textOf(yield* rpc("tools/call", {
-      name: "invoke",
-      arguments: { handle, tool: "searchFlights", args: { origin: "SFO", destination: "JFK" } }
+      name: "execute",
+      arguments: {
+        handle,
+        code: `return await tools.searchFlights({ origin: "SFO", destination: "JFK" });`
+      }
     }))
     try {
-      const report = JSON.parse(invoked) as { status: string; untrusted: boolean; origin: string }
-      invokedOk = report.status === "Completed"
-      untrustedOk = report.untrusted === true && typeof report.origin === "string"
+      const report = JSON.parse(invoked) as { value: string; toolCalls: number; untrusted: boolean; origins: Array<string> }
+      invokedOk = report.toolCalls === 1 && JSON.parse(report.value) !== undefined
+      untrustedOk = report.untrusted === true && report.origins.length === 1 && typeof report.origins[0] === "string"
     } catch {}
-    results.push(yield* check("call-invoke", invokedOk, detail(invoked.slice(0, 80))))
-    results.push(yield* check("invoke-untrusted", untrustedOk, detail(invoked.slice(0, 120))))
+    results.push(yield* check("call-single", invokedOk, detail(invoked.slice(0, 80))))
+    results.push(yield* check("single-untrusted", untrustedOk, detail(invoked.slice(0, 120))))
 
     const searched = textOf(yield* rpc("tools/call", {
       name: "search",
@@ -207,7 +115,7 @@ const runChecks = Effect.fn("eval.checks")(function* (
     results.push(yield* check("search-session", sessionHit, detail(searched.slice(0, 120))))
 
     const described = textOf(yield* rpc("tools/call", {
-      name: "describe",
+      name: "list",
       arguments: { handle, tool: "searchFlights" }
     }))
     let describeOk = false
@@ -217,7 +125,7 @@ const runChecks = Effect.fn("eval.checks")(function* (
         typeof record.inputSchema.properties.origin === "object" &&
         record.untrusted === true
     } catch {}
-    results.push(yield* check("describe-record", describeOk, detail(described.slice(0, 120))))
+    results.push(yield* check("list-record", describeOk, detail(described.slice(0, 120))))
 
     const batched = textOf(yield* rpc("tools/call", {
       name: "execute",
@@ -256,12 +164,20 @@ const runChecks = Effect.fn("eval.checks")(function* (
     }))
     let spillOk = false
     try {
-      const report = JSON.parse(spilling) as { value: string; spilled: unknown; untrusted: boolean }
-      if (typeof report.spilled === "string" && report.spilled !== "" && report.untrusted === true) {
-        const body = yield* Effect.tryPromise(() => Bun.file(report.spilled as string).text()).pipe(
-          Effect.catch(() => Effect.succeed(""))
+      // splitReport is pure (no IO): the spill file resolves through
+      // Effect below. Double-parse: the code returns JSON.stringify
+      // (a string), so the filed body is stringified twice; each
+      // element is one listFlights result array.
+      const parts = splitReport(spilling)
+      if ("spilled" in parts) {
+        const body = yield* Effect.tryPromise(() => Bun.file(parts.spilled).text()).pipe(
+          Effect.catch(() => Effect.succeed(null))
         )
-        spillOk = body.length > 1000 && report.value.startsWith(body.slice(0, 500))
+        if (body !== null) {
+          const decoded = JSON.parse(body) as unknown
+          const rows = (typeof decoded === "string" ? JSON.parse(decoded) : decoded) as unknown
+          spillOk = Array.isArray(rows) && rows.length === 5 && rows.every(Array.isArray)
+        }
       }
     } catch {}
     results.push(yield* check("execute-spill", spillOk, detail(spilling.slice(0, 120))))
@@ -315,46 +231,6 @@ const runChecks = Effect.fn("eval.checks")(function* (
         && report.origins.length === 1
     } catch {}
     results.push(yield* check("execute-control-flow", runOk, detail(runDetail === "" ? ran.slice(0, 120) : runDetail)))
-
-    const small = textOf(yield* rpc("tools/call", {
-      name: "describe",
-      arguments: { tool: "search" }
-    }))
-    let fitOk = false
-    try {
-      const record = JSON.parse(small) as { name: string; spill?: unknown }
-      fitOk = record.name === "search" && !("spill" in record)
-    } catch {}
-    results.push(yield* check("describe-fits", fitOk, detail(small.slice(0, 120))))
-
-    // Status is records-only: the open session must be listed, spill
-    // stats must be numbers — and the call must not disturb the session
-    // (invoke still works after; close still closes).
-    const stated = textOf(yield* rpc("tools/call", {
-      name: "status",
-      arguments: {}
-    }))
-    let statusOk = false
-    try {
-      const report = JSON.parse(stated) as {
-        sessions: Array<{ handle: string; url: string }>; spill: { files: number; bytes: number }
-      }
-      statusOk = report.sessions.some((s) => s.handle === handle && typeof s.url === "string")
-        && typeof report.spill.files === "number" && typeof report.spill.bytes === "number"
-    } catch {}
-    results.push(yield* check("call-status", statusOk, detail(stated.slice(0, 120))))
-
-    // Records-only proof: invoke on the same session AFTER status —
-    // a status check that disturbed live sessions would break this.
-    const after = textOf(yield* rpc("tools/call", {
-      name: "invoke",
-      arguments: { handle, tool: "searchFlights", args: { origin: "SFO", destination: "JFK" } }
-    }))
-    let afterOk = false
-    try {
-      afterOk = (JSON.parse(after) as { status: string }).status === "Completed"
-    } catch {}
-    results.push(yield* check("status-undisturbed", afterOk, detail(after.slice(0, 80))))
 
     const closed = textOf(yield* rpc("tools/call", {
       name: "close",

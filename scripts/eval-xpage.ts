@@ -7,6 +7,8 @@
 // close both. Proves the xpage vision; single-page mechanics stay in
 // eval:mcp.
 import { Console, Effect } from "effect"
+import { check, makeRpc, startServer, textOf } from "./eval-lib.ts"
+import type { McpServer } from "./eval-lib.ts"
 
 // Fixture scripts use string concat, never backticks/${}: this file
 // contains template literals for the HTML, so fixture JS must survive
@@ -81,94 +83,7 @@ document.modelContext.registerTool({
 });
 </script></body></html>`
 
-// Minimal JSON-RPC client over a spawned `mcp serve`. One writer, one
-// line-reader; responses matched by id.
-interface McpServer {
-  readonly call: (method: string, params: unknown) => Promise<unknown>
-  readonly notify: (method: string, params: unknown) => void
-  readonly stop: () => void
-  readonly errTail: Array<string>
-}
-
-const startServer = (): McpServer => {
-  // Resolved from the script's own dir: the eval must run from any cwd.
-  const entry = `${import.meta.dir}/../src/main.ts`
-  const proc = Bun.spawn(["bun", entry, "mcp", "serve"], {
-    stdout: "pipe",
-    stderr: "pipe",
-    stdin: "pipe"
-  })
-  let nextId = 1
-  const pending = new Map<number, (msg: unknown) => void>()
-  const errTail: Array<string> = []
-  let buffer = ""
-  // Fire-and-forget pump by design: it only appends to locals the fiber
-  // reads after awaits. The manual timer below (not Effect.timeout) owns
-  // map hygiene — an outer interrupt cannot clean a callback map.
-  const pump = (async () => {
-    const reader = proc.stdout.getReader()
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += new TextDecoder().decode(value)
-      const parts = buffer.split("\n")
-      buffer = parts.pop() ?? ""
-      for (const line of parts) {
-        const text = line.trim()
-        if (text === "") continue
-        try {
-          const msg = JSON.parse(text) as { id?: number }
-          if (msg.id !== undefined && pending.has(msg.id)) {
-            pending.get(msg.id)?.(msg)
-            pending.delete(msg.id)
-          }
-          // Non-response lines have no consumer (errTail carries serve
-          // diagnostics) — dropped, never buffered.
-        } catch {}
-      }
-    }
-  })()
-  void pump
-  const drainErr = (async () => {
-    const reader = proc.stderr.getReader()
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      errTail.push(new TextDecoder().decode(value))
-      if (errTail.length > 20) errTail.shift()
-    }
-  })()
-  void drainErr
-  const call = (method: string, params: unknown): Promise<unknown> =>
-    new Promise((resolve, reject) => {
-      const id = nextId++
-      pending.set(id, resolve)
-      setTimeout(() => {
-        if (pending.delete(id)) reject(new Error(`mcp timeout on ${method}`))
-      }, 60000)
-      proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n")
-    })
-  const notify = (method: string, params: unknown): void => {
-    proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n")
-  }
-  const stop = (): void => {
-    try {
-      proc.kill("SIGKILL")
-    } catch {}
-  }
-  const server: McpServer = { call, notify, stop, errTail }
-  return server
-}
-
-const check = Effect.fn("eval.check")(function* (name: string, cond: boolean, detail: string) {
-  yield* Console.log(`${cond ? "PASS" : "FAIL"} ${name} :: ${detail.slice(0, 100)}`)
-  return cond
-})
-
-const textOf = (response: unknown): string => {
-  const content = (response as { result?: { content?: Array<{ text?: string }> } }).result?.content
-  return content?.map((c) => c.text ?? "").join("\n") ?? ""
-}
+// Harness from ./eval-lib.ts (shared pump, rpc, check).
 
 const main = Effect.fn("eval.main")(function* () {
   const results: Array<boolean> = []
@@ -219,18 +134,7 @@ const runChecks = Effect.fn("eval.checks")(function* (
   results: Array<boolean>,
   base: string
 ) {
-  // Last rpc failure, preserved for check detail: a crashed serve must
-  // report its cause, never FAIL with empty detail.
-  let lastError = ""
-  const rpc = (method: string, params: unknown): Effect.Effect<unknown> =>
-    Effect.tryPromise(() => server.call(method, params)).pipe(
-      Effect.catch((cause) => {
-        lastError = String(cause)
-        return Effect.succeed(null)
-      })
-    )
-  const detail = (text: string): string =>
-    text !== "" ? text : `rpc failed: ${lastError}${server.errTail.length > 0 ? ` :: serve stderr: ${server.errTail.join("").slice(-300)}` : ""}`
+  const { rpc, detail } = makeRpc(server)
 
   const init = (yield* rpc("initialize", {
     protocolVersion: "2024-11-05",

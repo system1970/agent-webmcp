@@ -5,12 +5,10 @@ import { mcpList } from "./commands/mcp-list.ts"
 import { mcpServe } from "./commands/mcp-serve.ts"
 import { open } from "./commands/open.ts"
 import { list } from "./commands/list.ts"
-import { invoke } from "./commands/invoke.ts"
 import { close } from "./commands/close.ts"
 import { search } from "./commands/search.ts"
 import { execute } from "./commands/execute.ts"
-import { status } from "./commands/status.ts"
-import { inject } from "./commands/inject.ts"
+import { register } from "./commands/register.ts"
 import { skill } from "./commands/skill.ts"
 import { getVersion } from "./version.ts"
 import { RUN_TIMEOUT_MAX_MS, INVOKE_TIMEOUT_MAX_MS } from "./budgets.ts"
@@ -59,12 +57,6 @@ const commands: ReadonlyArray<Command> = [
     run: list
   },
   {
-    name: "invoke",
-    description: "Call one page tool by name with JSON args.",
-    usage: `invoke <handle> <tool> '<json>' [--timeout ms 1-${INVOKE_TIMEOUT_MAX_MS}] [--json]`,
-    run: invoke
-  },
-  {
     name: "close",
     description: "Release a session (kills browsers we launched, never foreign ones).",
     usage: "close <handle|--all>",
@@ -83,16 +75,10 @@ const commands: ReadonlyArray<Command> = [
     run: execute
   },
   {
-    name: "status",
-    description: "Read-only observability: open sessions and spill usage (records only, never dials).",
-    usage: "status [--json]",
-    run: status
-  },
-  {
-    name: "inject",
-    description: "Run JS in the session page; authoring door for custom tools (registers, probes, unpublished flows).",
-    usage: `inject <handle> '<js>' [--timeout ms 1-${INVOKE_TIMEOUT_MAX_MS}] [--json]`,
-    run: inject
+    name: "register",
+    description: "Author a custom tool onto the session page (spec-shaped: name/title/description/schema/annotations + code body).",
+    usage: `register <handle> '<json-tool>' '<js-body>' [--timeout ms 1-${INVOKE_TIMEOUT_MAX_MS}] [--json]`,
+    run: register
   },
   {
     name: "skill",

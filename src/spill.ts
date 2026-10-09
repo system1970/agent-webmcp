@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { mkdirSync, chmodSync, openSync, writeSync, closeSync, readdirSync, statSync } from "node:fs"
+import { mkdirSync, chmodSync, openSync, writeSync, closeSync } from "node:fs"
 
 // Overflow spill: results past budget keep their full body on disk and
 // return a pointer, never a silent cut. (Canonical note: truncation
@@ -82,33 +82,6 @@ const writeExclusive = (dir: string, content: string): string => {
     }
   }
   throw lastError
-}
-
-// Dir stats for the status verb: records only, never dials. A missing
-// dir reads as empty (first run, nothing spilled yet); real I/O failures
-// throw for the caller lane to map. Entry count bounded — a hostile spill
-// dir must not hang a read-only check.
-export const spillStats = (): { files: number; bytes: number } => {
-  const dir = spillDir()
-  let entries: Array<string>
-  try {
-    entries = readdirSync(dir)
-  } catch (e: unknown) {
-    if ((e as { code?: unknown }).code === "ENOENT") return { files: 0, bytes: 0 }
-    throw e
-  }
-  let files = 0
-  let bytes = 0
-  for (const name of entries.slice(0, 10000)) {
-    try {
-      const st = statSync(`${dir}/${name}`)
-      if (st.isFile()) {
-        files++
-        bytes += st.size
-      }
-    } catch {}
-  }
-  return { files, bytes }
 }
 
 // No retention daemon: spill files live under /tmp and die on reboot
