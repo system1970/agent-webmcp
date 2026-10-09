@@ -1,6 +1,6 @@
 // Preflight: deterministic pre-review gate. Usage:
 // `bun ./scripts/preflight.ts` (check) or with `--write` (fix MAP hashes).
-// No browser, no network, no model. Six checks, dense lines; failures
+// No browser, no network, no model. Seven checks, dense lines; failures
 // accumulate and the run exits 1 so one invocation shows everything:
 //
 // 1. map-sync: MAP.md Files-covered hashes equal sha256(file).slice(0,12).
@@ -10,6 +10,8 @@
 //    the execute description carries the full envelope contract.
 // 4. `bun check` clean. 5. `bun test src` green.
 // 6. `bun test scripts/review` green (the gate's own unit tests).
+// 7. desc-budget: every tool blurb fits the budget (detail lives in
+//    SKILL.md, never accretes into descriptions).
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { Effect } from "effect"
@@ -123,6 +125,21 @@ const pass = (msg: string): void => console.log(`PASS ${msg}`)
     const tail = new TextDecoder().decode(proc.stderr ?? proc.stdout ?? new Uint8Array()).trim().split("\n").slice(-3).join(" | ")
     fail(`bun test scripts/review: ${tail.slice(0, 200)}`)
   } else if (!failed) pass("bun test scripts/review")
+}
+
+// 7. desc-budget: tool blurbs stay short (L3 accretion class — the
+// catalog lives in SKILL.md). Import-time only: registry side effects
+// register, nothing dials.
+{
+  await import("../src/tools/registry.ts")
+  const { allTools } = await import("../src/tools/definition.ts")
+  const DESC_BUDGET = 1500
+  const fat = allTools
+    .filter((t) => t.description.length > DESC_BUDGET)
+    .map((t) => `${t.name} (${t.description.length})`)
+  if (fat.length > 0) {
+    fail(`desc-budget: over ${DESC_BUDGET} chars: ${fat.join(", ")} (move detail to SKILL.md)`)
+  } else if (!failed) pass(`desc-budget (${allTools.length} tools)`)
 }
 
 if (failed) process.exit(1)

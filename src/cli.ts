@@ -9,6 +9,7 @@ import { invoke } from "./commands/invoke.ts"
 import { close } from "./commands/close.ts"
 import { search } from "./commands/search.ts"
 import { execute } from "./commands/execute.ts"
+import { status } from "./commands/status.ts"
 import { skill } from "./commands/skill.ts"
 import { getVersion } from "./version.ts"
 import { RUN_TIMEOUT_MAX_MS, INVOKE_TIMEOUT_MAX_MS } from "./budgets.ts"
@@ -79,6 +80,12 @@ const commands: ReadonlyArray<Command> = [
     description: "Run JS code against session page tools, one turn per flow (single --session, --handle aliases it; multi: repeat --as ALIAS=H). Accident-contained, runs with your privilege.",
     usage: `execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json] '<code>'`,
     run: execute
+  },
+  {
+    name: "status",
+    description: "Read-only observability: open sessions and spill usage (records only, never dials).",
+    usage: "status [--json]",
+    run: status
   },
   {
     name: "skill",

@@ -1,9 +1,10 @@
-// Unit 7 eval: the MCP surface over stdio, no model. Usage:
+// Unit 8 eval: the MCP surface over stdio, no model. Usage:
 // `bun run eval:mcp`. Manual (needs network + chromium).
-// initialize -> tools/list (7 tools) -> call open -> call invoke
-// (Completed, untrusted:true) -> search/describe w/ session -> execute
-// code block (invoke in code) -> spilling execute (big code value) ->
-// execute control-flow (loop/branch/filter in-code) -> call close.
+// initialize -> tools/list (8 tools) -> call open (toolCount + open_ms)
+// -> call invoke (Completed, normalized output, untrusted:true) ->
+// search/describe w/ session -> execute code block (invoke in code) ->
+// spilling execute (big code value) -> execute control-flow
+// (loop/branch/filter in-code) -> call status -> call close.
 import { Console, Effect } from "effect"
 
 const DEMO = "https://googlechromelabs.github.io/webmcp-tools/demos/react-flightsearch/"
@@ -139,22 +140,34 @@ const runChecks = Effect.fn("eval.checks")(function* (
     result: { tools: Array<{ name: string }> }
   } | null
   const names = listed?.result.tools.map((t) => t.name).sort() ?? []
-  const want = ["close", "describe", "execute", "invoke", "list", "open", "search"]
+  const want = ["close", "describe", "execute", "invoke", "list", "open", "search", "status"]
   results.push(yield* check(
-    "tools-list-7",
+    "tools-list-8",
     want.every((n) => names.includes(n)),
     detail(names.join(","))
   ))
 
+  const openStart = Date.now()
   const opened = textOf(yield* rpc("tools/call", {
     name: "open",
     arguments: { url: DEMO }
   }))
+  const openMs = Date.now() - openStart
+  // Report-only: machine variance makes thresholds flaky or meaningless —
+  // the number exists so opens getting slower is visible, not gated.
+  yield* Console.log(`open_ms: ${openMs} (report-only)`)
   let handle = ""
+  let toolCount = -1
   try {
-    handle = (JSON.parse(opened) as { handle: string }).handle
+    const parsed = JSON.parse(opened) as { handle: string; toolCount: number }
+    handle = parsed.handle
+    toolCount = parsed.toolCount
   } catch {}
-  results.push(yield* check("call-open", handle.startsWith("s_"), detail(opened.slice(0, 60))))
+  results.push(yield* check(
+    "call-open",
+    handle.startsWith("s_") && toolCount >= 1,
+    detail(`${opened.slice(0, 60)} open_ms=${openMs}`)
+  ))
 
   let invokedOk = false
   let untrustedOk = false
@@ -200,14 +213,20 @@ const runChecks = Effect.fn("eval.checks")(function* (
       arguments: {
         handle,
         code: `const r = await tools.searchFlights({ origin: "SFO", destination: "JFK" });
-          return { searched: typeof r };`
+          return { searched: typeof r, value: String(r).slice(0, 80) };`
       }
     }))
     let batchOk = false
     try {
       const report = JSON.parse(batched) as { value: string; toolCalls: number; untrusted: boolean }
-      const inner = JSON.parse(report.value) as { searched: string }
-      batchOk = inner.searched === "object" && report.toolCalls === 1 && report.untrusted === true
+      const inner = JSON.parse(report.value) as { searched: string; value: string }
+      // L6 consumption lock: the demo's searchFlights returns a string,
+      // so normalized code-level output IS the string — never an MCP
+      // envelope ({content, structuredContent}) leaking into code.
+      // Shape-only: the live demo varies its text run to run (UI
+      // timing), so only non-emptiness is pinned, never the words.
+      batchOk = inner.searched === "string" && inner.value.length > 0
+        && report.toolCalls === 1 && report.untrusted === true
     } catch {}
     results.push(yield* check("execute-session", batchOk, detail(batched.slice(0, 120))))
 
@@ -296,6 +315,35 @@ const runChecks = Effect.fn("eval.checks")(function* (
       fitOk = record.name === "search" && !("spill" in record)
     } catch {}
     results.push(yield* check("describe-fits", fitOk, detail(small.slice(0, 120))))
+
+    // Status is records-only: the open session must be listed, spill
+    // stats must be numbers — and the call must not disturb the session
+    // (invoke still works after; close still closes).
+    const stated = textOf(yield* rpc("tools/call", {
+      name: "status",
+      arguments: {}
+    }))
+    let statusOk = false
+    try {
+      const report = JSON.parse(stated) as {
+        sessions: Array<{ handle: string; url: string }>; spill: { files: number; bytes: number }
+      }
+      statusOk = report.sessions.some((s) => s.handle === handle && typeof s.url === "string")
+        && typeof report.spill.files === "number" && typeof report.spill.bytes === "number"
+    } catch {}
+    results.push(yield* check("call-status", statusOk, detail(stated.slice(0, 120))))
+
+    // Records-only proof: invoke on the same session AFTER status —
+    // a status check that disturbed live sessions would break this.
+    const after = textOf(yield* rpc("tools/call", {
+      name: "invoke",
+      arguments: { handle, tool: "searchFlights", args: { origin: "SFO", destination: "JFK" } }
+    }))
+    let afterOk = false
+    try {
+      afterOk = (JSON.parse(after) as { status: string }).status === "Completed"
+    } catch {}
+    results.push(yield* check("status-undisturbed", afterOk, detail(after.slice(0, 80))))
 
     const closed = textOf(yield* rpc("tools/call", {
       name: "close",

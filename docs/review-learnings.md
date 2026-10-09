@@ -19,3 +19,7 @@ a witness + date. Prune rows whose witness file is gone or older than
 - L5: `perSession` keys are caller aliases (single-handle sugars
   alias=handle); state key semantics wherever a map crosses the wire.
   Approved 2026-10-09. `skills/agent-webmcp/SKILL.md:104`
+- L6: every new wire shape needs a consumption test — agent code that
+  reads it — not just a shape assertion. Envelopes pass shape checks
+  while breaking every consumer (showcase took 3 tries). Approved
+  2026-10-09. `src/sessions/verbs.ts:283`

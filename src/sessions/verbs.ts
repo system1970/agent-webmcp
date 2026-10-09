@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import {
   attachPage, closePage, dial, navigate, probePageSupport, reattach,
-  sessionTools, invokeTool
+  sessionTools, snapshotTools, invokeTool
 } from "../transport/client.ts"
 import type { PageTool } from "../transport/client.ts"
 import { browserWs, pageTargets } from "../transport/devtools.ts"
@@ -13,6 +13,7 @@ import { newHandle, nowIso, saveSession, listSessions, loadSession, removeSessio
 import type { SessionRecord } from "./store.ts"
 import { withSession } from "./connect.ts"
 import { LIST_WINDOW_MS, INVOKE_TIMEOUT_MS, INVOKE_TIMEOUT_MAX_MS, PORT_MIN, PORT_MAX } from "../budgets.ts"
+import { spillStats } from "../spill.ts"
 import { CliFailure, asCliFailure } from "../failure.ts"
 import { rmSync, readlinkSync } from "node:fs"
 
@@ -41,6 +42,15 @@ export interface OpenInput {
   readonly cdp?: string
   readonly target?: string
   readonly port?: number
+}
+
+// Open returns the persisted record plus the tool count read at open
+// time (one surface read, no event window). The count is point-in-time —
+// pages register tools as they load — but it lets agents bail on
+// tool-less pages before a list/describe spiral.
+export interface OpenedSession {
+  readonly record: SessionRecord
+  readonly toolCount: number
 }
 
 export const openSession = Effect.fn("verbs.openSession")(function* (input: OpenInput) {
@@ -99,6 +109,12 @@ const openOwn = Effect.fn("verbs.openOwn")(function* (browser: Launched, url: st
           fix: webmcpFloorFix
         }))
       }
+      // Count at open: one surface read (~100ms, no event window) so
+      // agents bail on tool-less pages before a list/describe spiral.
+      // Snapshot FAILURE (broken surface, e.g. polyfilled getTools)
+      // fails the open loud here instead of mid-loop — a snapshot that
+      // succeeds empty ([]) still opens fine with toolCount 0.
+      const tools = yield* snapshotTools(conn, page.sessionId)
       return yield* persistRecord({
         browserHttp: browser.httpEndpoint,
         targetId: page.targetId,
@@ -106,7 +122,9 @@ const openOwn = Effect.fn("verbs.openOwn")(function* (browser: Launched, url: st
         ownBrowser: true,
         pid: browser.pid,
         port: browser.port
-      })
+      }).pipe(
+        Effect.map((record): OpenedSession => ({ record, toolCount: tools.length }))
+      )
     }),
     conn.close
   )
@@ -159,12 +177,16 @@ const openForeign = Effect.fn("verbs.openForeign")(function* (cdp: string, targe
           fix: webmcpFloorFix
         }))
       }
+      // Same count-at-open contract as own browsers (comment above).
+      const tools = yield* snapshotTools(conn, sessionId)
       return yield* persistRecord({
         browserHttp: cdp,
         targetId: borrowed.id,
         url,
         ownBrowser: false
-      })
+      }).pipe(
+        Effect.map((record): OpenedSession => ({ record, toolCount: tools.length }))
+      )
     }),
     conn.close
   )
@@ -280,6 +302,25 @@ export interface PageCallResult {
   readonly untrusted: true
 }
 
+// Output normalization (L6 in docs/review-learnings.md): page outputs
+// arrive as MCP envelopes ({content, structuredContent}); agents consume
+// one shape — structuredContent when present, else the try-parsed first
+// text part, else raw text. Scalars (fixture strings included) pass
+// through untouched. Pure: unit-tested directly, no browser.
+export const normalizeOutput = (output: unknown): unknown => {
+  if (typeof output !== "object" || output === null) return output
+  const env = output as { structuredContent?: unknown; content?: unknown }
+  if (env.structuredContent !== undefined) return env.structuredContent
+  const parts = Array.isArray(env.content) ? env.content : []
+  const text = (parts[0] as { text?: unknown } | undefined)?.text
+  if (typeof text !== "string") return output
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return text
+  }
+}
+
 export const invokeSessionTool = Effect.fn("verbs.invokeSessionTool")(function* (
   handle: string,
   name: string,
@@ -315,11 +356,32 @@ export const invokeSessionTool = Effect.fn("verbs.invokeSessionTool")(function* 
       const out: PageCallResult = {
         tool: name,
         status: result.status,
-        output: result.output,
+        output: normalizeOutput(result.output),
         errorText: result.errorText,
         origin: record.url,
         untrusted: true as const
       }
       return out
     }))
+})
+
+export interface StatusReport {
+  readonly sessions: Array<{ handle: string; url: string }>
+  readonly spill: { files: number; bytes: number }
+}
+
+// Read-only observability: store records + spill dir stats. Records only,
+// never dials — a status check that woke browsers would be a side effect.
+export const statusSessions = Effect.fn("verbs.status")(function* () {
+  const records = yield* listSessions()
+  const stats = yield* Effect.try(() => spillStats()).pipe(
+    Effect.mapError((cause) => new CliFailure({
+      message: `status: cannot stat spill dir: ${cause instanceof Error ? cause.message : String(cause)}`
+    }))
+  )
+  const report: StatusReport = {
+    sessions: records.map((r) => ({ handle: r.handle, url: r.url })),
+    spill: stats
+  }
+  return report
 })

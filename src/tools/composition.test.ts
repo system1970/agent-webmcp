@@ -55,7 +55,7 @@ const deadRecord = (handle: string) => ({
 })
 
 describe("registry", () => {
-  test("lists all seven tools", () => {
+  test("lists all eight tools", () => {
     expect(allTools.map((t) => t.name).sort()).toEqual([
       "close",
       "describe",
@@ -63,7 +63,8 @@ describe("registry", () => {
       "invoke",
       "list",
       "open",
-      "search"
+      "search",
+      "status"
     ].sort())
   })
 

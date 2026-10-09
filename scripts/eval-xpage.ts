@@ -240,22 +240,33 @@ const runChecks = Effect.fn("eval.checks")(function* (
   results.push(yield* check("initialize", init?.result?.serverInfo?.name === "agent-webmcp", detail(JSON.stringify(init?.result?.serverInfo ?? null))))
   server.notify("notifications/initialized", {})
 
+  const openStartF = Date.now()
   const openF = textOf(yield* rpc("tools/call", {
     name: "open",
     arguments: { url: `${base}/flights.html` }
   }))
+  const openMsF = Date.now() - openStartF
+  const openStartH = Date.now()
   const openH = textOf(yield* rpc("tools/call", {
     name: "open",
     arguments: { url: `${base}/hotel.html` }
   }))
+  const openMsH = Date.now() - openStartH
+  // Report-only (see eval-mcp): opens getting slower must be visible.
+  yield* Console.log(`open_ms: flights=${openMsF} hotel=${openMsH} (report-only)`)
   let hF = ""
   let hH = ""
+  let nF = -1
+  let nH = -1
   try {
     hF = (JSON.parse(openF) as { handle: string }).handle
     hH = (JSON.parse(openH) as { handle: string }).handle
+    nF = (JSON.parse(openF) as { toolCount: number }).toolCount
+    nH = (JSON.parse(openH) as { toolCount: number }).toolCount
   } catch {}
   const handlesOk = /^s_[a-z0-9]+$/.test(hF) && /^s_[a-z0-9]+$/.test(hH) && hF !== hH
   results.push(yield* check("open-both", handlesOk, detail(`${hF} ${hH}`)))
+  results.push(yield* check("open-toolcounts", nF >= 1 && nH >= 1, detail(`flights=${nF} hotel=${nH}`)))
   if (!handlesOk) {
     // Close whatever opened before bailing: a half-open pair leaks a
     // browser/target otherwise (finalizers own servers, not sessions).

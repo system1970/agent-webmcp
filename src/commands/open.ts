@@ -11,11 +11,12 @@ export const open = (args: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const opts = yield* parseOpenArgs(args)
     const input: OpenInput = { url: opts.url, cdp: opts.cdp, target: opts.target, port: opts.port }
-    const record = yield* openSession(input)
+    const opened = yield* openSession(input)
+    const record = opened.record
     if (opts.json) {
-      yield* Console.log(JSON.stringify(record, null, 2))
+      yield* Console.log(JSON.stringify({ ...record, toolCount: opened.toolCount }, null, 2))
     } else {
-      yield* Console.log(`${record.handle}  ${record.url}`)
+      yield* Console.log(`${record.handle}  ${record.url}  (${opened.toolCount} tools)`)
     }
     return yield* Effect.void
   }).pipe(

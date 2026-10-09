@@ -16,7 +16,7 @@ const Input = Schema.Struct({
 // foreign browser (navigates it — stated cost) and never kills it.
 export const open: WebmcpTool = {
   name: "open",
-  description: "Attach a web page and get a session handle for list/invoke/close. Returns JSON {handle, url, ...}. Own headless browser by default; pass cdp (DevTools http://host:port) to borrow a foreign tab instead.",
+  description: "Attach a web page and get a session handle for list/invoke/close. Returns JSON {handle, url, toolCount, ...}: toolCount is the tools visible at open (point-in-time — pages register as they load, so 0 means list again, not empty). Own headless browser by default; pass cdp (DevTools http://host:port) to borrow a foreign tab instead.",
   inputSchema: toInputSchema(Input),
   execute: (args) =>
     Effect.gen(function* () {
@@ -26,8 +26,8 @@ export const open: WebmcpTool = {
       if (input.port !== undefined && (!Number.isInteger(input.port) || input.port < 1024 || input.port > 65535)) {
         return yield* Effect.fail(new ToolFailed({ tool: "open", message: `bad port '${input.port}': want 1024-65535` }))
       }
-      const record = yield* openSession(input).pipe(catchSession("open"))
-      return { content: JSON.stringify(record) }
+      const opened = yield* openSession(input).pipe(catchSession("open"))
+      return { content: JSON.stringify({ ...opened.record, toolCount: opened.toolCount }) }
     })
 }
 

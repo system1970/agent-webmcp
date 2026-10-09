@@ -19,10 +19,11 @@ MCP shape first (`open { url }`, `invoke { handle, tool, args }`, …),
 then the CLI mirror. Both doors below, in that order:
 
 ```bash
-agent-webmcp open --json <url>                  # prints {handle, ...}
+agent-webmcp open --json <url>                  # prints {handle, toolCount, ...}
 agent-webmcp list <handle> [--json] [tool]      # rows, or full JSON / one schema
 agent-webmcp invoke <handle> <tool> '<json>' [--timeout ms] [--json]
 agent-webmcp close <handle|--all>
+agent-webmcp status [--json]                    # records only: sessions + spill, never dials
 agent-webmcp search [--json] [--handle H ...] [--all] [--limit N] <query...>
 agent-webmcp execute [--session H | --as ALIAS=H ...] [--timeout ms] [--max-chars N] [--json] '<code>'
 agent-webmcp mcp list [--json]                  # inspect the served surface
@@ -58,20 +59,30 @@ Sessions first — page tools only exist inside one:
 
 - `open { url, cdp?, target?, port? }` — attach a page, get a handle.
   Own headless browser by default; `cdp` borrows a foreign tab (it gets
-  navigated — stated cost). Returns the handle; close what you open.
+  navigated — stated cost). Returns the handle plus `toolCount` (tools
+  visible at open): 0 means list again before concluding empty — pages
+  register tools as they load, and the windowed `list` settles late
+  registrants. A broken surface fails the open loud instead of mid-loop.
+  Close what you open.
 - `list { handle, tool? }` — the session's page tools as JSON. Whole
   catalog, or one tool's full record (schema + annotations + frame).
 - `invoke { handle, tool, args?, timeoutMs? }` — call one page tool.
   Returns `{ tool, status, output, errorText, origin, untrusted: true }`.
-  `status: Error` is page data (the page said no), not a transport
-  failure — only stalls fail.
+  `output` is normalized to one shape: the page's `structuredContent`
+  when provided, else parsed text, else raw text — no envelope
+  unwrapping in code, on either door. `status: Error` is page data
+  (the page said no), not a transport failure — only stalls fail.
 - `close { handle }` — release the session (kills browsers we launched,
   never foreign ones).
+- `status {}` — read-only observability: `{ sessions: [{ handle, url }],
+  spill: { files, bytes } }`. Records only, never dials — call it
+  before `open`, after `close`, or mid-flow to check what leaked.
 
 Composition (engine-local, no session needed):
 
 - `search { query, limit?, handle?, handles?, all? }` — word-overlap ranking over
-  tool names (3x) and descriptions. Pass `handle`/`handles` to include
+  tool names (3x) and descriptions. Returns `{ query, tools, skipped }`.
+  Pass `handle`/`handles` to include
   those sessions' page tools (tagged per session), or `all` to sweep
   every open session (dead ones land in `skipped`, never fail the
   sweep). When to prefer what:
@@ -167,7 +178,7 @@ a single `execute` code block carries the step.
 Two tiers, richest first — drop down only when the harness can't:
 
 1. Harness codemode (pi codemode, opencode Code Mode, any JS sandbox):
-   compose the seven tools directly, with loops, branches, and filters
+   compose the eight tools directly, with loops, branches, and filters
    in code. Primary path — full control flow, one turn per block.
 2. Our `execute`: the same code-crafting shape (`tools`/`sesh`/
    `search`/`describe` globals, accident-contained worker, multi-page

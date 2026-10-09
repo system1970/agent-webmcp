@@ -19,6 +19,7 @@
     "eval:sessions": "bun ./scripts/eval-sessions.ts",
     "eval:mcp": "bun ./scripts/eval-mcp.ts",
     "eval:xpage": "bun ./scripts/eval-xpage.ts",
+    "eval:real": "bun ./scripts/eval-real.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -303,16 +303,40 @@ when the code moves. Only this region's agent writes this file.
   record: `docs/run-accepted-risk.md:1`. 25-call global cap, per-op +
   final size ceilings, worker killed on timeout, values
   structured-cloned, returns carry origins[] + perSession counts.
-  7 tools now.
+  7 tools then; 8 with status (Unit 8).
   `src/codemode/runner.ts:1`, `src/tools/execute.ts:1`
-- `eval:mcp` 12/12 (list-7, describe-record, spill round-trip, execute-control-flow),
+- `eval:mcp` 14/14 (list-8, describe-record, spill round-trip, execute-control-flow,
+  call-status, status-undisturbed),
   green 2026-10-09.
   Extends the earlier surface with code-path execute checks.
   `scripts/eval-mcp.ts:1`
-- `eval:xpage` 6/6 (initialize, open-both, multisearch-tags, code-join,
+- `eval:xpage` 7/7 (initialize, open-both, open-toolcounts, multisearch-tags, code-join,
   compensation, close-both over two local fixture pages),
   green 2026-10-09. First proof of cross-page flows + in-code
   rollback. `scripts/eval-xpage.ts:1`
+- `eval:real` 6/6 (open-both real sites + open_ms, settled-catalogs,
+  shim-free xpage-join, close-both), green 2026-10-09. Outside evidence:
+  joins consume normalized values with zero unwrapping; slow pages read
+  toolCount 0 at open and settle via windowed list. `scripts/eval-real.ts:1`
+
+### Unit 8 — retro grounding (normalize + status + reality gate)
+
+- Page outputs normalize to one shape in `invokeSessionTool`:
+  `structuredContent` when present, else try-parsed first text part,
+  else raw text; scalars pass through. Pure `normalizeOutput()`,
+  locked in `src/sessions/verbs.test.ts` (L6 consumption lock).
+  `src/sessions/verbs.ts:283`
+- `status` is the 8th verb (tool + CLI, registry line): `{sessions:
+  [{handle, url}], spill: {files, bytes}}` from records + dir stats,
+  never a dial. `src/tools/status.ts:1`, `src/commands/status.ts:1`
+- `open` returns point-in-time `toolCount` (one surface read, no
+  window); snapshot failure fails the open loud, snapshot-empty opens
+  fine at 0. `src/sessions/verbs.ts:46`
+- `execute` blurb compressed to 761 rendered chars (was ~1540);
+  preflight `desc-budget` fails past 1500. `src/tools/execute.ts:44`
+- `eval-mcp` + `eval-xpage` print `open_ms` report-only; `eval-real`
+  joins real sites per pre-commit for verb/tool units.
+  `scripts/eval-mcp.ts:149`, `scripts/eval-real.ts:1`
 
 ### Reviewer v2 (memory + tiers + gates)
 
@@ -324,7 +348,7 @@ when the code moves. Only this region's agent writes this file.
   `docs/review-learnings.md:1`
 - `bun run preflight` gates reviews deterministically: map-sync,
   help-truth, envelope-snapshot, `bun check`, `bun test src`,
-  `bun test scripts/review`. `scripts/preflight.ts:1`
+  `bun test scripts/review`, desc-budget. `scripts/preflight.ts:1`
 - `bun run review` tiers by diff size: trivial (<=10 non-hot lines) skips
   the model; lite (<=400) one pass; full (>400 or hot path) adds a verifier
   pass over BLOCKINGs. Exits 1 on confirmed BLOCKING; `--plan` +
@@ -338,8 +362,8 @@ when the code moves. Only this region's agent writes this file.
 
 ### MCP surface (Unit 3: describe; Unit 5: codemode discovery; Unit 6: code execution, merged into execute in Unit 7; Unit 7: merge + xpage)
 
-- 7 tools in one registry (`search execute open list invoke close
-  describe`): composition + session verbs sharing data fns with
+- 8 tools in one registry (`search execute open list invoke close
+  describe status`): composition + session verbs sharing data fns with
   the CLI. `src/tools/registry.ts:8`
 - CLI mirrors the session verbs + search/execute (`describe`
   intentionally has no CLI verb: `list <handle> <tool>` already serves
@@ -369,9 +393,10 @@ when the code moves. Only this region's agent writes this file.
 - Budgets moved to neutral `src/budgets.ts` (sessions + commands share,
   no layering debt). `src/budgets.ts:1`
 - `eval:mcp` drives `mcp serve` over stdio with no model: initialize →
-  list (7) → open → invoke (Completed + untrusted) → search/describe
-  w/ session → execute code block → spilling execute → execute
-  control-flow → close. 12/12 green 2026-10-09.
+  list (8) → open (toolCount + open_ms) → invoke (Completed, normalized,
+  untrusted) → search/describe w/ session → execute code block →
+  spilling execute → execute control-flow → status → invoke-after-status
+  → close. 14/14 green 2026-10-09.
   `scripts/eval-mcp.ts:1`
 
 ### Rules that bind this region
@@ -393,23 +418,23 @@ when the code moves. Only this region's agent writes this file.
 |---|---|---|
 | `AGENTS.md` | `485e6229cd95` | agent-webmcp |
 | `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
-| `package.json` | `4d4111f3e68a` | agent-webmcp |
+| `package.json` | `3a21d525667f` | agent-webmcp |
 | `tsconfig.json` | `3443c8284415` | agent-webmcp |
 | `src/main.ts` | `8a628cf70a0d` | agent-webmcp |
-| `src/cli.ts` | `032833285fa6` | agent-webmcp |
+| `src/cli.ts` | `b3dc3799c554` | agent-webmcp |
 | `src/version.ts` | `1067c7fbdd05` | agent-webmcp |
 | `src/commands/doctor.ts` | `1ca98d076742` | agent-webmcp |
 | `src/commands/mcp-list.ts` | `dec84e5ad272` | agent-webmcp |
 | `src/commands/mcp-serve.ts` | `a96ba79b1535` | agent-webmcp |
 | `src/tools/definition.ts` | `998521d1f464` | agent-webmcp |
-| `src/tools/registry.ts` | `a81179fc6727` | agent-webmcp |
+| `src/tools/registry.ts` | `05e9a3ad40ef` | agent-webmcp |
 | `src/tools/search.ts` | `c95ce1895a7d` | agent-webmcp |
-| `src/tools/execute.ts` | `bd5f127f1a9d` | agent-webmcp |
-| `src/tools/composition.test.ts` | `fb1c824cc62a` | agent-webmcp |
+| `src/tools/execute.ts` | `4d2226c11c59` | agent-webmcp |
+| `src/tools/composition.test.ts` | `3e9d03d04073` | agent-webmcp |
 | `docs/sessions.md` | `7b52ca56e77f` | agent-webmcp |
 | `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
 | `scripts/review.ts` | `fc5b5a968a6d` | agent-webmcp |
-| `skills/agent-webmcp/SKILL.md` | `bc8c8e4fbc82` | agent-webmcp, pi |
+| `skills/agent-webmcp/SKILL.md` | `93649765f25d` | agent-webmcp, pi |
 | `.github/workflows/check.yml` | `d838043029ae` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
@@ -421,7 +446,7 @@ when the code moves. Only this region's agent writes this file.
 | `src/transport/transport.test.ts` | `33223e399ba8` | agent-webmcp |
 | `scripts/eval-transport.ts` | `3282f5671797` | agent-webmcp |
 | `src/failure.ts` | `4ca144d8ce8e` | agent-webmcp |
-| `src/commands/open.ts` | `2ceff40ddd06` | agent-webmcp |
+| `src/commands/open.ts` | `a2e7696dbea7` | agent-webmcp |
 | `src/commands/list.ts` | `284a296f02ac` | agent-webmcp |
 | `src/commands/invoke.ts` | `23be7178f789` | agent-webmcp |
 | `src/commands/close.ts` | `12eef95cdd70` | agent-webmcp |
@@ -430,27 +455,27 @@ when the code moves. Only this region's agent writes this file.
 | `src/sessions/store.test.ts` | `ffd6a1bc64e0` | agent-webmcp |
 | `src/transport/devtools.ts` | `d387cffadc5d` | agent-webmcp |
 | `scripts/eval-sessions.ts` | `ae212d929e15` | agent-webmcp |
-| `src/tools/open.ts` | `007efa069b07` | agent-webmcp |
+| `src/tools/open.ts` | `36d436fbf6eb` | agent-webmcp |
 | `src/tools/list.ts` | `f423ae1f0dfd` | agent-webmcp |
 | `src/tools/invoke.ts` | `970b53aacfb3` | agent-webmcp |
 | `src/tools/close.ts` | `37248234a66b` | agent-webmcp |
-| `src/sessions/verbs.ts` | `b0b004b90e34` | agent-webmcp |
+| `src/sessions/verbs.ts` | `13657fd80e60` | agent-webmcp |
 | `src/commands/skill.ts` | `4c6074d3b4ca` | agent-webmcp |
 | `src/budgets.ts` | `e921c3a3e6df` | agent-webmcp |
 | `src/md.d.ts` | `592511bb79fe` | agent-webmcp |
-| `scripts/eval-mcp.ts` | `48010ea69687` | agent-webmcp |
+| `scripts/eval-mcp.ts` | `0e284f0daebe` | agent-webmcp |
 | `src/commands/search.ts` | `91e778fd29d0` | agent-webmcp |
 | `src/commands/execute.ts` | `38296b60ed71` | agent-webmcp |
 | `src/tools/describe.ts` | `eab4e5a86a76` | agent-webmcp |
-| `src/spill.ts` | `2a9dc7dfe6f3` | agent-webmcp |
+| `src/spill.ts` | `31bf50a2fb40` | agent-webmcp |
 | `src/codemode/runner.ts` | `9f2b4978e1ff` | agent-webmcp |
 | `src/codemode/runner.test.ts` | `10ff9955523f` | agent-webmcp |
 | `docs/run-accepted-risk.md` | `d21cbe404b16` | agent-webmcp |
 | `src/commands/mcp-serve.test.ts` | `7506f8a3e6d2` | agent-webmcp |
 | `docs/research/cross-page-composition.md` | `cbb976ebb2f9` | agent-webmcp |
 | `docs/decisions.md` | `2b2b37d7762d` | agent-webmcp |
-| `docs/review-learnings.md` | `ae3e44ad3b90` | agent-webmcp |
-| `scripts/preflight.ts` | `5032fcdaf2b2` | agent-webmcp |
+| `docs/review-learnings.md` | `1d0bf41db55b` | agent-webmcp |
+| `scripts/preflight.ts` | `fda60d04e3f7` | agent-webmcp |
 | `scripts/review-eval.ts` | `190eabb5786a` | agent-webmcp |
 | `scripts/review-eval.json` | `c19d5da15ab0` | agent-webmcp |
 | `scripts/review/git.ts` | `8c23538e6fd3` | agent-webmcp |
@@ -462,7 +487,11 @@ when the code moves. Only this region's agent writes this file.
 | `scripts/review/git.test.ts` | `af9317e33956` | agent-webmcp |
 | `scripts/review/verdict.test.ts` | `9994730be9da` | agent-webmcp |
 | `scripts/review/cache.test.ts` | `5c42e028eaf0` | agent-webmcp |
-| `scripts/eval-xpage.ts` | `210721fbab79` | agent-webmcp |
+| `src/tools/status.ts` | `e61497f269cd` | agent-webmcp |
+| `src/commands/status.ts` | `bb7104d43f2c` | agent-webmcp |
+| `src/sessions/verbs.test.ts` | `2fd8a2e04da2` | agent-webmcp |
+| `scripts/eval-real.ts` | `b276c47f0340` | agent-webmcp |
+| `scripts/eval-xpage.ts` | `689fef7a7a22` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |
 | `website/AGENTS.md` | `b0db7c39c182` | agent-webmcp |
 
