@@ -1,6 +1,0 @@
-id: no-bare-ceiling-literal
-language: TypeScript
-valid:
-  - 'const msg = `want 1-${RUN_TIMEOUT_MAX_MS} ms`'
-invalid:
-  - "const msg = 'want 1-300000 ms'"

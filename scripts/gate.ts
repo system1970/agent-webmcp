@@ -1,24 +1,22 @@
-// Gate: deterministic pre-review gate. Usage: `bun ./scripts/gate.ts`
-// (or `bun run gate`). No browser, no network, no model. Nine checks,
+// Gate: deterministic gate. Usage: `bun ./scripts/gate.ts`
+// (or `bun run gate`). No browser, no network, no model. Eight checks,
 // dense lines; failures accumulate and the run exits 1 so one invocation
 // shows everything:
 //
-// 1. ast-grep: sgconfig.yml rules self-test (valid/invalid snippets ride
-//    with the rules; needs the binary — `bun run setup` installs it).
-// 2. help-truth: no bare `1-300000` literal in src/ or skills/ (ceilings
+// 1. help-truth: no bare `1-300000` literal in src/ or skills/ (ceilings
 //    interpolate from budgets.ts; SKILL.md cites the constants).
-// 3. envelope-snapshot: local-only search returns {query, tools, skipped};
+// 2. envelope-snapshot: local-only search returns {query, tools, skipped};
 //    the execute description carries the full envelope contract.
+// 3. untrusted-false: page data is always untrusted:true — never false.
 // 4. `bun check` clean. 5. `bun test src` green.
-// 6. `bun test scripts/review` green (the gate's own unit tests).
-// 7. desc-budget + schema-object: every tool blurb fits the budget
+// 6. desc-budget + schema-object: every tool blurb fits the budget
 //    (detail lives in SKILL.md, never accretes into descriptions) and
 //    every inputSchema is top-level {type:"object"} (one typeless tool
 //    poisons the whole tools/list).
-// 8. user-surface: strangers discover tools via SKILL and run on their
+// 7. user-surface: strangers discover tools via SKILL and run on their
 //    own machines — every registry tool documented, no my-machine paths.
-// 9. registry-shape: one tool file, one registry line (cross-file, so
-//    native here — sgconfig only guards the manifest side).
+// 8. registry-shape: one tool file, one registry line; the manifest
+//    only imports, never defines (no registerTool call in it).
 import { readdirSync, statSync } from "node:fs"
 import { Effect } from "effect"
 
@@ -29,25 +27,6 @@ const fail = (msg: string): void => {
   failed = true
 }
 const pass = (msg: string): void => console.log(`PASS ${msg}`)
-
-// 1. ast-grep: sgconfig.yml rules self-test (valid/invalid snippets ride
-// with the rules, so they cannot rot). Needs the ast-grep binary —
-// `bun run setup` installs it pinned+verified into ~/.local/bin.
-{
-  const homeBin = `${process.env.HOME}/.local/bin/ast-grep`
-  const sg = Bun.which("ast-grep") ?? (await Bun.file(homeBin).exists() ? homeBin : null)
-  if (sg === null) {
-    fail("ast-grep: binary missing (run `bun run setup` for the pinned install)")
-  } else {
-    const proc = Bun.spawnSync([sg, "test", "-t", "sg-tests"], { cwd: root, stdout: "pipe", stderr: "pipe" })
-    if ((proc.exitCode ?? 1) !== 0) {
-      const out = new TextDecoder().decode(proc.stdout ?? new Uint8Array())
-      const err = new TextDecoder().decode(proc.stderr ?? new Uint8Array())
-      const tail = `${out}\n${err}`.trim().split("\n").slice(-5).join(" | ")
-      fail(`ast-grep test: ${tail.slice(0, 300)}`)
-    } else if (!failed) pass("ast-grep")
-  }
-}
 
 // Worktree scan, never `git grep`: the pre-commit hook must see staged
 // content, which tracked-blob grep cannot (a planted literal passed the
@@ -75,14 +54,14 @@ const scanTree = async (needle: string): Promise<Array<string>> => {
   return hits
 }
 
-// 2. help-truth.
+// 1. help-truth.
 {
   const hits = await scanTree("1-300000")
   if (hits.length > 0) fail(`help-truth: bare 1-300000 in ${hits.join(", ")} (interpolate the budgets.ts ceiling)`)
   else if (!failed) pass("help-truth")
 }
 
-// 3. envelope-snapshot.
+// 2. envelope-snapshot.
 {
   const { search } = await import("../src/tools/search.ts")
   const result = await Effect.runPromise(search.execute({ query: "open" }) as Effect.Effect<{ content: string }>)
@@ -103,6 +82,13 @@ const scanTree = async (needle: string): Promise<Array<string>> => {
   }
 }
 
+// 3. untrusted-false: page data is always untrusted:true.
+{
+  const hits = [...(await scanTree("untrusted: false")), ...(await scanTree("untrusted:false"))]
+  if (hits.length > 0) fail(`untrusted-false: page data is never untrusted:false: ${hits.join(", ")}`)
+  else if (!failed) pass("untrusted-false")
+}
+
 // 4. bun check.
 {
   const proc = Bun.spawnSync(["bun", "check"], { cwd: root, stdout: "pipe", stderr: "pipe" })
@@ -121,21 +107,11 @@ const scanTree = async (needle: string): Promise<Array<string>> => {
   } else if (!failed) pass("bun test src")
 }
 
-// 6. review harness tests (kept out of `bun test src`: tooling, not engine).
-{
-  const proc = Bun.spawnSync(["bun", "test", "scripts/review"], { cwd: root, stdout: "pipe", stderr: "pipe" })
-  if ((proc.exitCode ?? 1) !== 0) {
-    const tail = new TextDecoder().decode(proc.stderr ?? proc.stdout ?? new Uint8Array()).trim().split("\n").slice(-3).join(" | ")
-    fail(`bun test scripts/review: ${tail.slice(0, 200)}`)
-  } else if (!failed) pass("bun test scripts/review")
-}
-
-// 7. desc-budget: tool blurbs stay short (L3 accretion class — the
-// catalog lives in SKILL.md). 8. schema-object: every inputSchema is
-// top-level {type:"object"} (opencode rejects the WHOLE tools/list on
-// one typeless tool — `status` shipped `anyOf` from an empty struct and
-// poisoned all eight). Import-time only: registry side effects
-// register, nothing dials.
+// 6. desc-budget + schema-object: blurbs stay short (the catalog lives
+// in SKILL.md); every inputSchema is top-level {type:"object"}
+// (opencode rejects the WHOLE tools/list on one typeless tool — `status`
+// shipped `anyOf` from an empty struct and poisoned all eight).
+// Import-time only: registry side effects register, nothing dials.
 {
   await import("../src/tools/registry.ts")
   const { allTools } = await import("../src/tools/definition.ts")
@@ -154,7 +130,7 @@ const scanTree = async (needle: string): Promise<Array<string>> => {
   } else if (!failed) pass(`schema-object (${allTools.length} tools)`)
 }
 
-// 8. user-surface: strangers discover tools via SKILL and run on their
+// 7. user-surface: strangers discover tools via SKILL and run on their
 // own machines — every registry tool named there, no my-machine paths
 // in shipped code. Import-time only (registers, never dials).
 {
@@ -173,9 +149,9 @@ const scanTree = async (needle: string): Promise<Array<string>> => {
   }
 }
 
-// 9. registry-shape: one tool file, one registry line. Tool modules
-// self-register (definition.registerTool); registry.ts only imports
-// (sg no-definitions-in-manifest guards the manifest side).
+// 8. registry-shape: one tool file, one registry line. Tool modules
+// self-register (definition.registerTool); registry.ts only imports —
+// a registerTool( call in the manifest fails this check.
 {
   const names = readdirSync(`${root}/src/tools`)
     .filter((f) => f.endsWith(".ts") && f !== "registry.ts" && f !== "definition.ts" && !f.endsWith(".test.ts"))
@@ -185,6 +161,7 @@ const scanTree = async (needle: string): Promise<Array<string>> => {
     (n) => manifest.split("\n").filter((l) => l.trim() === `import "./${n}.ts"`).length !== 1
   )
   if (bad.length > 0) fail(`registry-shape: want exactly one import line per tool: ${bad.join(", ")}`)
+  else if (manifest.includes("registerTool(")) fail("registry-shape: definitions live in tool files, never the manifest")
   else if (!failed) pass(`registry-shape (${names.length} tools)`)
 }
 

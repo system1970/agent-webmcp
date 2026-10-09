@@ -1,8 +1,0 @@
-id: no-definitions-in-manifest
-snapshots:
-  registerTool(open):
-    labels:
-    - source: registerTool(open)
-      style: primary
-      start: 0
-      end: 18

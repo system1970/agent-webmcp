@@ -1,6 +1,0 @@
-id: no-definitions-in-manifest
-language: TypeScript
-valid:
-  - "import './open.ts'"
-invalid:
-  - "registerTool(open)"

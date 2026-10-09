@@ -1,8 +1,0 @@
-id: no-bare-ceiling-literal
-snapshots:
-  const msg = 'want 1-300000 ms':
-    labels:
-    - source: '''want 1-300000 ms'''
-      style: primary
-      start: 12
-      end: 30

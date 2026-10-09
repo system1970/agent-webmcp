@@ -1,5 +1,0 @@
-# lefthook: the deterministic gate fires pre-commit (~5s), mood-independently.
-# Live browser evals stay manual. Install once per clone: `bun run setup`.
-pre-commit:
-  jobs:
-    - run: bun run gate

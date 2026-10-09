@@ -14,6 +14,4 @@ jobs:
           bun-version: "1.4.3"
       - run: bun install --frozen-lockfile
       - run: bun run check:gen
-      - run: bun run setup
-      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       - run: bun run gate

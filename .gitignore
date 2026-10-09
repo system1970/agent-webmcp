@@ -29,3 +29,6 @@ zig/zig-out/
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# nuked-process (unit 18): beads DB stays local-only
+.beads/
