@@ -1,0 +1,6 @@
+id: no-untrusted-false
+language: TypeScript
+valid:
+  - 'function f() { return { value, untrusted: true } }'
+invalid:
+  - 'function f() { return { value, untrusted: false } }'

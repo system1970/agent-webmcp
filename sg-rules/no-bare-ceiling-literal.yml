@@ -1,0 +1,13 @@
+id: no-bare-ceiling-literal
+language: TypeScript
+severity: error
+message: "bare 1-300000 literal — interpolate the budgets ceiling"
+note: "mirrors gate help-truth (src strings; skills/*.md stays gate-covered)"
+files:
+  - "src/**/*.ts"
+rule:
+  any:
+    - kind: string
+      regex: "1-300000"
+    - kind: template_string
+      regex: "1-300000"

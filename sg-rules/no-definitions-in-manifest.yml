@@ -1,0 +1,9 @@
+id: no-definitions-in-manifest
+language: TypeScript
+severity: error
+message: "tool definitions live in src/tools/<name>.ts — registry.ts only imports"
+note: "gate registry-shape owns the one-file-one-line mapping (cross-file, not expressible here)"
+files:
+  - "src/tools/registry.ts"
+rule:
+  pattern: "registerTool($TOOL)"

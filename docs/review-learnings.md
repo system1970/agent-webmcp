@@ -36,5 +36,5 @@ a witness + date. Prune rows whose witness file is gone or older than
   2026-10-09.
 - L10: MCP inputSchema is top-level `{type:"object"}` for EVERY tool —
   one typeless tool poisons the whole tools/list (empty structs derive
-  `anyOf`; collapse in toInputSchema, lock in preflight + eval-mcp).
+  `anyOf`; collapse in toInputSchema, lock in gate + eval-mcp).
   Approved 2026-10-09. `src/tools/definition.ts:59`

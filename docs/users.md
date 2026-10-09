@@ -15,9 +15,9 @@ an eval (fixtures must mirror the wild, not the lab).
    you never touched? Done when: the website install path exists and
    was once followed blind. (No path yet — tracked, not built.)
 2. **No my-machine.** No home dirs, usernames, assumed ports, assumed
-   Chromium, assumed OS. Done when: preflight `user-surface` is green.
+   Chromium, assumed OS. Done when: gate `user-surface` is green.
 3. **Surface documented.** Every registry tool appears in SKILL.md —
-   strangers discover tools there, not in source. Done when: preflight
+   strangers discover tools there, not in source. Done when: gate
    parity holds.
 4. **Errors diagnose.** Every failure names its fix for someone with no
    repo access (`reason` + `fix`, the `TransportFailed` shape in

@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "agent_webmcp",
+  "project_id": "e0d9b5a8-67d6-4e96-b47b-ac8767944deb"
+}

@@ -24,9 +24,9 @@ without new evidence is out of scope. New rows need owner approval.
 - Evals assert shapes and bounded races, never exact values or timings
   (machine variance makes thresholds flaky or meaningless). 2026-10-09,
   final. `scripts/eval-sessions.ts:103`
-- Preflight (map/help/envelope/check/test) governs what scripts can
-  check; reviewer governs judgment only. 2026-10-09, final.
-  `scripts/preflight.ts:1`
+- Gate (sg/help/envelope/check/test) governs what scripts can check;
+  reviewer governs judgment only. 2026-10-09, final; preflight renamed
+  to gate unit 16 (map-sync retired with MAP.md). `scripts/gate.ts:1`
 - Single-operator assumption LIFTED 2026-10-09: prior "final until
   multi-tenant" rows become ordered roadmap, riskiest first. New code
   passes the stranger test (`docs/users.md`); the per-machine analysis

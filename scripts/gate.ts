@@ -1,27 +1,28 @@
-// Preflight: deterministic pre-review gate. Usage:
-// `bun ./scripts/preflight.ts` (check) or with `--write` (fix MAP hashes).
-// No browser, no network, no model. Nine checks, dense lines; failures
-// accumulate and the run exits 1 so one invocation shows everything:
+// Gate: deterministic pre-review gate. Usage: `bun ./scripts/gate.ts`
+// (or `bun run gate`). No browser, no network, no model. Nine checks,
+// dense lines; failures accumulate and the run exits 1 so one invocation
+// shows everything:
 //
-// 1. map-sync: MAP.hashes rows equal sha256(file).slice(0,12).
+// 1. ast-grep: sgconfig.yml rules self-test (valid/invalid snippets ride
+//    with the rules; needs the binary — `bun run setup` installs it).
 // 2. help-truth: no bare `1-300000` literal in src/ or skills/ (ceilings
 //    interpolate from budgets.ts; SKILL.md cites the constants).
 // 3. envelope-snapshot: local-only search returns {query, tools, skipped};
 //    the execute description carries the full envelope contract.
 // 4. `bun check` clean. 5. `bun test src` green.
 // 6. `bun test scripts/review` green (the gate's own unit tests).
-// 7. desc-budget: every tool blurb fits the budget (detail lives in
-//    SKILL.md, never accretes into descriptions). 8. schema-object:
+// 7. desc-budget + schema-object: every tool blurb fits the budget
+//    (detail lives in SKILL.md, never accretes into descriptions) and
 //    every inputSchema is top-level {type:"object"} (one typeless tool
 //    poisons the whole tools/list).
-// 9. user-surface: strangers discover tools via SKILL and run on their
+// 8. user-surface: strangers discover tools via SKILL and run on their
 //    own machines — every registry tool documented, no my-machine paths.
-import { createHash } from "node:crypto"
-import { readFileSync } from "node:fs"
+// 9. registry-shape: one tool file, one registry line (cross-file, so
+//    native here — sgconfig only guards the manifest side).
+import { readdirSync, statSync } from "node:fs"
 import { Effect } from "effect"
 
 const root = `${import.meta.dir}/..`
-const write = Bun.argv.includes("--write")
 let failed = false
 const fail = (msg: string): void => {
   console.error(`FAIL ${msg}`)
@@ -29,62 +30,54 @@ const fail = (msg: string): void => {
 }
 const pass = (msg: string): void => console.log(`PASS ${msg}`)
 
-// 1. map-sync: MAP.hashes rows equal sha256(file).slice(0,12). The
-// table lives beside MAP.md, not in it — hashes are machine data for
-// this check, never agent reading. MAP.md prose stays human-only.
+// 1. ast-grep: sgconfig.yml rules self-test (valid/invalid snippets ride
+// with the rules, so they cannot rot). Needs the ast-grep binary —
+// `bun run setup` installs it pinned+verified into ~/.local/bin.
 {
-  const hashPath = `${root}/MAP.hashes`
-  const lines = (await Bun.file(hashPath).text()).split("\n")
-  const row = /^([0-9a-f]{12})  (\S+)(?:  (\S+(?:, \S+)*))?$/
-  let checked = 0
-  const fixed: Array<string> = []
-  const missing: Array<string> = []
-  const dropped: Array<string> = []
-  const next = lines.map((line) => {
-    if (line.trim() === "") return line
-    const m = row.exec(line)
-    if (m === null) {
-      fail(`map-sync: malformed row in MAP.hashes: '${line.slice(0, 60)}'`)
-      return line
-    }
-    const [, claimed, rel] = m
-    let bytes: Buffer
-    try {
-      bytes = readFileSync(`${root}/${rel}`)
-    } catch {
-      // The file is gone (moved or deleted): the row goes, but only
-      // --write performs the deletion so check mode stays loud.
-      if (write) {
-        dropped.push(rel)
-        return null
-      }
-      missing.push(rel)
-      return line
-    }
-    checked++
-    const actual = createHash("sha256").update(bytes).digest("hex").slice(0, 12)
-    if (actual !== claimed) {
-      if (write) {
-        fixed.push(rel)
-        return line.replace(claimed, actual)
-      }
-      fail(`map-sync: ${rel} claims ${claimed}, file is ${actual} (run preflight --write)`)
-    }
-    return line
-  })
-  for (const rel of missing) fail(`map-sync: ${rel} listed in MAP.hashes but unreadable`)
-  if (write && (fixed.length > 0 || dropped.length > 0)) {
-    await Bun.write(hashPath, next.filter((l): l is string => l !== null).join("\n"))
-    if (fixed.length > 0) console.log(`map-sync: rewrote ${fixed.length} hash(es): ${fixed.join(", ")}`)
-    if (dropped.length > 0) console.log(`map-sync: dropped ${dropped.length} gone-file row(s): ${dropped.join(", ")}`)
+  const homeBin = `${process.env.HOME}/.local/bin/ast-grep`
+  const sg = Bun.which("ast-grep") ?? (await Bun.file(homeBin).exists() ? homeBin : null)
+  if (sg === null) {
+    fail("ast-grep: binary missing (run `bun run setup` for the pinned install)")
+  } else {
+    const proc = Bun.spawnSync([sg, "test", "-t", "sg-tests"], { cwd: root, stdout: "pipe", stderr: "pipe" })
+    if ((proc.exitCode ?? 1) !== 0) {
+      const out = new TextDecoder().decode(proc.stdout ?? new Uint8Array())
+      const err = new TextDecoder().decode(proc.stderr ?? new Uint8Array())
+      const tail = `${out}\n${err}`.trim().split("\n").slice(-5).join(" | ")
+      fail(`ast-grep test: ${tail.slice(0, 300)}`)
+    } else if (!failed) pass("ast-grep")
   }
-  if (!failed) pass(`map-sync (${checked} rows)`)
+}
+
+// Worktree scan, never `git grep`: the pre-commit hook must see staged
+// content, which tracked-blob grep cannot (a planted literal passed the
+// hook 2026-10-09). Clean trees read identically, so CI/local match.
+const scanTree = async (needle: string): Promise<Array<string>> => {
+  const paths: Array<string> = []
+  const walk = (dir: string): void => {
+    for (const e of readdirSync(dir)) {
+      if (e === "node_modules" || e.startsWith(".")) continue
+      const p = `${dir}/${e}`
+      if (statSync(p).isDirectory()) walk(p)
+      else paths.push(p)
+    }
+  }
+  walk(`${root}/src`)
+  walk(`${root}/skills`)
+  const hits: Array<string> = []
+  for (const p of paths) {
+    try {
+      if ((await Bun.file(p).text()).includes(needle)) hits.push(p.replace(`${root}/`, ""))
+    } catch {
+      // Unreadable — skip; the check/test stages read the same tree.
+    }
+  }
+  return hits
 }
 
 // 2. help-truth.
 {
-  const proc = Bun.spawnSync(["git", "grep", "-l", "1-300000", "--", "src", "skills"], { cwd: root, stdout: "pipe", stderr: "pipe" })
-  const hits = new TextDecoder().decode(proc.stdout ?? new Uint8Array()).split("\n").map((l) => l.trim()).filter((l) => l !== "")
+  const hits = await scanTree("1-300000")
   if (hits.length > 0) fail(`help-truth: bare 1-300000 in ${hits.join(", ")} (interpolate the budgets.ts ceiling)`)
   else if (!failed) pass("help-truth")
 }
@@ -161,7 +154,7 @@ const pass = (msg: string): void => console.log(`PASS ${msg}`)
   } else if (!failed) pass(`schema-object (${allTools.length} tools)`)
 }
 
-// 9. user-surface: strangers discover tools via SKILL and run on their
+// 8. user-surface: strangers discover tools via SKILL and run on their
 // own machines — every registry tool named there, no my-machine paths
 // in shipped code. Import-time only (registers, never dials).
 {
@@ -174,16 +167,26 @@ const pass = (msg: string): void => console.log(`PASS ${msg}`)
   if (undoc.length > 0) {
     fail(`user-surface: tools missing a SKILL.md record entry: ${undoc.join(", ")}`)
   } else {
-    const home = Bun.spawnSync(
-      ["git", "grep", "-l", "home/pracurser", "--", "src", "skills"],
-      { cwd: root, stdout: "pipe", stderr: "pipe" }
-    )
-    const hits = new TextDecoder().decode(home.stdout ?? new Uint8Array())
-      .split("\n").map((l) => l.trim()).filter((l) => l !== "")
+    const hits = await scanTree("home/pracurser")
     if (hits.length > 0) fail(`user-surface: my-machine paths in ${hits.join(", ")}`)
     else if (!failed) pass("user-surface")
   }
 }
 
+// 9. registry-shape: one tool file, one registry line. Tool modules
+// self-register (definition.registerTool); registry.ts only imports
+// (sg no-definitions-in-manifest guards the manifest side).
+{
+  const names = readdirSync(`${root}/src/tools`)
+    .filter((f) => f.endsWith(".ts") && f !== "registry.ts" && f !== "definition.ts" && !f.endsWith(".test.ts"))
+    .map((f) => f.slice(0, -3))
+  const manifest = await Bun.file(`${root}/src/tools/registry.ts`).text()
+  const bad = names.filter(
+    (n) => manifest.split("\n").filter((l) => l.trim() === `import "./${n}.ts"`).length !== 1
+  )
+  if (bad.length > 0) fail(`registry-shape: want exactly one import line per tool: ${bad.join(", ")}`)
+  else if (!failed) pass(`registry-shape (${names.length} tools)`)
+}
+
 if (failed) process.exit(1)
-console.log("preflight: green")
+console.log("gate: green")

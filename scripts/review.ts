@@ -3,7 +3,7 @@
 // Nothing to diff means nothing to review.
 //
 // Tiers by diff size (Cloudflare risk-tier shape, our lines): trivial
-// (<=10 non-hot lines) skips the model — `bun run preflight` governs those.
+// (<=10 non-hot lines) skips the model — `bun run gate` governs those.
 // Everything else gets one reviewer pass (lite <=400, full above or hot
 // path — the label signals size, not a second pass). `--verify` opts into
 // a verifier pass that reads each BLOCKING's file:line and kills the
@@ -84,7 +84,7 @@ if (working.diff.trim().length === 0) {
 const { diffLines, names } = parseNumstat(loadNumstat(stagedOnly))
 const { tier, hot } = computeTier(diffLines, names)
 if (tier === "trivial") {
-  console.log(`review: trivial (${diffLines} diff lines across ${names.length} file(s)) — preflight governs, no model call`)
+  console.log(`review: trivial (${diffLines} diff lines across ${names.length} file(s)) — gate governs, no model call`)
   process.exit(0)
 }
 

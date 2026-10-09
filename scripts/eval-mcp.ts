@@ -51,7 +51,7 @@ const runChecks = Effect.fn("eval.checks")(function* (
   ))
   // Wire-level MCP contract: EVERY tool's inputSchema is top-level
   // {type:"object"} — opencode rejects the whole list on one typeless
-  // tool (status shipped anyOf; preflight schema-object locks it
+  // tool (status shipped anyOf; gate schema-object locks it
   // import-time, this locks what actually crosses stdio).
   const schemasOk = (listed?.result.tools ?? []).length === 6
     && (listed?.result.tools ?? []).every((t) => t.inputSchema?.type === "object")

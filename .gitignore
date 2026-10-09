@@ -22,3 +22,10 @@ next-env.d.ts
 rust/target/
 zig/.zig-cache/
 zig/zig-out/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*

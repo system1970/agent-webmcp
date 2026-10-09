@@ -1,0 +1,8 @@
+id: no-untrusted-false
+snapshots:
+  'function f() { return { value, untrusted: false } }':
+    labels:
+    - source: 'untrusted: false'
+      style: primary
+      start: 31
+      end: 47
