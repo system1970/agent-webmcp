@@ -86,8 +86,8 @@ Their scale justifies depth; ours borrows the shapes, not the weight:
 
 ## Setup (proper, per 2026-10-09 research)
 
-- `effect@4.0.x` exact pin; vendored `repos/effect` tracks the same
-  tag (reference only, never imported).
+- `effect@4.0.x` exact pin; source of truth is effect.website docs
+  (v4) + the installed `node_modules/effect` (exact same bytes).
 - `@effect/tsgo` + oxlint recommended preset: ADOPT PENDING the
   TypeScript-7-native cost evaluation. Until then, hand-enforce the
   floating-effect and stability-tag rules in review.

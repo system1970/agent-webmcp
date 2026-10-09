@@ -22,7 +22,7 @@ codemode + cross-site chaining. Bun + TypeScript + Effect v4 stable.
 | verbs/tools | `src/tools/registry.ts`, `src/sessions/verbs.ts` |
 | codemode runner | `src/codemode/runner.ts`, `docs/run-accepted-risk.md` |
 | transport | `src/transport/client.ts` |
-| Effect usage | `effect.md` (law), then `repos/effect/` source |
+| Effect usage | `effect.md` (law) |
 | product surface | `skills/agent-webmcp/SKILL.md` |
 
 ## Working rules
