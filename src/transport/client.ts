@@ -228,6 +228,31 @@ export const evaluateJson = (
     return reply.result?.value
   })
 
+// Browser websocket discovery: /json/version names the endpoint.
+// Transport owns all CDP-adjacent IO, so this lives here, not in sessions.
+const VersionReply = Schema.Struct({ webSocketDebuggerUrl: Schema.String })
+
+export const discoverWs = (httpEndpoint: string, timeoutMs: number): Effect.Effect<string, TransportFailed> =>
+  Effect.gen(function* () {
+    const raw: unknown = yield* Effect.tryPromise({
+      try: async () => {
+        const res = await fetch(`${httpEndpoint}/json/version`)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return (await res.json()) as unknown
+      },
+      catch: (err) =>
+        new TransportFailed({
+          reason: "connect",
+          operation: "discoverWs",
+          message: `no debugger at ${httpEndpoint}: ${err instanceof Error ? err.message : String(err)}`,
+          fix: "launch a browser first, or check the port.",
+        }),
+    })
+    return yield* decodeWire(VersionReply, "discoverWs", "version reply names no debugger endpoint")(raw).pipe(
+      Effect.map((reply) => reply.webSocketDebuggerUrl)
+    )
+  })
+
 // Page tools per the WebMCP shape: name/description/inputSchema, optional
 // annotations. readOnlyHint normalizes to readOnly (verified live).
 const WireTool = Schema.Struct({
