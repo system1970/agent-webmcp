@@ -144,6 +144,52 @@ agent-webmcp invoke <handle> getStock '{"sku":"widget"}'`}
           code. Verified live across two tabs, zero remaining after close.
         </li>
       </ul>
+      <h3 className="mt-6 text-lg font-medium text-ink">Multi-tab joins</h3>
+      <p className="mt-4 max-w-[62ch] text-[15px] leading-7 text-ink-2">
+        One block, N tabs: open all, install the polyfill everywhere, fan
+        out invokes with <code className="font-mono text-[13px] text-ink">Promise.all</code>,
+        join the values, close all in <code className="font-mono text-[13px] text-ink">finally</code> and
+        verify empty. Serialize args with{" "}
+        <code className="font-mono text-[13px] text-ink">JSON.stringify</code> into
+        the script (100k cap — chunk large args); wrap invokes so a miss
+        resolves to data, never an abort.
+      </p>
+      <CodeBlock
+        code={`const POLY = \`...polyfill above...\`;
+const CALL = (tool, args) =>
+  \`(async () => await document.modelContext.executeTool("\${tool}", \${JSON.stringify(args)}))()\`;
+const tabs = [];
+try {
+  for (const url of URLS) {
+    const t = await tools.browser.tabs.open({ url });
+    tabs.push({ ...t, gen: t.generation });
+    await tools.browser.evaluate({ tabID: t.id, script: POLY });
+  }
+  const out = await Promise.all(tabs.map((t, i) =>
+    tools.browser.evaluate({ tabID: t.id, script: CALL(TOOL[i], ARGS[i]) })
+      .then((r) => ({ ok: true, value: r.value }),
+            (e) => ({ ok: false, error: String(e?.message ?? e).slice(0, 200) }))));
+  return join(out);
+} finally {
+  for (const t of tabs) { try { await tools.browser.tabs.close({ tabID: t.id }); } catch {}
+  }
+  const rest = await tools.browser.tabs.list();
+  if (rest.tabs.length > 0) throw new Error("stray tabs: " + rest.tabs.map((t) => t.id).join(","));
+}`}
+        lang="js"
+      />
+      <ul className="mt-3 max-w-[62ch] list-disc space-y-1 pl-5 text-[15px] leading-7 text-ink-2">
+        <li>
+          Navigation wipes the registry (verified: generation 2 → 3,
+          registry lost). Guard with the generation counter: on change,
+          re-install the polyfill and re-register before invoking.
+        </li>
+        <li>
+          Close discipline holds even on abort — a failed run&apos;s{" "}
+          <code className="font-mono text-[13px] text-ink">finally</code> still
+          reaped its tabs (verified: zero leaked).
+        </li>
+      </ul>
     </article>
   );
 }

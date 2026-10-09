@@ -182,7 +182,9 @@ The desktop app's tabs expose no WebMCP surface and no automation
 channel — the engine cannot attach. Drive them from the harness:
 `tabs.open` (tab ID is the handle), `evaluate` the `modelContext`
 polyfill once per tab, then list/invoke through `getTools`/
-`executeTool`, `tabs.close` when done. Full recipe (polyfill +
+`executeTool`, `tabs.close` when done. Multi-tab joins (fan-out,
+generation guard, close-all in `finally`): same page, Multi-tab
+joins. Full recipe (polyfill +
 convention): website custom-tools page, Internal tabs section.
 
 ## Which composition to use

@@ -325,6 +325,18 @@ when the code moves. Only this region's agent writes this file.
   `tools-schemas-object`), and memory (G21 + L10).
   `src/tools/definition.ts:59`
 
+### Unit 11 — multi-tab codemode (fan-out joins + close discipline)
+
+- Canonical join block: open N, polyfill everywhere, `Promise.all`
+  invokes with miss-as-data, join in code, close-all in `finally`
+  with empty-verify. Args serialize via `JSON.stringify` (100k script
+  cap). Verified live: two-tab join (64 + 5 = 69), generation 2 → 3
+  on navigate with registry loss + reinstall, abort-run tabs reaped
+  (zero leaked). Recipe on the docs site + SKILL pointer; no engine
+  diff. Noted: website codemode page describes unshipped surface
+  (QuickJS/batch/`--program`) — rewrite tracked, not done here.
+  `website/app/docs/custom-tools/page.tsx:1`
+
 ### Unit 10 — internal-tab adapter (polyfill + harness convention)
 
 - Desktop tabs expose no WebMCP surface and no automation channel:
@@ -468,7 +480,7 @@ when the code moves. Only this region's agent writes this file.
 | `docs/sessions.md` | `7b52ca56e77f` | agent-webmcp |
 | `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
 | `scripts/review.ts` | `d8fc00a1288b` | agent-webmcp |
-| `skills/agent-webmcp/SKILL.md` | `d80cbf64be51` | agent-webmcp, pi |
+| `skills/agent-webmcp/SKILL.md` | `4574b9083faa` | agent-webmcp, pi |
 | `.github/workflows/check.yml` | `d838043029ae` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
@@ -511,7 +523,7 @@ when the code moves. Only this region's agent writes this file.
 | `docs/review-learnings.md` | `5ecb535fa0f1` | agent-webmcp |
 | `scripts/preflight.ts` | `5ca1c63636cf` | agent-webmcp |
 | `scripts/review-eval.ts` | `190eabb5786a` | agent-webmcp |
-| `scripts/review-eval.json` | `e0b477166859` | agent-webmcp |
+| `scripts/review-eval.json` | `ca5e42671a59` | agent-webmcp |
 | `scripts/review/git.ts` | `8c23538e6fd3` | agent-webmcp |
 | `scripts/review/brief.ts` | `05437060508b` | agent-webmcp |
 | `scripts/review/cache.ts` | `d6004758de1f` | agent-webmcp |
