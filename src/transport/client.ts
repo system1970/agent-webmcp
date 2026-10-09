@@ -3,7 +3,7 @@
 // (id routing, session multiplexing, event dispatch) lives here because
 // no thin library earns it — chrome-remote-interface drags its own `ws`
 // and a callback legacy; this file is the moat, kept small on purpose.
-import { Duration, Effect, Schema } from "effect"
+import { Deferred, Duration, Effect, Schema } from "effect"
 import type { Protocol } from "devtools-protocol"
 import { TransportFailed } from "./errors.ts"
 
@@ -253,28 +253,74 @@ export const discoverWs = (httpEndpoint: string, timeoutMs: number): Effect.Effe
     )
   })
 
-// Page tools per the WebMCP shape: name/description/inputSchema, optional
-// annotations. readOnlyHint normalizes to readOnly (verified live).
-const WireTool = Schema.Struct({
-  name: Schema.String,
-  description: Schema.String,
-  inputSchema: Schema.Record(Schema.String, Schema.Unknown),
-  annotations: Schema.optional(
-    Schema.Struct({
-      readOnly: Schema.optional(Schema.Boolean),
-      readOnlyHint: Schema.optional(Schema.Boolean),
-    })
-  ),
-})
+// PageTool: the host-side tool record. frameId scopes invocation;
+// annotations carry the native hints (readOnly normalized).
 
 export interface PageTool {
   readonly name: string
   readonly description: string
   readonly inputSchema: Record<string, unknown>
-  readonly annotations: { readonly readOnly?: boolean }
+  readonly frameId: string
+  readonly annotations: {
+    readonly readOnly?: boolean
+    readonly untrustedContent?: boolean
+    readonly consequential?: boolean
+  }
 }
 
-const WireTools = Schema.Array(WireTool)
+// Page tools via the native WebMCP domain (verified against the protocol
+// package): enable → toolsAdded burst; invokeTool → invocationId →
+// toolResponded. Browser-mediated: cancelable stalls, frame-scoped calls.
+// Listeners are connection-scoped and verbs hold connections only for one
+// call, so nothing accumulates past close. Runtime.evaluate stays ONLY
+// for register (a snippet must run in-page; no domain call compiles code).
+const NativeTool = Schema.Struct({
+  name: Schema.String,
+  description: Schema.String,
+  inputSchema: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  frameId: Schema.String,
+  annotations: Schema.optional(
+    Schema.Struct({
+      readOnly: Schema.optional(Schema.Boolean),
+      readOnlyHint: Schema.optional(Schema.Boolean),
+      untrustedContent: Schema.optional(Schema.Boolean),
+      consequential: Schema.optional(Schema.Boolean),
+    })
+  ),
+})
+
+const ToolsAdded = Schema.Struct({ tools: Schema.Array(NativeTool) })
+
+const toPageTools = (params: unknown): Effect.Effect<ReadonlyArray<PageTool>, TransportFailed> =>
+  Effect.try({
+    try: () => {
+      Schema.asserts(ToolsAdded, params)
+      return params.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: (tool.inputSchema ?? { type: "object" }) as Record<string, unknown>,
+        frameId: tool.frameId,
+        annotations: {
+          ...(tool.annotations?.readOnly ?? tool.annotations?.readOnlyHint !== undefined
+            ? { readOnly: tool.annotations.readOnly ?? tool.annotations.readOnlyHint }
+            : {}),
+          ...(tool.annotations?.untrustedContent !== undefined
+            ? { untrustedContent: tool.annotations.untrustedContent }
+            : {}),
+          ...(tool.annotations?.consequential !== undefined
+            ? { consequential: tool.annotations.consequential }
+            : {}),
+        },
+      }))
+    },
+    catch: (err) =>
+      new TransportFailed({
+        reason: "decode",
+        operation: "WebMCP.toolsAdded",
+        message: `tool burst shape broke: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`,
+        fix: "the page's tool catalog is malformed.",
+      }),
+  })
 
 export const listPageTools = (
   conn: CdpConnection,
@@ -282,40 +328,96 @@ export const listPageTools = (
   sessionId?: string
 ): Effect.Effect<ReadonlyArray<PageTool>, TransportFailed> =>
   Effect.gen(function* () {
-    const value = yield* evaluateJson(
-      conn,
-      "(async () => JSON.stringify(await document.modelContext.getTools()))()",
-      timeoutMs,
-      sessionId
-    )
-    if (typeof value !== "string") {
-      return yield* Effect.fail(
-        new TransportFailed({
-          reason: "decode",
-          operation: "listPageTools",
-          message: "page returned no tool JSON (modelContext missing?)",
-          fix: "the page exposes no WebMCP surface — not an error, just empty.",
-        })
-      )
-    }
-    const parsed: unknown = yield* Effect.try({
-      try: () => JSON.parse(value) as unknown,
-      catch: () =>
-        new TransportFailed({
-          reason: "decode",
-          operation: "listPageTools",
-          message: "tool JSON is unparseable",
-          fix: "the page's tool catalog is malformed.",
-        }),
+    // Subscribe BEFORE enable: the burst fires immediately, a late
+    // listener misses it and waits out the timeout instead.
+    const gate = yield* Deferred.make<ReadonlyArray<PageTool>, TransportFailed>()
+    yield* conn.onEvent("WebMCP.toolsAdded", (params, eventSession) => {
+      if (sessionId !== undefined && eventSession !== undefined && eventSession !== sessionId) return
+      Deferred.doneUnsafe(gate, toPageTools(params))
     })
-    const tools = yield* decodeWire(WireTools, "listPageTools", "tool catalog shape broke")(parsed)
-    return tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema as Record<string, unknown>,
-      annotations:
-        tool.annotations?.readOnly ?? tool.annotations?.readOnlyHint !== undefined
-          ? { readOnly: tool.annotations.readOnly ?? tool.annotations.readOnlyHint }
-          : {},
-    }))
+    yield* sendBounded(conn, "WebMCP.enable", {}, timeoutMs, sessionId)
+    return yield* Deferred.await(gate).pipe(
+      Effect.timeout(Duration.millis(timeoutMs)),
+      Effect.catchTag("TimeoutError", () =>
+        Effect.fail(
+          new TransportFailed({
+            reason: "timeout",
+            operation: "WebMCP.enable",
+            message: `no toolsAdded in ${timeoutMs}ms (empty page, or domain missing)`,
+            fix: "empty pages expose nothing — not an error. Persistent absence means an old browser: check the version floor.",
+          })
+        )
+      )
+    )
   })
+
+const ToolResponded = Schema.Struct({
+  invocationId: Schema.String,
+  status: Schema.String,
+  output: Schema.optional(Schema.Unknown),
+  errorText: Schema.optional(Schema.String),
+})
+
+export interface InvocationResult {
+  readonly status: string
+  readonly output?: unknown
+  readonly errorText?: string
+}
+
+// Invoke a page tool: send, await the terminal toolResponded for our
+// invocationId, decode. Completed-with-Error is page data, not a
+// transport failure — it returns as data. Only a stall fails, and a
+// stall cancels first so the page never holds our call.
+export const invokePageTool = Effect.fn("transport.invokePageTool")(function* (
+  conn: CdpConnection,
+  sessionId: string,
+  input: { frameId: string; toolName: string; args: Record<string, unknown> },
+  timeoutMs: number
+) {
+  const gate = yield* Deferred.make<InvocationResult, TransportFailed>()
+  let wanted: string | null = null
+  yield* conn.onEvent("WebMCP.toolResponded", (params, eventSession) => {
+    if (eventSession !== undefined && eventSession !== sessionId) return
+    Deferred.doneUnsafe(
+      gate,
+      Effect.try({
+        try: () => {
+          Schema.asserts(ToolResponded, params)
+          if (wanted !== null && params.invocationId !== wanted) {
+            throw new Error("foreign invocation (concurrent call on one connection — serialize callers)")
+          }
+          return { status: params.status, output: params.output, errorText: params.errorText }
+        },
+        catch: (err) =>
+          new TransportFailed({
+            reason: "decode",
+            operation: "WebMCP.toolResponded",
+            message: `response shape broke: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`,
+            fix: "the page answered outside the contract.",
+          }),
+      })
+    )
+  })
+  const reply = (yield* sendBounded(conn, "WebMCP.invokeTool", { frameId: input.frameId, toolName: input.toolName, input: input.args }, timeoutMs, sessionId)) as {
+    invocationId: string
+  }
+  wanted = reply.invocationId
+  return yield* Deferred.await(gate).pipe(
+    Effect.timeout(Duration.millis(timeoutMs)),
+    Effect.catchTag("TimeoutError", () =>
+      sendBounded(conn, "WebMCP.cancelInvocation", { invocationId: reply.invocationId }, 5000, sessionId).pipe(
+        Effect.ignore,
+        Effect.andThen(() =>
+          Effect.fail(
+            new TransportFailed({
+              reason: "timeout",
+              operation: "WebMCP.invokeTool",
+              message: `${input.toolName} produced no terminal response within ${timeoutMs}ms (cancel attempted)`,
+              fix: "the page tool may hang on this input: retry with a smaller timeout, or re-list.",
+            })
+          )
+        )
+      )
+    )
+  )
+})

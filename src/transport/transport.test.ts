@@ -2,7 +2,7 @@
 // without a browser. Deterministic, offline, no fixtures.
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { connect, listPageTools, sendBounded } from "./client.ts"
+import { connect, invokePageTool, listPageTools, sendBounded } from "./client.ts"
 import { launchChromium } from "./launch.ts"
 import { TransportFailed } from "./errors.ts"
 
@@ -11,10 +11,10 @@ const TOOLS_JSON = JSON.stringify([
   { name: "ping", description: "Ping", inputSchema: { type: "object", properties: {} } },
 ])
 
-// Minimal CDP: replies to Runtime.evaluate with canned tools, to
-// Target.attachToTarget with a session, {} to everything else.
-// Mode "silent" never replies (timeout proof); mode "garbage"
-// returns a non-JSON-string value (decode proof).
+// Minimal NATIVE WebMCP domain: enable → toolsAdded burst; invokeTool →
+// invocationId then toolResponded; cancelInvocation acked. Mode "silent"
+// never answers (timeout proof); mode "garbage" bursts a malformed
+// catalog (decode proof).
 const serveFake = (mode: "tools" | "silent" | "garbage") => {
   let wsUrl = ""
   const server = Bun.serve({
@@ -31,10 +31,31 @@ const serveFake = (mode: "tools" | "silent" | "garbage") => {
       open() {},
       message(ws, raw) {
         if (mode === "silent") return
-        const msg = JSON.parse(String(raw)) as { id: number; method: string }
-        if (msg.method === "Runtime.evaluate") {
-          const value = mode === "garbage" ? 42 : TOOLS_JSON
-          ws.send(JSON.stringify({ id: msg.id, result: { result: { type: "string", value } } }))
+        const msg = JSON.parse(String(raw)) as { id: number; method: string; params?: { toolName?: string } }
+        if (msg.method === "WebMCP.enable") {
+          ws.send(JSON.stringify({ id: msg.id, result: {} }))
+          const tools =
+            mode === "garbage"
+              ? [{ name: 42 }]
+              : [
+                  { name: "add-todo", description: "Add a todo", inputSchema: { type: "object", properties: {} }, frameId: "f1", annotations: { readOnlyHint: true } },
+                  { name: "ping", description: "Ping", inputSchema: { type: "object", properties: {} }, frameId: "f1" },
+                ]
+          ws.send(JSON.stringify({ method: "WebMCP.toolsAdded", params: { tools } }))
+        } else if (msg.method === "WebMCP.invokeTool") {
+          ws.send(JSON.stringify({ id: msg.id, result: { invocationId: "inv-1" } }))
+          const output = msg.params?.toolName === "boom" ? undefined : { content: [{ type: "text", text: "ok" }] }
+          ws.send(
+            JSON.stringify({
+              method: "WebMCP.toolResponded",
+              params:
+                output === undefined
+                  ? { invocationId: "inv-1", status: "Error", errorText: "page blew up" }
+                  : { invocationId: "inv-1", status: "Completed", output },
+            })
+          )
+        } else if (msg.method === "WebMCP.cancelInvocation") {
+          ws.send(JSON.stringify({ id: msg.id, result: {} }))
         } else if (msg.method === "Target.attachToTarget") {
           ws.send(JSON.stringify({ id: msg.id, result: { sessionId: "sesh-test" } }))
         } else {
@@ -61,6 +82,22 @@ describe("transport", () => {
       expect(tools.map((t) => t.name)).toEqual(["add-todo", "ping"])
       expect(tools[0]?.annotations).toEqual({ readOnly: true })
       expect(tools[1]?.annotations).toEqual({})
+      expect(tools[0]?.frameId).toBe("f1")
+      await run(conn.close)
+    } finally {
+      fake.stop()
+    }
+  })
+
+  test("invokePageTool returns output; page Error is data", async () => {
+    const fake = serveFake("tools")
+    try {
+      const conn = await run(connect(fake.wsUrl))
+      const ok = await run(invokePageTool(conn, "sesh-1", { frameId: "f1", toolName: "ping", args: {} }, 2000))
+      expect(ok.status).toBe("Completed")
+      const failed = await run(invokePageTool(conn, "sesh-1", { frameId: "f1", toolName: "boom", args: {} }, 2000))
+      expect(failed.status).toBe("Error")
+      expect(failed.errorText).toBe("page blew up")
       await run(conn.close)
     } finally {
       fake.stop()

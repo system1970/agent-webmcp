@@ -42,9 +42,9 @@ describe("tools", () => {
       {
         session: "s_1",
         tools: [
-          { name: "zzz", description: "manages issues", inputSchema: {}, annotations: {} },
-          { name: "issues", description: "unrelated", inputSchema: {}, annotations: {} },
-          { name: "aaa", description: "manages issues", inputSchema: {}, annotations: {} },
+          { name: "zzz", description: "manages issues", inputSchema: {}, annotations: {}, frameId: "f1" },
+          { name: "issues", description: "unrelated", inputSchema: {}, annotations: {}, frameId: "f1" },
+          { name: "aaa", description: "manages issues", inputSchema: {}, annotations: {}, frameId: "f1" },
         ],
       },
     ]

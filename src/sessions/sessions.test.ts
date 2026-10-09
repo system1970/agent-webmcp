@@ -8,11 +8,6 @@ import { join } from "node:path"
 import { Browser, closeSession, isOurs, listSessions, openSession, PROFILE_MARKER } from "./sessions.ts"
 import { SessionStore } from "./store.ts"
 
-const TOOLS_JSON = JSON.stringify([
-  { name: "add-todo", description: "Add a todo", inputSchema: { type: "object", properties: {} } },
-  { name: "ping", description: "Ping", inputSchema: { type: "object", properties: {} } },
-])
-
 const serveFake = () => {
   let wsUrl = ""
   let http = ""
@@ -28,8 +23,19 @@ const serveFake = () => {
       open() {},
       message(ws, raw) {
         const msg = JSON.parse(String(raw)) as { id: number; method: string }
-        if (msg.method === "Runtime.evaluate") {
-          ws.send(JSON.stringify({ id: msg.id, result: { result: { type: "string", value: TOOLS_JSON } } }))
+        if (msg.method === "WebMCP.enable") {
+          ws.send(JSON.stringify({ id: msg.id, result: {} }))
+          ws.send(
+            JSON.stringify({
+              method: "WebMCP.toolsAdded",
+              params: {
+                tools: [
+                  { name: "add-todo", description: "Add a todo", inputSchema: { type: "object", properties: {} }, frameId: "f1" },
+                  { name: "ping", description: "Ping", inputSchema: { type: "object", properties: {} }, frameId: "f1" },
+                ],
+              },
+            })
+          )
         } else if (msg.method === "Target.createTarget") {
           ws.send(JSON.stringify({ id: msg.id, result: { targetId: "tgt-1" } }))
         } else if (msg.method === "Target.attachToTarget") {
