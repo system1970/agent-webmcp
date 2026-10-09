@@ -7,10 +7,12 @@ import { open } from "./commands/open.ts"
 import { list } from "./commands/list.ts"
 import { invoke } from "./commands/invoke.ts"
 import { close } from "./commands/close.ts"
+import { run } from "./commands/run.ts"
 import { search } from "./commands/search.ts"
 import { execute } from "./commands/execute.ts"
 import { skill } from "./commands/skill.ts"
 import { getVersion } from "./version.ts"
+import { RUN_TIMEOUT_MAX_MS } from "./budgets.ts"
 
 // Pi-shaped dispatch: a flat table of commands, each a name plus an Effect.
 // No framework: parsing is prefix matching on argv, errors are tagged values
@@ -66,6 +68,12 @@ const commands: ReadonlyArray<Command> = [
     description: "Release a session (kills browsers we launched, never foreign ones).",
     usage: "close <handle|--all>",
     run: close
+  },
+  {
+    name: "run",
+    description: "Run JS code against a session's page tools (loops/branches in-code; tools.<name>, in-run search/describe). Accident-contained, runs with your privilege.",
+    usage: `run --session H [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--json] [--max-chars N] '<code>' (--handle aliases --session)`,
+    run: run
   },
   {
     name: "search",

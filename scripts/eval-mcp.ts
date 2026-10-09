@@ -1,8 +1,9 @@
-// Unit 3 eval: the MCP surface over stdio, no model. Usage:
+// Unit 6 eval: the MCP surface over stdio, no model. Usage:
 // `bun run eval:mcp`. Manual (needs network + chromium).
-// initialize -> tools/list (7 tools) -> call open -> call invoke
+// initialize -> tools/list (8 tools) -> call open -> call invoke
 // (Completed, untrusted:true) -> search/describe w/ session -> spilling
-// execute batch -> call close.
+// execute batch -> run code block (loop/branch/filter in-code) ->
+// call close.
 import { Console, Effect } from "effect"
 
 const DEMO = "https://googlechromelabs.github.io/webmcp-tools/demos/react-flightsearch/"
@@ -138,9 +139,9 @@ const runChecks = Effect.fn("eval.checks")(function* (
     result: { tools: Array<{ name: string }> }
   } | null
   const names = listed?.result.tools.map((t) => t.name).sort() ?? []
-  const want = ["close", "describe", "execute", "invoke", "list", "open", "search"]
+  const want = ["close", "describe", "execute", "invoke", "list", "open", "run", "search"]
   results.push(yield* check(
-    "tools-list-7",
+    "tools-list-8",
     want.every((n) => names.includes(n)),
     detail(names.join(","))
   ))
@@ -230,6 +231,49 @@ const runChecks = Effect.fn("eval.checks")(function* (
       }
     } catch {}
     results.push(yield* check("execute-spill", spillOk, detail(spilling.slice(0, 120))))
+
+    const ran = textOf(yield* rpc("tools/call", {
+      name: "run",
+      arguments: {
+        handle,
+        code: `const names = ["searchFlights", "listFlights"];
+          const described = [];
+          const found = [];
+          const ok = [];
+          for (const name of names) {
+            const d = await describe(name);
+            described.push(d.name);
+            const schema = d.inputSchema || {};
+            const args = {};
+            for (const k of (schema.required || [])) args[k] = "x";
+            try { await tools[name](args);
+              found.push(name); ok.push(name);
+            } catch (e) { found.push("miss:" + name); }
+          }
+          return { described, found, ok };`
+      }
+    }))
+    let runOk = false
+    let runDetail = ""
+    try {
+      const report = JSON.parse(ran) as { value: string; untrusted: boolean }
+      const inner = JSON.parse(report.value) as { described: Array<string>; found: Array<string>; ok: Array<string> }
+      runDetail = report.value.slice(0, 160)
+      // Control-flow shape plus one live success: describe-first loop
+      // order pinned, each arm recorded success-or-miss, and at least
+      // one invoke genuinely succeeded — a fully-missing bridge would
+      // stay green on shape alone. (If page-side validation ever
+      // rejects the placeholder args, this anchor goes red and the
+      // eval gets real args — that failure is signal, not noise.)
+      const names = ["searchFlights", "listFlights"]
+      runOk = report.untrusted === true
+        && JSON.stringify(inner.described) === JSON.stringify(names)
+        && inner.found.length === 2
+        && inner.found.every((n) => names.includes(n) || n.startsWith("miss:"))
+        && inner.ok.every((n) => names.includes(n))
+        && inner.ok.length >= 1
+    } catch {}
+    results.push(yield* check("run-control-flow", runOk, detail(runDetail === "" ? ran.slice(0, 120) : runDetail)))
 
     const small = textOf(yield* rpc("tools/call", {
       name: "describe",

@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { Effect } from "effect"
 import { ToolFailed } from "./definition.ts"
 import { allTools, findTool } from "./registry.ts"
 import { search, clampLimit, signature } from "./search.ts"
 import { execute } from "./execute.ts"
 import { describe as describeTool } from "./describe.ts"
+import { run as runTool, sanitizeMaxChars } from "./run.ts"
+import { RUN_TIMEOUT_MAX_MS, INVOKE_TIMEOUT_MS } from "../budgets.ts"
 import { shapeResult } from "../spill.ts"
 import type { WebmcpTool } from "./definition.ts"
 
@@ -21,7 +25,7 @@ const names = (content: string): Array<string> =>
   (JSON.parse(content) as { tools: Array<{ name: string }> }).tools.map((t) => t.name)
 
 describe("registry", () => {
-  test("lists all seven tools", () => {
+  test("lists all eight tools", () => {
     expect(allTools.map((t) => t.name).sort()).toEqual([
       "close",
       "describe",
@@ -29,8 +33,86 @@ describe("registry", () => {
       "invoke",
       "list",
       "open",
+      "run",
       "search"
     ].sort())
+  })
+
+  test("run tool record carries code/timeout inputs", async () => {
+    const record = JSON.parse(await ok(describeTool, { tool: "run" })) as {
+      name: string
+      inputSchema: { properties: { handle: unknown; code: unknown; timeoutMs: unknown } }
+    }
+    expect(record.name).toBe("run")
+    expect(record.inputSchema.properties.code).toBeDefined()
+    expect(record.inputSchema.properties.timeoutMs).toBeDefined()
+  })
+
+  test("run rejects bad timeout without a browser", async () => {
+    const failure = await err(runTool, { handle: "s_deadbeef01", code: "return 1", timeoutMs: 999999999 })
+    expect((failure as ToolFailed).message).toMatch(/1-300000/)
+  })
+
+  test("run rejects empty code without a browser", async () => {
+    const failure = await err(runTool, { handle: "s_deadbeef01", code: "   " })
+    expect((failure as ToolFailed).message).toMatch(/empty/)
+  })
+
+  test("run rejects non-positive maxChars without a browser", async () => {
+    const failure = await err(runTool, { handle: "s_deadbeef01", code: "return 1", maxChars: -5 })
+    expect((failure as ToolFailed).message).toMatch(/positive integer/)
+  })
+
+  test("run rejects oversized code without a browser", async () => {
+    const failure = await err(runTool, { handle: "s_deadbeef01", code: `return 1; /*${"x".repeat(70000)}*/` })
+    expect((failure as ToolFailed).message).toMatch(/chunk the block/)
+  })
+
+  test("sanitizeMaxChars falls back on non-finite, rejects non-positive", () => {
+    expect(sanitizeMaxChars(undefined)).toBeUndefined()
+    expect(sanitizeMaxChars(NaN)).toBeUndefined()
+    expect(sanitizeMaxChars(Infinity)).toBeUndefined()
+    expect(sanitizeMaxChars(5000)).toBe(5000)
+    // Huge finite passes through — shapeResult clamps to CHAR_BUDGET.
+    expect(sanitizeMaxChars(1e12)).toBe(1e12)
+    // Non-positive finite throws RangeError (single validator: the
+    // tool catches this pre-dial, the CLI mirrors it at the flag).
+    expect(() => sanitizeMaxChars(-5)).toThrow(RangeError)
+    expect(() => sanitizeMaxChars(0)).toThrow(RangeError)
+  })
+
+  test("run timeout ceiling covers the per-call ceiling", async () => {
+    // Distinct symbols, intended relation: a run must admit at least
+    // one full per-call budget. Same value today, separate meaning —
+    // locked so a retune can't silently invert them.
+    expect(RUN_TIMEOUT_MAX_MS).toBeGreaterThanOrEqual(INVOKE_TIMEOUT_MS)
+  })
+
+  test("run rejects malformed handles fast", async () => {
+    const failure = await err(runTool, { handle: "abc", code: "return 1" })
+    expect((failure as ToolFailed).message).toMatch(/invalid session handle/)
+  })
+
+  test("run rejects unknown handles as unknown sessions", async () => {
+    // Hermetic: the sessions dir is shared with production, so point
+    // it at a fresh kernel-uniquified tmpdir (no wall-clock, no
+    // collision) — every handle is unknown there, deterministically.
+    const dir = mkdtempSync(`${tmpdir()}/agent-webmcp-unknown-`)
+    const prev = Bun.env.AGENT_SESSIONS_DIR
+    Bun.env.AGENT_SESSIONS_DIR = dir
+    try {
+      const failure = await err(runTool, { handle: "s_deadbeef01", code: "return 1" })
+      expect((failure as ToolFailed).message).toMatch(/unknown session/)
+    } finally {
+      if (prev === undefined) {
+        delete Bun.env.AGENT_SESSIONS_DIR
+      } else {
+        Bun.env.AGENT_SESSIONS_DIR = prev
+      }
+      try {
+        rmSync(dir, { recursive: true, force: true })
+      } catch {}
+    }
   })
 
   test("findTool misses cleanly", () => {

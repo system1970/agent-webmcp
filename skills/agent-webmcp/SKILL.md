@@ -23,6 +23,7 @@ agent-webmcp open --json <url>                  # prints {handle, ...}
 agent-webmcp list <handle> [--json] [tool]      # rows, or full JSON / one schema
 agent-webmcp invoke <handle> <tool> '<json>' [--timeout ms] [--json]
 agent-webmcp close <handle|--all>
+agent-webmcp run --session H [--timeout ms 1-300000] [--json] [--max-chars N] '<code>' (--handle aliases --session)
 agent-webmcp search [--json] [--handle H] [--limit N] <query...>
 agent-webmcp execute [--json] [--session H] [--max-chars N] '<json-calls>'
 agent-webmcp mcp list [--json]                  # inspect the served surface
@@ -77,10 +78,37 @@ Composition (engine-local, no session needed):
 - `execute { calls: [{ tool, args }], sessionId?, maxChars? }` — one turn
   for up to 5 calls, run in parallel. `sessionId` is a session handle:
   routes page-tool calls to that page. Returns
-  `{ sessionId, results: [{ tool, ok, result }] }`. Items never fail the
+  `{ sessionId, results: [{ tool, ok, result, spill }] }`. Items never fail the
   batch: misses and tool errors come back `{ ok: false }` with the
-  message. `maxChars` (clamped 1k–64k, default 8k) truncates each result
-  with a marker.
+  message. `maxChars` (clamped 1k–64k, default 8k) spills past budget to
+  a `spill` file path instead of truncating.
+- `run { handle, code, timeoutMs? (1-300000), maxChars? }` — real code execution
+  against a session: `tools.<name>(args)` per page tool plus
+  `search(query)` (page-tool names only, substring, case-insensitive)
+  / `describe(name)` globals, with loops, branches, and
+  filters in code. Accident-contained worker (denied names shadowed,
+  runaways killed — worker kill fires unconditionally, but detached
+  spawns may survive it (see docs/run-accepted-risk.md);
+  25 invoke calls max (`RUN_MAX_TOOL_CALLS` — search/describe are free
+  of the count but size-capped like every bridge op; only the whole-run
+  timeout binds them, while invoke additionally carries the per-call ceiling) — not a security boundary, runs
+  with your privilege (known holes, same as your own shell:
+  constructor-escape, dynamic `import()`, forged completion — full
+  record: docs/run-accepted-risk.md;
+  caps bind cooperating code). Budgets below are literal today —
+  symbolic owners live in src/budgets.ts (retune there, update here).
+  Bridge traffic is capped both directions at 64k JSON
+  chars (`CHAR_BUDGET.max` — requests pre-dispatch, results pre-clone), each page call at up to 30s (`INVOKE_TIMEOUT_MS`,
+  less for short runs),
+  the final value at 8M (`RUN_MAX_DONE_CHARS`,
+  so the spill path keeps working under it) — fail-closed: over-budget
+  results throw a catchable chunk-the-read error into code; unserializable
+  values fail loud at the clone. Only the final value is shaped to
+  budget with spill. Chunk large reads.
+  Returns `{ value, spilled, toolCalls, origin,
+  untrusted: true }` (spilled is the spill path or null). Prefer this
+  over `execute` when the flow needs control flow; prefer harness
+  codemode over both when the harness has it.
 
 ## Untrusted data (read this before touching page output)
 
@@ -128,15 +156,17 @@ single `execute` carries the step.
 
 ## Which composition to use
 
-Where the harness runs code (pi codemode, opencode Code Mode, any JS
-sandbox), compose the seven tools directly: `search` to find, `describe`
-for exact arg shapes, `invoke`/`execute` to act, with loops, branches,
-and filters in code. That is the primary path — full control flow, one
-turn per block instead of per call.
+Three tiers, richest first — drop down only when the harness can't:
 
-Where the harness cannot run code, our `execute` is the fallback batch:
-fixed `calls[]`, no loops or branches inside, per-item `ok` flags so one
-miss never fails the batch. Same verbs, narrower composition.
+1. Harness codemode (pi codemode, opencode Code Mode, any JS sandbox):
+   compose the eight tools directly, with loops, branches, and filters
+   in code. Primary path — full control flow, one turn per block.
+2. Our `run`: same code-crafting shape (tools/search/describe globals,
+   accident-contained worker) for harnesses that can't run code but
+   speak MCP.
+   Prefer over `execute` whenever the flow needs control flow.
+3. Our `execute`: fixed `calls[]` batch, no loops or branches inside,
+   per-item `ok` flags so one miss never fails the batch. Narrowest.
 
 Either way the discovery loop is search → describe → invoke: `search`
 ranks names with compact signatures (never full schemas), `describe`
