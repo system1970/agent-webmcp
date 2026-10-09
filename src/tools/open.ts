@@ -33,6 +33,15 @@ const borrow = Effect.fn("open.borrow")(function* (url: string, cdp: string, tar
     const attached = (yield* sendBounded(conn, "Target.attachToTarget", { targetId: picked.targetId, flatten: true }, 10000)) as {
       sessionId: string
     }
+    // Borrowed means attached, not stranded: navigate the tab to the
+    // requested url (stated cost of borrowing — the tab is driven).
+    yield* sendBounded(conn, "Page.navigate", { url }, 10000, attached.sessionId).pipe(
+      Effect.mapError((err) =>
+        err.reason === "page"
+          ? new ToolFailed({ tool: "open", detail: `borrowed tab refused navigation: ${err.message}` })
+          : err
+      )
+    )
     const tools = yield* listPageTools(conn, 10000, attached.sessionId)
     const handle = `s_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`
     let origin: string
@@ -43,7 +52,7 @@ const borrow = Effect.fn("open.borrow")(function* (url: string, cdp: string, tar
     }
     yield* store.save({
       handle,
-      url: picked.url,
+      url,
       origin,
       httpEndpoint: cdp,
       targetId: picked.targetId,
@@ -51,7 +60,7 @@ const borrow = Effect.fn("open.borrow")(function* (url: string, cdp: string, tar
       pid: 0,
       createdAt: Date.now(),
     })
-    return { handle, url: picked.url, toolCount: tools.length } satisfies Opened
+    return { handle, url, toolCount: tools.length } satisfies Opened
   } finally {
     yield* conn.close
   }
