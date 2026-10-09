@@ -10,6 +10,7 @@
       "devDependencies": {
         "@effect/tsgo": "0.51.1",
         "@types/bun": "latest",
+        "devtools-protocol": "^0.0.1714151",
         "typescript": "7.0.2",
       },
     },
@@ -76,6 +77,8 @@
     "@typescript/typescript-win32-x64": ["@typescript/typescript-win32-x64@7.0.2", "", { "os": "win32", "cpu": "x64" }, "sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g=="],
 
     "bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
+
+    "devtools-protocol": ["devtools-protocol@0.0.1714151", "", {}, "sha512-Sc7ofWtfFJN+kdpd//FWosUoPZgk34/nqVjxujLFeN5fN9wgcnqbOpRZDnjljV0Ftr6m24OaXrsjzyxSfDoVFA=="],
 
     "effect": ["effect@4.0.2", "", {}, "sha512-YeYnLqSFrL4+tCOXRrfNP03w8FILoF/wDl+ukraJAGzXrjcS383W7LAAvGBbLatEyktmLxRq+9xJinx7QzXW5A=="],
 
