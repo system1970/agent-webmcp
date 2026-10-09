@@ -20,19 +20,23 @@ then the CLI mirror. Both doors below, in that order:
 
 ```bash
 agent-webmcp open --json <url>                  # prints {handle, toolCount, ...}
-agent-webmcp list <handle> [--json] [tool]      # rows, or full JSON / one schema
-agent-webmcp close <handle|--all>
-agent-webmcp register <handle> '<json-tool>' '<js-body>' [--timeout ms] [--json]  # author a custom tool
+agent-webmcp list <handle> [--json] [tool]      # rows on a TTY, JSON when piped
+agent-webmcp close <handle|--all> --yes         # deliberate: kills browsers
+agent-webmcp register <handle> '<json-tool>' '<js-body>' --yes [--timeout ms] [--json]  # author a custom tool
 agent-webmcp search [--json] [--handle H ...] [--all] [--limit N] <query...>
 agent-webmcp execute [--session H | --as ALIAS=H ...] [--timeout ms] [--max-chars N] [--json] '<code>'
 agent-webmcp mcp list [--json]                  # inspect the served surface
 agent-webmcp skill show                         # this document
 ```
 
-`--json` is the machine door: single-quote JSON args so the shell passes
-them whole (`'{"sku":"gadget","qty":1}'`; `execute` takes code:
-`'return await tools.priceOf({sku:"gadget"});'`). Without `--json`,
-output is human rows. Timeout ceilings are shared constants
+Piped output is JSON unless `--plain` forces rows; `--json` forces it
+everywhere. `--json` is the machine door: single-quote JSON args so the
+shell passes them whole (`'{"sku":"gadget","qty":1}'`; `execute` takes code:
+`'return await tools.priceOf({sku:"gadget"});'`). Exit codes are the
+retry policy: 0 ok, 2 usage (never retry as-is), 3 transient
+infrastructure (safe to retry unchanged: `transient error:` prefix),
+1 operational failure. Writes (`register`, `close`) need `--yes`.
+Timeout ceilings are shared constants
 (`INVOKE_TIMEOUT_MAX_MS` / `RUN_TIMEOUT_MAX_MS` in `src/budgets.ts`);
 CLI usage prints the numbers.
 

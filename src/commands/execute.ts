@@ -1,6 +1,6 @@
 import { Console, Effect } from "effect"
 import { execute as executeTool } from "../tools/execute.ts"
-import { UsageError, CliFailure } from "../failure.ts"
+import { UsageError, CliFailure, resolveJson } from "../failure.ts"
 import { RUN_TIMEOUT_MAX_MS } from "../budgets.ts"
 
 // execute [--session H | --as ALIAS=H ...] [--timeout ms 1-RUN_TIMEOUT_MAX_MS] [--max-chars N]
@@ -15,11 +15,14 @@ export const execute = (args: ReadonlyArray<string>) =>
     let timeoutMs: number | undefined
     let maxChars: number | undefined
     let json = false
+    let plain = false
     let code: string | undefined
     for (let i = 0; i < args.length; i++) {
       const arg = args[i]
       if (arg === "--json") {
         json = true
+      } else if (arg === "--plain") {
+        plain = true
       } else if (arg === "--session" || arg === "--handle") {
         session = args[++i]
         if (session === undefined) {
@@ -58,7 +61,7 @@ export const execute = (args: ReadonlyArray<string>) =>
           return yield* Effect.fail(new UsageError({ message: `execute: bad --max-chars '${raw ?? "(missing)"}': want positive integer` }))
         }
       } else if (arg.startsWith("-")) {
-        return yield* Effect.fail(new UsageError({ message: `execute: unknown flag '${arg}'. Usage: execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json] '<code>'` }))
+        return yield* Effect.fail(new UsageError({ message: `execute: unknown flag '${arg}'. Usage: execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json|--plain] '<code>'` }))
       } else if (code === undefined) {
         code = arg
       } else {
@@ -69,10 +72,10 @@ export const execute = (args: ReadonlyArray<string>) =>
       return yield* Effect.fail(new UsageError({ message: "execute: --session and --as exclude each other (one session or an alias map)." }))
     }
     if (session === undefined && aliases.length === 0) {
-      return yield* Effect.fail(new UsageError({ message: "execute: missing session. Usage: execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json] '<code>'" }))
+      return yield* Effect.fail(new UsageError({ message: "execute: missing session. Usage: execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json|--plain] '<code>'" }))
     }
     if (code === undefined) {
-      return yield* Effect.fail(new UsageError({ message: "execute: missing '<code>'. Usage: execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json] '<code>'" }))
+      return yield* Effect.fail(new UsageError({ message: "execute: missing '<code>'. Usage: execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json|--plain] '<code>'" }))
     }
     const sessions: Record<string, string> = {}
     for (const [alias, handle] of aliases) {
@@ -116,7 +119,7 @@ export const execute = (args: ReadonlyArray<string>) =>
       return yield* Effect.fail(new CliFailure({ message: "execute: engine returned JSON without the {value, spilled, toolCalls, perSession, origins, untrusted:true} envelope (contract broken)" }))
     }
     const report = parsed
-    if (json) {
+    if (resolveJson({ json, plain, isTTY: process.stdout.isTTY })) {
       yield* Console.log(JSON.stringify(parsed, null, 2))
       return yield* Effect.void
     }

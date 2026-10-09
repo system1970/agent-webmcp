@@ -1,22 +1,25 @@
 import { Console, Effect } from "effect"
 import { search as searchTool } from "../tools/search.ts"
-import { UsageError, CliFailure } from "../failure.ts"
+import { UsageError, CliFailure, resolveJson } from "../failure.ts"
 
-// search [--json] [--handle H ...] [--all] [--limit N] <query...>: thin argv
+// search [--json|--plain] [--handle H ...] [--all] [--limit N] <query...>: thin argv
 // shell over the search tool. --handle repeats for a working set, --all
-// sweeps every open session (dead ones land in `skipped`). Human rows
-// default, full JSON with --json.
+// sweeps every open session (dead ones land in `skipped`). Piped output
+// is JSON unless --plain forces rows.
 export const search = (args: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const handles: Array<string> = []
     let all = false
     let limit: number | undefined
     let json = false
+    let plain = false
     const words: Array<string> = []
     for (let i = 0; i < args.length; i++) {
       const arg = args[i]
       if (arg === "--json") {
         json = true
+      } else if (arg === "--plain") {
+        plain = true
       } else if (arg === "--all") {
         if (handles.length > 0) {
           return yield* Effect.fail(new UsageError({ message: "search: --all and --handle exclude each other." }))
@@ -38,13 +41,13 @@ export const search = (args: ReadonlyArray<string>) =>
           return yield* Effect.fail(new UsageError({ message: `search: bad --limit '${raw ?? "(missing)"}': want positive integer` }))
         }
       } else if (arg.startsWith("-")) {
-        return yield* Effect.fail(new UsageError({ message: `search: unknown flag '${arg}'. Usage: search [--json] [--handle H ...] [--all] [--limit N] <query...>` }))
+        return yield* Effect.fail(new UsageError({ message: `search: unknown flag '${arg}'. Usage: search [--json|--plain] [--handle H ...] [--all] [--limit N] <query...>` }))
       } else {
         words.push(arg)
       }
     }
     if (words.length === 0) {
-      return yield* Effect.fail(new UsageError({ message: "search: missing query. Usage: search [--json] [--handle H ...] [--all] [--limit N] <query...>" }))
+      return yield* Effect.fail(new UsageError({ message: "search: missing query. Usage: search [--json|--plain] [--handle H ...] [--all] [--limit N] <query...>" }))
     }
     const content = yield* searchTool.execute({
       query: words.join(" "),
@@ -61,7 +64,7 @@ export const search = (args: ReadonlyArray<string>) =>
     const parsed = yield* Effect.try(() => JSON.parse(content)).pipe(
       Effect.mapError(() => new CliFailure({ message: "search: engine returned non-JSON (contract broken)" }))
     )
-    if (json) {
+    if (resolveJson({ json, plain, isTTY: process.stdout.isTTY })) {
       yield* Console.log(JSON.stringify(parsed, null, 2))
       return yield* Effect.void
     }

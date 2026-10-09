@@ -1,5 +1,5 @@
 import { Console, Effect } from "effect"
-import { CliFailure, UsageError } from "./failure.ts"
+import { CliFailure, TransientFailure, UsageError } from "./failure.ts"
 import { doctor } from "./commands/doctor.ts"
 import { mcpList } from "./commands/mcp-list.ts"
 import { mcpServe } from "./commands/mcp-serve.ts"
@@ -21,7 +21,7 @@ interface Command {
   readonly name: string
   readonly description: string
   readonly usage: string
-  readonly run: (args: ReadonlyArray<string>) => Effect.Effect<void, UsageError | CliFailure | Error>
+  readonly run: (args: ReadonlyArray<string>) => Effect.Effect<void, UsageError | CliFailure | TransientFailure | Error>
 }
 
 const commands: ReadonlyArray<Command> = [
@@ -47,37 +47,37 @@ const commands: ReadonlyArray<Command> = [
   {
     name: "open",
     description: "Attach a page and record a session handle. Own browser by default; --cdp borrows (and navigates) a tab of a foreign browser.",
-    usage: "open [--cdp URL [--target SUB]] [--port N] [--json] <url>",
+    usage: "open [--cdp URL [--target SUB]] [--port N] [--json|--plain] <url>",
     run: open
   },
   {
     name: "list",
     description: "Show a session's page tools (stat-like rows; full schema on demand).",
-    usage: "list <handle> [tool] [--json]",
+    usage: "list <handle> [tool] [--json|--plain]",
     run: list
   },
   {
     name: "close",
-    description: "Release a session (kills browsers we launched, never foreign ones).",
-    usage: "close <handle|--all>",
+    description: "Release a session (kills browsers we launched, never foreign ones). Needs --yes.",
+    usage: "close <handle|--all> [--yes] [--json|--plain]",
     run: close
   },
   {
     name: "search",
     description: "Find tools by words (engine + session page tools with --handle/--all).",
-    usage: "search [--json] [--handle H ...] [--all] [--limit 1–50] <query...>",
+    usage: "search [--json|--plain] [--handle H ...] [--all] [--limit 1–50] <query...>",
     run: search
   },
   {
     name: "execute",
     description: "Run JS code against session page tools, one turn per flow (single --session, --handle aliases it; multi: repeat --as ALIAS=H). Accident-contained, runs with your privilege.",
-    usage: `execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json] '<code>'`,
+    usage: `execute [--session H | --as ALIAS=H ...] [--timeout ms 1-${RUN_TIMEOUT_MAX_MS}] [--max-chars N] [--json|--plain] '<code>'`,
     run: execute
   },
   {
     name: "register",
-    description: "Author a custom tool onto the session page (spec-shaped: name/title/description/schema/annotations + code body).",
-    usage: `register <handle> '<json-tool>' '<js-body>' [--timeout ms 1-${INVOKE_TIMEOUT_MAX_MS}] [--json]`,
+    description: "Author a custom tool onto the session page (spec-shaped: name/title/description/schema/annotations + code body). Needs --yes.",
+    usage: `register <handle> '<json-tool>' '<js-body>' [--timeout ms 1-${INVOKE_TIMEOUT_MAX_MS}] [--yes] [--json|--plain]`,
     run: register
   },
   {
@@ -97,7 +97,7 @@ const helpText = (version: string): string => [
   ``
 ].join("\n")
 
-export const dispatch = (argv: ReadonlyArray<string>): Effect.Effect<void, UsageError | CliFailure | Error> =>
+export const dispatch = (argv: ReadonlyArray<string>): Effect.Effect<void, UsageError | CliFailure | TransientFailure | Error> =>
   Effect.gen(function*() {
     const version = yield* getVersion
     const [name, ...rest] = argv

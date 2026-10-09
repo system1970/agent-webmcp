@@ -325,6 +325,16 @@ when the code moves. Only this region's agent writes this file.
   `tools-schemas-object`), and memory (G21 + L10).
   `src/tools/definition.ts:59`
 
+### Unit 14 — agent ergonomics (JSON default, exit taxonomy, write gate)
+
+- Piped output is JSON unless `--plain` (`resolveJson()` in
+  `src/failure.ts:50`); `--json` forces it everywhere. Exit codes are
+  the retry policy: 0/2/1 plus 3 transient (`TransientFailure` for
+  timeout/no-browser with a retry hint). Writes need `--yes`
+  (`register`, `close`; missing flag exits 2). `src/main.ts:1`
+- MCP door untouched (no flags there; harness permissions own it);
+  `doctor`/`mcp list`/`skill` untouched (out of scope).
+
 ### Unit 13 — strip to core (author + codemode + chain)
 
 - Surface is six verbs (`open list search register execute close`):
@@ -493,8 +503,8 @@ when the code moves. Only this region's agent writes this file.
 | `.vscode/settings.json` | `3e71e76558dd` | agent-webmcp |
 | `package.json` | `bafae48226b2` | agent-webmcp |
 | `tsconfig.json` | `3443c8284415` | agent-webmcp |
-| `src/main.ts` | `8a628cf70a0d` | agent-webmcp |
-| `src/cli.ts` | `0cba9cae43df` | agent-webmcp |
+| `src/main.ts` | `51ca9330c4e0` | agent-webmcp |
+| `src/cli.ts` | `ee2aab1bc1aa` | agent-webmcp |
 | `src/version.ts` | `1067c7fbdd05` | agent-webmcp |
 | `src/commands/doctor.ts` | `1ca98d076742` | agent-webmcp |
 | `src/commands/mcp-list.ts` | `dec84e5ad272` | agent-webmcp |
@@ -507,7 +517,7 @@ when the code moves. Only this region's agent writes this file.
 | `docs/sessions.md` | `7b52ca56e77f` | agent-webmcp |
 | `scripts/gen-versions.ts` | `4668259e7726` | agent-webmcp |
 | `scripts/review.ts` | `d8fc00a1288b` | agent-webmcp |
-| `skills/agent-webmcp/SKILL.md` | `7ea042c94c39` | agent-webmcp, pi |
+| `skills/agent-webmcp/SKILL.md` | `d6726ad30dd2` | agent-webmcp, pi |
 | `.github/workflows/check.yml` | `d838043029ae` | agent-webmcp |
 | `src/generated/versions.ts` | `2974e1898458` | agent-webmcp |
 | `docs/research/webmcp-codemode.md` | `19745e7b183f` | agent-webmcp |
@@ -518,15 +528,15 @@ when the code moves. Only this region's agent writes this file.
 | `src/transport/launch.ts` | `c0aaf9104547` | agent-webmcp |
 | `src/transport/transport.test.ts` | `c4151d10cb13` | agent-webmcp |
 | `scripts/eval-transport.ts` | `3282f5671797` | agent-webmcp |
-| `src/failure.ts` | `4ca144d8ce8e` | agent-webmcp |
-| `src/commands/open.ts` | `a2e7696dbea7` | agent-webmcp |
-| `src/commands/list.ts` | `284a296f02ac` | agent-webmcp |
-| `src/commands/close.ts` | `12eef95cdd70` | agent-webmcp |
+| `src/failure.ts` | `f15b82305cab` | agent-webmcp |
+| `src/commands/open.ts` | `fa32ce488e0f` | agent-webmcp |
+| `src/commands/list.ts` | `73bf423f5501` | agent-webmcp |
+| `src/commands/close.ts` | `cfa0b9234af9` | agent-webmcp |
 | `src/sessions/store.ts` | `a62c0fe0d4f3` | agent-webmcp |
 | `src/sessions/connect.ts` | `07af85055e7e` | agent-webmcp |
 | `src/sessions/store.test.ts` | `ffd6a1bc64e0` | agent-webmcp |
 | `src/transport/devtools.ts` | `d387cffadc5d` | agent-webmcp |
-| `scripts/eval-sessions.ts` | `9387c9e83b95` | agent-webmcp |
+| `scripts/eval-sessions.ts` | `e65cd53ac921` | agent-webmcp |
 | `src/tools/open.ts` | `36d436fbf6eb` | agent-webmcp |
 | `src/tools/list.ts` | `f423ae1f0dfd` | agent-webmcp |
 | `src/tools/close.ts` | `37248234a66b` | agent-webmcp |
@@ -535,8 +545,8 @@ when the code moves. Only this region's agent writes this file.
 | `src/budgets.ts` | `e921c3a3e6df` | agent-webmcp |
 | `src/md.d.ts` | `592511bb79fe` | agent-webmcp |
 | `scripts/eval-mcp.ts` | `90262c984215` | agent-webmcp |
-| `src/commands/search.ts` | `91e778fd29d0` | agent-webmcp |
-| `src/commands/execute.ts` | `38296b60ed71` | agent-webmcp |
+| `src/commands/search.ts` | `3afa3fc32c62` | agent-webmcp |
+| `src/commands/execute.ts` | `78bc97429c1e` | agent-webmcp |
 | `src/spill.ts` | `2a9dc7dfe6f3` | agent-webmcp |
 | `src/codemode/runner.ts` | `9f2b4978e1ff` | agent-webmcp |
 | `src/codemode/runner.test.ts` | `10ff9955523f` | agent-webmcp |
@@ -547,7 +557,7 @@ when the code moves. Only this region's agent writes this file.
 | `docs/review-learnings.md` | `430aead59a7b` | agent-webmcp |
 | `scripts/preflight.ts` | `5ca1c63636cf` | agent-webmcp |
 | `scripts/review-eval.ts` | `190eabb5786a` | agent-webmcp |
-| `scripts/review-eval.json` | `612dd43b4f04` | agent-webmcp |
+| `scripts/review-eval.json` | `fe568db6ce80` | agent-webmcp |
 | `scripts/review/git.ts` | `8c23538e6fd3` | agent-webmcp |
 | `scripts/review/brief.ts` | `05437060508b` | agent-webmcp |
 | `scripts/review/cache.ts` | `d6004758de1f` | agent-webmcp |
@@ -563,7 +573,7 @@ when the code moves. Only this region's agent writes this file.
 | `docs/users.md` | `1260c48cb460` | agent-webmcp |
 | `scripts/eval-xpage.ts` | `167b549cd14a` | agent-webmcp |
 | `src/tools/register.ts` | `7460ab498862` | agent-webmcp |
-| `src/commands/register.ts` | `9697cfbc9ccd` | agent-webmcp |
+| `src/commands/register.ts` | `7f86bc480351` | agent-webmcp |
 | `scripts/eval-lib.ts` | `088ce2de9a49` | agent-webmcp |
 | `docs/research/agentic-cli-vs-mcp.md` | `069538ff18e7` | agent-webmcp |
 | `LICENSE` | `6c253b662168` | agent-webmcp |

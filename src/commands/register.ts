@@ -1,9 +1,9 @@
 import { Console, Effect } from "effect"
 import { registerSessionTool } from "../sessions/verbs.ts"
-import { UsageError, asCliFailure } from "../failure.ts"
+import { UsageError, asCommandFailure, resolveJson } from "../failure.ts"
 import { INVOKE_TIMEOUT_MS, INVOKE_TIMEOUT_MAX_MS } from "../budgets.ts"
 
-// register <handle> '<json-tool>' '<js-body>' [--timeout ms 1-INVOKE_TIMEOUT_MAX_MS] [--json]: thin argv shell
+// register <handle> '<json-tool>' '<js-body>' [--timeout ms 1-INVOKE_TIMEOUT_MAX_MS] [--yes] [--json|--plain]: thin argv shell
 // over verbs.registerSessionTool; printing only here. The tool record
 // is data (name/title/description/schema/annotations); the body is a
 // function-expression source string.
@@ -14,10 +14,16 @@ export const register = (args: ReadonlyArray<string>) =>
     let code: string | undefined
     let timeoutMs = INVOKE_TIMEOUT_MS
     let json = false
+    let plain = false
+    let yes = false
     for (let i = 0; i < args.length; i++) {
       const arg = args[i]
       if (arg === "--json") {
         json = true
+      } else if (arg === "--plain") {
+        plain = true
+      } else if (arg === "--yes") {
+        yes = true
       } else if (arg === "--timeout") {
         const raw = args[++i]
         timeoutMs = Number(raw)
@@ -25,7 +31,7 @@ export const register = (args: ReadonlyArray<string>) =>
           return yield* Effect.fail(new UsageError({ message: `register: bad --timeout '${raw ?? "(missing)"}': want 1-${INVOKE_TIMEOUT_MAX_MS} ms` }))
         }
       } else if (arg.startsWith("-")) {
-        return yield* Effect.fail(new UsageError({ message: `register: unknown flag '${arg}'. Usage: register <handle> '<json-tool>' '<js-body>' [--timeout ms 1-${INVOKE_TIMEOUT_MAX_MS}] [--json]` }))
+        return yield* Effect.fail(new UsageError({ message: `register: unknown flag '${arg}'. Usage: register <handle> '<json-tool>' '<js-body>' [--timeout ms 1-${INVOKE_TIMEOUT_MAX_MS}] [--yes] [--json|--plain]` }))
       } else if (handle === undefined) {
         handle = arg
       } else if (rawTool === undefined) {
@@ -37,7 +43,10 @@ export const register = (args: ReadonlyArray<string>) =>
       }
     }
     if (handle === undefined || rawTool === undefined || code === undefined) {
-      return yield* Effect.fail(new UsageError({ message: `register: missing <handle>, '<json-tool>' or '<js-body>'. Usage: register <handle> '<json-tool>' '<js-body>' [--timeout ms 1-${INVOKE_TIMEOUT_MAX_MS}] [--json]` }))
+      return yield* Effect.fail(new UsageError({ message: `register: missing <handle>, '<json-tool>' or '<js-body>'. Usage: register <handle> '<json-tool>' '<js-body>' [--timeout ms 1-${INVOKE_TIMEOUT_MAX_MS}] [--yes] [--json|--plain]` }))
+    }
+    if (!yes) {
+      return yield* Effect.fail(new UsageError({ message: "register: needs --yes (writes to the session page): pass --yes to confirm." }))
     }
     let tool: unknown
     try {
@@ -65,12 +74,12 @@ export const register = (args: ReadonlyArray<string>) =>
         : {}),
       code
     }, timeoutMs)
-    if (json) {
+    if (resolveJson({ json, plain, isTTY: process.stdout.isTTY })) {
       yield* Console.log(JSON.stringify(result, null, 2))
       return yield* Effect.void
     }
     yield* Console.log(`registered ${result.tool} on ${handle} (origin: ${result.origin}, untrusted)`)
     return yield* Effect.void
   }).pipe(
-    Effect.catchTag("TransportFailed", (f) => Effect.fail(asCliFailure(f)))
+    Effect.catchTag("TransportFailed", (f) => Effect.fail(asCommandFailure(f)))
   )

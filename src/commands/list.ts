@@ -1,29 +1,32 @@
 import { Console, Effect } from "effect"
 import { listSessionTools } from "../sessions/verbs.ts"
-import { UsageError, CliFailure, asCliFailure } from "../failure.ts"
+import { UsageError, CliFailure, asCommandFailure, resolveJson } from "../failure.ts"
 
-// list <handle> [tool] [--json]: stat-like rows for the session's tools.
+// list <handle> [tool] [--json|--plain]: stat-like rows for the session's tools.
 // Thin argv shell over verbs.listSessionTools; printing only here.
 export const list = (args: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     let handle: string | undefined
     let tool: string | undefined
     let json = false
+    let plain = false
     for (const arg of args) {
       if (arg === "--json") {
         json = true
+      } else if (arg === "--plain") {
+        plain = true
       } else if (arg.startsWith("-")) {
-        return yield* Effect.fail(new UsageError({ message: `list: unknown flag '${arg}'. Usage: list <handle> [tool] [--json]` }))
+        return yield* Effect.fail(new UsageError({ message: `list: unknown flag '${arg}'. Usage: list <handle> [tool] [--json|--plain]` }))
       } else if (handle === undefined) {
         handle = arg
       } else if (tool === undefined) {
         tool = arg
       } else {
-        return yield* Effect.fail(new UsageError({ message: `list: unexpected argument '${arg}'. Usage: list <handle> [tool] [--json]` }))
+        return yield* Effect.fail(new UsageError({ message: `list: unexpected argument '${arg}'. Usage: list <handle> [tool] [--json|--plain]` }))
       }
     }
     if (handle === undefined) {
-      return yield* Effect.fail(new UsageError({ message: "list: missing <handle>. Usage: list <handle> [tool] [--json]" }))
+      return yield* Effect.fail(new UsageError({ message: "list: missing <handle>. Usage: list <handle> [tool] [--json|--plain]" }))
     }
     const h = handle
     const want = tool
@@ -45,7 +48,7 @@ export const list = (args: ReadonlyArray<string>) =>
       ))
       return yield* Effect.void
     }
-    if (json) {
+    if (resolveJson({ json, plain, isTTY: process.stdout.isTTY })) {
       yield* Console.log(JSON.stringify(
         { handle: h, url: catalog.url, untrusted: true, tools },
         null,
@@ -70,5 +73,5 @@ export const list = (args: ReadonlyArray<string>) =>
     }
     return yield* Effect.void
   }).pipe(
-    Effect.catchTag("TransportFailed", (f) => Effect.fail(asCliFailure(f)))
+    Effect.catchTag("TransportFailed", (f) => Effect.fail(asCommandFailure(f)))
   )

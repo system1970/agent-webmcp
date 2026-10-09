@@ -41,9 +41,15 @@ const main = Effect.fn("eval.main")(function* () {
   results.push(yield* check("open", opened.code === 0 && handle.startsWith("s_"), opened.out.slice(0, 80)))
   if (handle === "") return 1
 
-  // 2. list sees searchFlights through a fresh reattach.
+  // 2. list sees searchFlights through a fresh reattach (piped
+  // output defaults to JSON — this asserts the machine door).
   const listed = yield* cli("list", handle)
-  results.push(yield* check("list", listed.code === 0 && listed.out.includes("searchFlights"), listed.out.split("\n")[0] ?? ""))
+  let listOk = false
+  try {
+    const catalog = JSON.parse(listed.out) as { tools: Array<{ name: string }> }
+    listOk = listed.code === 0 && catalog.tools.some((t) => t.name === "searchFlights")
+  } catch {}
+  results.push(yield* check("list", listOk, listed.out.split("\n")[0] ?? ""))
 
   // 3. execute round-trips page data with the untrusted banner
   // (single calls ride code blocks — no one-per-turn verb).
@@ -51,9 +57,15 @@ const main = Effect.fn("eval.main")(function* () {
     "execute", "--session", handle,
     `return await tools.searchFlights({ origin: "SFO", destination: "JFK" });`
   )
+  let invokeOk = false
+  try {
+    const report = JSON.parse(invoked.out) as { value: string; toolCalls: number; untrusted: boolean }
+    invokeOk = invoked.code === 0 && typeof report.value === "string"
+      && report.toolCalls === 1 && report.untrusted === true
+  } catch {}
   results.push(yield* check(
     "execute-single",
-    invoked.code === 0 && invoked.out.includes("value:") && invoked.out.includes("untrusted"),
+    invokeOk,
     invoked.out.split("\n")[0] ?? ""
   ))
 
@@ -76,14 +88,16 @@ const main = Effect.fn("eval.main")(function* () {
     try {
       const plainHandle = (JSON.parse(openedPlain.out) as { handle: string }).handle
       const plainList = yield* cli("list", plainHandle)
-      plainOk = plainList.code === 0 && plainList.out.includes("publishes nothing")
-      yield* cli("close", plainHandle)
+      const catalog = JSON.parse(plainList.out) as { tools: Array<unknown> }
+      plainOk = plainList.code === 0 && Array.isArray(catalog.tools) && catalog.tools.length === 0
+      yield* cli("close", "--yes", plainHandle)
     } catch {}
   }
   results.push(yield* check("tool-less-empty", plainOk, openedPlain.out.slice(0, 80)))
 
   // 6. close drops the record; the handle is unknown afterwards.
-  const closed = yield* cli("close", handle)
+  // Mutations confirm deliberately (--yes).
+  const closed = yield* cli("close", "--yes", handle)
   const afterClose = yield* cli("list", handle)
   results.push(yield* check(
     "close",
@@ -95,8 +109,9 @@ const main = Effect.fn("eval.main")(function* () {
   const usage = yield* cli("open")
   results.push(yield* check("usage-2", usage.code === 2 && usage.out.includes("usage error"), usage.out.slice(0, 80)))
 
-  // 8. CLI search finds engine verbs (no browser needed): row shape.
-  const found = yield* cli("search", "session", "handle")
+  // 8. CLI search finds engine verbs (no browser needed): --plain
+  // covers the human rows explicitly.
+  const found = yield* cli("search", "--plain", "session", "handle")
   results.push(yield* check("cli-search", found.code === 0 && found.out.includes("open —"), found.out.split("\n")[0] ?? ""))
 
   // 9. CLI execute runs code against a session (needs a browser):
@@ -145,7 +160,7 @@ const main = Effect.fn("eval.main")(function* () {
         } catch {}
       }
     }
-    yield* cli("close", xHandle).pipe(
+    yield* cli("close", "--yes", xHandle).pipe(
       Effect.flatMap((closed) =>
         Effect.sync(() => {
           if (!closed.out.includes(xHandle)) {
@@ -173,7 +188,7 @@ const main = Effect.fn("eval.main")(function* () {
       let listedOk = false
       if (fHandle !== "") {
         listedOk = (yield* cli("list", fHandle)).out.includes("searchFlights")
-        yield* cli("close", fHandle)
+        yield* cli("close", "--yes", fHandle)
       }
       results.push(yield* check("foreign-target", fOpen.code === 0 && listedOk, fOpen.out.slice(0, 80)))
       // Foreign browser must still answer after our close.
