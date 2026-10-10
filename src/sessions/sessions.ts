@@ -4,11 +4,15 @@
 // browser is a transport failure on next verb, never a corrupt store.
 import { Context, Effect, Layer } from "effect"
 import { tmpdir } from "node:os"
-import { connect, discoverWs, listPageTools, sendBounded } from "../transport/client.ts"
+import { connect, discoverWs, evaluateJson, listPageTools, sendBounded } from "../transport/client.ts"
 import type { TransportFailed } from "../transport/errors.ts"
 import { launchChromium, type Launched } from "../transport/launch.ts"
 import { SessionStore, type SessionRecord } from "./store.ts"
 import { StoreFailed } from "./errors.ts"
+import { reapplyOrigin } from "../registry/reapply.ts"
+import { REGISTRY_ENV, resolveReadRoot } from "../registry/registry.ts"
+import { existsSync } from "node:fs"
+import { unregisterSnippet } from "../registry/snippet.ts"
 
 export const SESSION_ROOT = `${tmpdir()}/agent-webmcp-sessions`
 
@@ -56,7 +60,14 @@ export interface Opened {
   readonly handle: string
   readonly url: string
   readonly toolCount: number
+  readonly reapplied: ReadonlyArray<string>
+  readonly skipped: ReadonlyArray<{ readonly name: string; readonly reason: string }>
 }
+
+// Registry root for READS (re-apply): project-walk then global. Writes
+// resolve separately (register demands project-or-env).
+const readRoot = (): string | undefined =>
+  resolveReadRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
 
 export const openSession = Effect.fn("sessions.openSession")(function* (url: string) {
   const store = yield* SessionStore
@@ -77,6 +88,7 @@ export const openSession = Effect.fn("sessions.openSession")(function* (url: str
       }
       const tools = yield* listPageTools(conn, 10000, attached.sessionId)
       const handle = `s_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`
+      const reapplied = yield* reapplyOrigin({ conn, sessionId: attached.sessionId, origin: parsed.origin, root: readRoot(), timeoutMs: 10000 })
       yield* store.save({
         handle,
         url,
@@ -86,9 +98,12 @@ export const openSession = Effect.fn("sessions.openSession")(function* (url: str
         ownBrowser: true,
         pid: launched.pid,
         createdAt: Date.now(),
-        authored: [],
+        authored: [...reapplied.reapplied],
+        suspect: [],
       })
-      return { handle, url, toolCount: tools.length } satisfies Opened
+      // toolCount includes re-applied names (each presence-verified, no
+      // extra dial — the burst ran before they registered).
+      return { handle, url, toolCount: tools.length + reapplied.reapplied.length, reapplied: reapplied.reapplied, skipped: reapplied.skipped } satisfies Opened
     } finally {
       yield* conn.close
     }
@@ -100,6 +115,21 @@ export const openSession = Effect.fn("sessions.openSession")(function* (url: str
 export const closeSession = Effect.fn("sessions.closeSession")(function* (handle: string) {
   const store = yield* SessionStore
   const record = yield* store.load(handle)
+  // Borrowed tabs keep living: best-effort unregister of what we
+  // authored (polite cleanup, failures ignored). Owned browsers die —
+  // nothing lingers, no cleanup needed.
+  if (!record.ownBrowser && record.authored.length > 0) {
+    yield* Effect.gen(function* () {
+      const { conn, sessionId } = yield* reattach(record)
+      try {
+        for (const name of record.authored) {
+          yield* evaluateJson(conn, unregisterSnippet(name), 5000, sessionId).pipe(Effect.ignore)
+        }
+      } finally {
+        yield* conn.close
+      }
+    }).pipe(Effect.ignore)
+  }
   if (record.ownBrowser && (yield* isOurs(record.pid))) {
     try {
       process.kill(record.pid, "SIGKILL")

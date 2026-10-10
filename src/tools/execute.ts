@@ -2,11 +2,14 @@
 // sessions[] → namespaced by alias (`as`, else s1..sN). Budgets validated
 // pre-dial (ToolFailed), enforced during (runner). Envelope always carries
 // untrusted:true — page data is never instructions.
-import { Effect, Schema } from "effect"
+import { Effect, Ref, Result, Schema } from "effect"
+import { existsSync } from "node:fs"
 import { invokePageTool, listPageTools } from "../transport/client.ts"
 import { SessionStore } from "../sessions/store.ts"
 import { reattach } from "../sessions/sessions.ts"
 import { CallFailed, runCode, type CallFn } from "../codemode/runner.ts"
+import { loadTool, REGISTRY_ENV, resolveReadRoot } from "../registry/registry.ts"
+import { checkStrict, classifyCallFailure } from "./classify.ts"
 import {
   decodeArgs,
   toInputSchema,
@@ -81,6 +84,17 @@ export const execute: WebmcpTool = {
       const flat = refs.length === 1
       const calls: Record<string, CallFn> = {}
       const perAliasFrame = new Map<string, Map<string, string>>()
+      // Suspect collection: per-execute Ref, merged into records ONCE at
+      // the end (concurrent calls must never load/save-race the record).
+      const suspects = yield* Ref.make(new Map<string, Set<string>>())
+      const markSuspect = (handle: string, toolName: string): Effect.Effect<void> =>
+        Ref.update(suspects, (m) => {
+          const set = m.get(handle) ?? new Set<string>()
+          set.add(toolName)
+          m.set(handle, set)
+          return m
+        })
+      const root = resolveReadRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
       const attached: Array<{ alias: string; handle: string; close: Effect.Effect<void> }> = []
       try {
         for (const ref of refs) {
@@ -90,22 +104,76 @@ export const execute: WebmcpTool = {
           const tools = yield* listPageTools(conn, 10000, sessionId)
           const frames = new Map(tools.map((t) => [t.name, t.frameId]))
           perAliasFrame.set(ref.as, frames)
+          const liveNames = new Set(tools.map((t) => t.name))
+          // Strict specs for authored tools (best-effort file reads;
+          // missing file = no opinion, the call proceeds).
+          const strictSpecs = new Map<string, unknown>()
+          if (root !== undefined) {
+            for (const name of record.authored) {
+              const loaded = yield* loadTool(root, record.origin, name).pipe(Effect.orElseSucceed(() => null))
+              if (loaded !== null && loaded.spec.strict === true) strictSpecs.set(name, loaded.spec.inputSchema)
+            }
+          }
           for (const tool of tools) {
             const path = flat ? tool.name : `${ref.as}.${tool.name}`
+            const handle = ref.handle
             calls[path] = ((toolName: string, frameId: string) => (input: unknown) =>
               Effect.gen(function* () {
                 const args = (input ?? {}) as Record<string, unknown>
-                const out = yield* invokePageTool(conn, sessionId, { frameId, toolName, args }, timeoutMs).pipe(
-                  Effect.mapError((err) => new CallFailed({ message: `${toolName}: ${err.message.slice(0, 300)}` }))
+                const strictSchema = strictSpecs.get(toolName)
+                if (strictSchema !== undefined) {
+                  const unknownKeys = checkStrict(strictSchema, args)
+                  if (unknownKeys.length > 0) {
+                    return yield* new CallFailed({
+                      message: `${toolName}: [args-rejected] strict: unknown keys [${unknownKeys.join(", ")}] — rewrite against its schema.`,
+                    })
+                  }
+                }
+                const settled = yield* Effect.result(
+                  invokePageTool(conn, sessionId, { frameId, toolName, args }, timeoutMs)
                 )
+                if (!Result.isSuccess(settled)) {
+                  const failure = settled.failure
+                  const classified = classifyCallFailure({
+                    toolName,
+                    inCatalog: liveNames.has(toolName),
+                    reason: failure.reason,
+                    message: failure.message,
+                  })
+                  if (classified.code === "page-refused" || classified.code === "tool-vanished") {
+                    yield* markSuspect(handle, toolName)
+                  }
+                  return yield* new CallFailed({ message: `${toolName}: [${classified.code}] ${classified.guidance.slice(0, 300)}` })
+                }
+                const out = settled.success
                 if (out.status === "Error") {
-                  return yield* Effect.fail(new CallFailed({ message: `${toolName}: ${String(out.errorText ?? "page error").slice(0, 300)}` }))
+                  const classified = classifyCallFailure({
+                    toolName,
+                    inCatalog: liveNames.has(toolName),
+                    reason: "page",
+                    message: String(out.errorText ?? "page error"),
+                  })
+                  if (classified.code === "page-refused" || classified.code === "tool-vanished") {
+                    yield* markSuspect(handle, toolName)
+                  }
+                  return yield* new CallFailed({ message: `${toolName}: [${classified.code}] ${classified.guidance.slice(0, 300)}` })
                 }
                 return out.output ?? null
               }))(tool.name, tool.frameId)
           }
         }
         const result = yield* runCode({ code: input.code, calls, budgets: { timeoutMs, maxToolCalls, maxChars, maxResultChars } })
+        // Suspect merge: ONE load+save per handle (concurrent calls
+        // collected into the Ref above — never load/save-raced).
+        const marked = yield* Ref.get(suspects)
+        for (const ref of refs) {
+          const names = marked.get(ref.handle)
+          if (names !== undefined && names.size > 0) {
+            const record = yield* store.load(ref.handle)
+            const merged = [...new Set([...record.suspect, ...names])]
+            yield* store.save({ ...record, suspect: merged })
+          }
+        }
         const perSession: Record<string, number> = {}
         for (const [alias] of perAliasFrame) perSession[alias] = 0
         if (result.ok) {

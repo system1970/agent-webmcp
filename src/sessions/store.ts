@@ -16,6 +16,7 @@ export const SessionRecord = Schema.Struct({
   pid: Schema.Number,
   createdAt: Schema.Number,
   authored: Schema.Array(Schema.String),
+  suspect: Schema.Array(Schema.String),
 })
 export type SessionRecord = typeof SessionRecord.Type
 

@@ -6,6 +6,7 @@ import { Effect, Schema } from "effect"
 import { evaluateJson, listPageTools } from "../transport/client.ts"
 import { SessionStore } from "../sessions/store.ts"
 import { reattach } from "../sessions/sessions.ts"
+import { parseUnregisterReply, unregisterSnippet } from "../registry/snippet.ts"
 import { decodeArgs, toInputSchema, ToolFailed, type ToolCtx, type WebmcpTool } from "./definition.ts"
 
 const Input = Schema.Struct({
@@ -38,20 +39,10 @@ export const unregister: WebmcpTool = {
         // name on window.__agentWebmcp). A missing controller means the
         // page navigated (map wiped, tool already gone with it) — fail
         // loud naming that instead of pretending.
-        const removed = yield* evaluateJson(
-          conn,
-          `(async () => { const c = window.__agentWebmcp?.[${JSON.stringify(input.name)}]; if (!c) return JSON.stringify({ error: "no controller (page navigated or never registered here)" }); try { c.abort(); delete window.__agentWebmcp[${JSON.stringify(input.name)}]; return "ok"; } catch (e) { return JSON.stringify({ error: String((e && e.message) || e).slice(0, 200) }); } })()`,
-          10000,
-          sessionId
-        )
-        if (typeof removed === "string" && removed !== "ok") {
-          let refusal: string
-          try {
-            refusal = String((JSON.parse(removed) as { error?: unknown }).error ?? removed).slice(0, 200)
-          } catch {
-            refusal = removed.slice(0, 200)
-          }
-          return yield* Effect.fail(new ToolFailed({ tool: "unregister", detail: `page refused: ${refusal}` }))
+        const removed = yield* evaluateJson(conn, unregisterSnippet(input.name), 10000, sessionId)
+        const refusal = parseUnregisterReply(removed)
+        if (refusal !== null) {
+          return yield* Effect.fail(new ToolFailed({ tool: "unregister", detail: refusal }))
         }
         // Verify absence: the snippet swallows refusal by contract
         // (best-effort page call), so the catalog is the truth. A tool

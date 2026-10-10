@@ -12,10 +12,11 @@ import { SessionStore } from "../sessions/store.ts"
 import { reattach } from "../sessions/sessions.ts"
 import {
   REGISTRY_ENV,
-  resolveProjectRoot,
+  resolveWriteRoot,
   saveTool,
   type SavedSpec,
 } from "../registry/registry.ts"
+import { parseRegisterReply, registerSnippet, unregisterSnippet } from "../registry/snippet.ts"
 import {
   decodeArgs,
   INVOKE_TIMEOUT_MAX_MS,
@@ -76,50 +77,15 @@ export const register: WebmcpTool = {
           inputSchema: input.tool.inputSchema,
           ...(input.tool.annotations !== undefined ? { annotations: input.tool.annotations } : {}),
         })
-        const snippet =
-          "(async () => {" +
-          " const execute = (" +
-          input.code +
-          ");" +
-          " if (typeof execute !== 'function') return JSON.stringify({ error: 'code is not a function expression' });" +
-          " const def = " +
-          def +
-          "; def.execute = execute;" +
-          // AbortSignal lifecycle (unregisterTool does not exist in
-          // Chromium ≥150 — removal is controller.abort()). One
-          // controller per name; re-register aborts the old first so
-          // overwrites are idempotent instead of duplicate refusals.
-          " window.__agentWebmcp = window.__agentWebmcp ?? {};" +
-          " try { window.__agentWebmcp[" +
-          JSON.stringify(input.tool.name) +
-          "]?.abort(); } catch {}" +
-          " const controller = new AbortController();" +
-          " window.__agentWebmcp[" +
-          JSON.stringify(input.tool.name) +
-          "] = controller;" +
-          " try { await document.modelContext.registerTool(def, { signal: controller.signal }); }" +
-          " catch (e) { return JSON.stringify({ error: String((e && e.message) || e).slice(0, 300) }); }" +
-          " return JSON.stringify({ registered: def.name });" +
-          "})()"
+        const snippet = registerSnippet(
+          input.tool.name,
+          def,
+          input.code
+        )
         const value = yield* evaluateJson(conn, snippet, timeoutMs, sessionId)
-        if (typeof value !== "string") {
-          return yield* Effect.fail(new ToolFailed({ tool: "register", detail: "page returned non-JSON (contract broken)." }))
-        }
-        const parsed: unknown = yield* Effect.try({
-          try: () => JSON.parse(value) as unknown,
-          catch: () => new ToolFailed({ tool: "register", detail: "page returned non-JSON (contract broken)." }),
-        })
-        if (
-          typeof parsed !== "object" ||
-          parsed === null ||
-          !("registered" in parsed || "error" in parsed) ||
-          (parsed as { registered?: unknown }).registered !== input.tool.name
-        ) {
-          const refusal =
-            typeof parsed === "object" && parsed !== null && "error" in parsed
-              ? String((parsed as { error: unknown }).error).slice(0, 200)
-              : "unexpected shape"
-          return yield* Effect.fail(new ToolFailed({ tool: "register", detail: `page refused: ${refusal}` }))
+        const refusal = parseRegisterReply(value, input.tool.name)
+        if (refusal !== null) {
+          return yield* Effect.fail(new ToolFailed({ tool: "register", detail: refusal }))
         }
         // Fixture proof (non-consequential only): registration succeeding
         // proves nothing — one invoke proves. Frame comes from a fresh
@@ -145,27 +111,21 @@ export const register: WebmcpTool = {
             const why = !Result.isSuccess(proof)
               ? String(proof.failure).slice(0, 200)
               : String(proof.success.errorText ?? "page error").slice(0, 200)
-            yield* evaluateJson(
-              conn,
-              `(async () => { try { await document.modelContext.unregisterTool(${JSON.stringify(input.tool.name)}); } catch {} return "ok"; })()`,
-              5000,
-              sessionId
-            ).pipe(Effect.ignore)
+            yield* evaluateJson(conn, unregisterSnippet(input.tool.name), 5000, sessionId).pipe(Effect.ignore)
             return yield* Effect.fail(
               new ToolFailed({ tool: "register", detail: `fixture failed (${why}) — tool rolled back, nothing persisted.` })
             )
           }
         }
         // Persist ALWAYS (no flag): files are the library.
-        const writeRoot = resolveProjectRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
-        if (writeRoot === undefined) {
-          return yield* Effect.fail(
+        const writeRoot = yield* resolveWriteRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`)).pipe(
+          Effect.mapError((err) =>
             new ToolFailed({
               tool: "register",
-              detail: `live tool registered, but no project root found — set ${REGISTRY_ENV} to persist it (nothing saved).`,
+              detail: `live tool registered, but ${err.message} — set ${REGISTRY_ENV} to persist it (nothing saved).`,
             })
           )
-        }
+        )
         const savedSpec: SavedSpec = {
           name: input.tool.name,
           description: input.tool.description,

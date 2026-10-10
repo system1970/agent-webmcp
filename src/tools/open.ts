@@ -2,9 +2,12 @@
 // (launched, killed by close); cdp borrows a tab of a foreign browser
 // (navigates it — stated cost) and never kills it.
 import { Effect, Schema } from "effect"
+import { existsSync } from "node:fs"
 import { connect, discoverWs, listPageTools, sendBounded } from "../transport/client.ts"
 import { Browser, openSession, type Opened } from "../sessions/sessions.ts"
 import { SessionStore } from "../sessions/store.ts"
+import { reapplyOrigin } from "../registry/reapply.ts"
+import { REGISTRY_ENV, resolveReadRoot } from "../registry/registry.ts"
 import { decodeArgs, toInputSchema, ToolFailed, type ToolCtx, type WebmcpTool } from "./definition.ts"
 
 const Input = Schema.Struct({
@@ -50,6 +53,8 @@ const borrow = Effect.fn("open.borrow")(function* (url: string, cdp: string, tar
     } catch {
       origin = "null"
     }
+    const root = resolveReadRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
+    const reapplied = yield* reapplyOrigin({ conn, sessionId: attached.sessionId, origin, root, timeoutMs: 10000 })
     yield* store.save({
       handle,
       url,
@@ -59,9 +64,10 @@ const borrow = Effect.fn("open.borrow")(function* (url: string, cdp: string, tar
       ownBrowser: false,
       pid: 0,
       createdAt: Date.now(),
-      authored: [],
+      authored: [...reapplied.reapplied],
+      suspect: [],
     })
-    return { handle, url, toolCount: tools.length } satisfies Opened
+    return { handle, url, toolCount: tools.length + reapplied.reapplied.length, reapplied: reapplied.reapplied, skipped: reapplied.skipped } satisfies Opened
   } finally {
     yield* conn.close
   }

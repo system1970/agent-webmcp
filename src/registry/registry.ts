@@ -199,6 +199,38 @@ export const listOriginTools = (root: string, origin: string): Effect.Effect<Rea
     })
   })
 
+// Root resolution, read vs write (spec §1): READS roam (project then
+// global); WRITES require project-or-env (fail loud — never silently
+// leak one project's tools into another's).
+export const resolveReadRoot = (
+  startDir: string,
+  env: string | undefined,
+  exists: (dir: string) => boolean,
+  platform: string = process.platform
+): string | undefined => resolveProjectRoot(startDir, env, exists) ?? userGlobalRoot(platform)
+
+export const resolveWriteRoot = (
+  startDir: string,
+  env: string | undefined,
+  exists: (dir: string) => boolean
+): Effect.Effect<string, RegistryFailed> => {
+  const found = resolveProjectRoot(startDir, env, exists)
+  if (found !== undefined) return Effect.succeed(found)
+  return Effect.fail(
+    new RegistryFailed({
+      reason: "no-root",
+      message: "no project registry found (no .agent-webmcp/ upward, no AGENT_WEBMCP_REGISTRY)",
+      fix: `set ${REGISTRY_ENV} to persist tools, or create .agent-webmcp/ in the project.`,
+    })
+  )
+}
+
+export const markVerified = (root: string, origin: string, name: string): Effect.Effect<void, RegistryFailed> =>
+  Effect.gen(function* () {
+    const { spec, body } = yield* loadTool(root, origin, name)
+    yield* saveTool(root, origin, name, { ...spec, lastVerified: Date.now() }, body)
+  })
+
 export const removeToolDir = (root: string, origin: string, name: string): Effect.Effect<void, RegistryFailed> =>
   Effect.gen(function* () {
     const dir = `${root}/${slugOf(origin)}/${name}`

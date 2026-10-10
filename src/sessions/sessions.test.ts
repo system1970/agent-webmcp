@@ -38,6 +38,8 @@ const serveFake = () => {
           )
         } else if (msg.method === "Target.createTarget") {
           ws.send(JSON.stringify({ id: msg.id, result: { targetId: "tgt-1" } }))
+        } else if (msg.method === "Runtime.evaluate") {
+          ws.send(JSON.stringify({ id: msg.id, result: { result: { type: "string", value: '"ok"' } } }))
         } else if (msg.method === "Target.attachToTarget") {
           ws.send(JSON.stringify({ id: msg.id, result: { sessionId: "sesh-1" } }))
         } else {
@@ -83,6 +85,7 @@ describe("sessions", () => {
         pid: 1,
         createdAt: 0,
         authored: [],
+        suspect: [],
       })
       const loaded = yield* store.load("s_abc")
       const listed = yield* store.list()
@@ -110,6 +113,7 @@ describe("sessions", () => {
         pid: 0,
         createdAt: 0,
         authored: [],
+        suspect: [],
       })
       return yield* store.load("s_m")
     })
@@ -136,6 +140,35 @@ describe("sessions", () => {
     }
   })
 
+  test("close on borrowed session best-effort unregisters authored, then removes", async () => {
+    const fake = serveFake()
+    try {
+      const store = SessionStore.Memory()
+      const program = Effect.gen(function* () {
+        const s = yield* SessionStore
+        yield* s.save({
+          handle: "s_b",
+          url: "https://x.test",
+          origin: "https://x.test",
+          httpEndpoint: fake.http,
+          targetId: "tgt-1",
+          ownBrowser: false,
+          pid: 0,
+          createdAt: 0,
+          authored: ["mine"],
+          suspect: [],
+        })
+        const closed = yield* closeSession("s_b")
+        const missing = yield* Effect.flip(s.load("s_b"))
+        return { closed, missing }
+      })
+      const out = await Effect.runPromise(Effect.provide(program, store))
+      expect(out.closed).toEqual({ closed: "s_b" })
+      expect(out.missing.reason).toBe("missing")
+    } finally {
+      fake.stop()
+    }
+  })
   test("bad url fails before any launch", async () => {
     const store = SessionStore.Memory()
     const browser = fakeBrowser("http://127.0.0.1:1")
