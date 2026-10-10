@@ -6,7 +6,7 @@ import { Context, Effect, Layer } from "effect"
 import { tmpdir } from "node:os"
 import { connect, discoverWs, evaluateJson, listPageTools, sendBounded } from "../transport/client.ts"
 import type { TransportFailed } from "../transport/errors.ts"
-import { launchChromium, type Launched } from "../transport/launch.ts"
+import { launchChromium, shutdown, type Launched } from "../transport/launch.ts"
 import { SessionStore, type SessionRecord } from "./store.ts"
 import { StoreFailed } from "./errors.ts"
 import { reapplyOrigin } from "../registry/reapply.ts"
@@ -101,6 +101,7 @@ export const openSession = Effect.fn("sessions.openSession")(function* (url: str
         createdAt: Date.now(),
         authored: [...reapplied.reapplied],
         suspect: [],
+        profileDir: launched.profileDir,
       })
       // toolCount includes re-applied names (each presence-verified, no
       // extra dial — the burst ran before they registered).
@@ -132,15 +133,26 @@ export const closeSession = Effect.fn("sessions.closeSession")(function* (handle
     }).pipe(Effect.ignore)
   }
   if (record.ownBrowser && (yield* isOurs(record.pid))) {
-    try {
-      process.kill(record.pid, "SIGKILL")
-    } catch {
-      // Dead already — removal below still happens.
-    }
+    // Graceful (TERM→wait→KILL) + profile removal: a SIGKILL'd profile
+    // offers "Restore pages?" on next launch — and CLI close runs in a
+    // different process than launch, so removal MUST live here, not in
+    // the in-process Launched.close.
+    const dir = record.profileDir ?? `${tmpdir()}/agent-webmcp-chrome-${portOf(record.httpEndpoint)}`
+    yield* shutdown(record.pid, dir)
   }
   yield* store.remove(handle)
   return { closed: handle } as const
 })
+
+const portOf = (httpEndpoint: string): number => {
+  try {
+    const port = new URL(httpEndpoint).port
+    const n = Number(port)
+    return Number.isInteger(n) ? n : 0
+  } catch {
+    return 0
+  }
+}
 
 // Reattach: dial a recorded session's browser and attach its target.
 // Every verb that touches a live page starts here.

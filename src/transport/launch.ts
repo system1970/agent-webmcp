@@ -8,6 +8,10 @@ import { TransportFailed } from "./errors.ts"
 
 export const CHROMIUM_FLOOR = 152
 const WEBMCP_FLAGS = "--enable-features=WebMCPTesting,DevToolsWebMCPSupport"
+// Never show the crash bubble for automation-owned profiles (clean
+// shutdown below is the real fix; this is backup for kills from outside,
+// e.g. OOM or a stray pkill — throwaway profiles have nothing to restore).
+const QUIET_FLAGS = ["--disable-session-crashed-bubble", "--disable-infobars"]
 // Deterministic viewport in both modes (a WM-decided viewport once hid
 // an entire chat UI at 621px — responsive layout must never be ambient).
 const VIEWPORT_FLAGS = ["--window-size=1400,950", "--force-device-scale-factor=1"]
@@ -18,6 +22,7 @@ export interface Launched {
   readonly httpEndpoint: string
   readonly pid: number
   readonly port: number
+  readonly profileDir: string
   readonly close: Effect.Effect<void>
 }
 
@@ -59,6 +64,7 @@ export const buildArgs = (options: {
   "--no-default-browser-check",
   ...(options.headed ? ["--ozone-platform-hint=auto"] : []),
   WEBMCP_FLAGS,
+  ...QUIET_FLAGS,
   ...VIEWPORT_FLAGS,
   "about:blank",
 ]
@@ -110,6 +116,11 @@ export const launchChromium = Effect.fn("transport.launchChromium")(function* (
         } catch {
           // Already gone — the timeout is the news, not the kill.
         }
+        try {
+          rmSync(userDataDir, { recursive: true, force: true })
+        } catch {
+          // Timeout path must not leave a dirty profile behind either.
+        }
       }).pipe(Effect.andThen(onTimeout))
     )
   )
@@ -117,20 +128,52 @@ export const launchChromium = Effect.fn("transport.launchChromium")(function* (
     httpEndpoint,
     pid: proc.pid,
     port,
-    close: Effect.sync(() => {
-      try {
-        proc.kill()
-      } catch {
-        // Best-effort: a dead browser needs no killing.
-      }
-      try {
-        rmSync(userDataDir, { recursive: true, force: true })
-      } catch {
-        // Best-effort: temp dirs die with /tmp anyway.
-      }
-    }),
+    profileDir: userDataDir,
+    close: shutdown(proc.pid, userDataDir),
   } satisfies Launched
 })
+
+// Graceful shutdown: SIGTERM lets Chromium write clean profile state
+// (a SIGKILL'd profile offers "Restore pages?" on next launch — the
+// exact dialog users reported). Escalate to SIGKILL past 3s, then
+// remove the profile dir on every path. Close never fails.
+export const shutdown = (pid: number, profileDir: string): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    try {
+      process.kill(pid)
+    } catch {
+      // Already dead — removal below still happens.
+    }
+    const gone = yield* Effect.promise(() => waitGone(pid, 3000))
+    if (!gone) {
+      try {
+        process.kill(pid, "SIGKILL")
+      } catch {
+        // Died between check and signal — fine.
+      }
+    }
+    try {
+      rmSync(profileDir, { recursive: true, force: true })
+    } catch {
+      // Best-effort: temp dirs die with the OS temp anyway.
+    }
+  }).pipe(Effect.orElseSucceed(() => undefined))
+
+const waitGone = (pid: number, budgetMs: number): Promise<boolean> =>
+  new Promise((resolve) => {
+    const start = Date.now()
+    const tick = (): void => {
+      try {
+        process.kill(pid, 0)
+      } catch {
+        resolve(true)
+        return
+      }
+      if (Date.now() - start >= budgetMs) resolve(false)
+      else setTimeout(tick, 100)
+    }
+    tick()
+  })
 
 const pollVersion = async (httpEndpoint: string): Promise<void> => {
   for (;;) {

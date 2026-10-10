@@ -151,5 +151,16 @@ describe("transport", () => {
     expect(headed).toContain("--ozone-platform-hint=auto")
     expect(headed).toContain("--window-size=1400,950")
     expect(headed).toContain("--enable-features=WebMCPTesting,DevToolsWebMCPSupport")
+    expect(headed).toContain("--disable-session-crashed-bubble")
+  })
+
+  test("shutdown: TERM-sufficient dies clean, TERM-ignorer escalates", async () => {
+    const { shutdown } = await import("./launch.ts")
+    const quick = Bun.spawn(["sleep", "60"], { stdout: "ignore", stderr: "ignore" })
+    await Effect.runPromise(shutdown(quick.pid, "/tmp/agent-webmcp-shutdown-test-quick"))
+    expect(() => process.kill(quick.pid, 0)).toThrow()
+    const stubborn = Bun.spawn(["sh", "-c", "trap '' TERM; sleep 60"], { stdout: "ignore", stderr: "ignore" })
+    await Effect.runPromise(shutdown(stubborn.pid, "/tmp/agent-webmcp-shutdown-test-stubborn"))
+    expect(() => process.kill(stubborn.pid, 0)).toThrow()
   })
 })

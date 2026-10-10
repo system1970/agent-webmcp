@@ -68,7 +68,7 @@ const withLayers = <A, E>(effect: Effect.Effect<A, E, SessionStore | Browser>, s
 
 const fakeBrowser = (http: string): Layer.Layer<Browser> =>
   Layer.succeed(Browser, {
-    launch: (port: number) => Effect.succeed({ httpEndpoint: http, pid: 0, port, close: Effect.void }),
+    launch: (port: number) => Effect.succeed({ httpEndpoint: http, pid: 0, port, profileDir: "", close: Effect.void }),
   })
 
 describe("sessions", () => {

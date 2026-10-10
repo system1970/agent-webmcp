@@ -17,6 +17,10 @@ export const SessionRecord = Schema.Struct({
   createdAt: Schema.Number,
   authored: Schema.Array(Schema.String),
   suspect: Schema.Array(Schema.String),
+  // Owned-browser profile dir (removed on close — a dirty left-behind
+  // profile offers "Restore pages?" next launch). Optional: pre-field
+  // records predate it; close derives from the port then.
+  profileDir: Schema.optional(Schema.String),
 })
 export type SessionRecord = typeof SessionRecord.Type
 
