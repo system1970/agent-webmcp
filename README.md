@@ -45,19 +45,14 @@ Authored tools persist under `.agent-webmcp/registry/` — commit them.
 { "mcp": { "agent-webmcp": { "command": ["agent-webmcp", "mcp", "serve"] } } }
 ```
 
-Two opencode gotchas, both verified live (get them wrong and calls
-fail mysteriously):
-
-- Per-server env key is **`environment`**, not `env` — unknown keys
-  inside `mcp.*` are **silently dropped** (no error, server reports
-  healthy). Point the registry explicitly so every spawned proxy
-  resolves identically regardless of its cwd:
-  `"environment": { "AGENT_WEBMCP_REGISTRY": "<project>/.agent-webmcp/registry" }`.
-- Default `codemode: true` routes calls through per-call sandbox
-  proxies (fresh process per call, varying cwd). Either pin the root
-  via `environment` above (recommended — also makes tools direct and
-  debuggable), or set `"codemode": false` to expose the 7 tools
-  directly with one stable server process.
+Authored tools persist to a registry on disk (`<root>/<origin>/<name>/`
+with `spec.json` + `body.js` — commit them). Root resolves: `--registry`
+flag, `AGENT_WEBMCP_REGISTRY` env, project `.agent-webmcp/` by walk-up,
+else the user-global home (`~/.local/share/agent-webmcp/registry` on
+Linux). Configure one of the explicit two in your harness's MCP server
+entry so every spawned server resolves identically — some harnesses
+spawn per-call servers with varying working directories, and explicit
+root is immune to that.
 
 Then read `skills/agent-webmcp/SKILL.md` (or `skill show` for the
 version-matched copy). Composition (`search`, `execute`) lives on MCP;
