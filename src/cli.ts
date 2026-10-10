@@ -61,7 +61,7 @@ export const needYes = (args: CliArgs, command: string): UsageError | null =>
 export const USAGE = `agent-webmcp [--version | --help] <command> [args]
 
   doctor [--json]              environment report
-  mcp (list [--json] | serve)  inspect the surface / serve over stdio
+  mcp (list [--json] | serve [--registry DIR])  inspect / serve over stdio
   open [--cdp URL] [--port N] [--json|--plain] <url>
   list <handle> [tool] [--json|--plain]
   close <handle|--all> --yes [--json|--plain]

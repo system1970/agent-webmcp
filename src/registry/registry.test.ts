@@ -9,6 +9,7 @@ import {
   listOriginTools,
   loadTool,
   resolveProjectRoot,
+  resolveRoot,
   saveTool,
   slugOf,
   userGlobalRoot,
@@ -18,12 +19,32 @@ import {
 const fails = <A, E>(effect: Effect.Effect<A, E, never>): Promise<E> => Effect.runPromise(Effect.flip(effect))
 
 describe("registry", () => {
-  test("resolution order: env > walk-up > undefined", () => {
+  test("resolution order: flag-override > env > walk-up > undefined", () => {
     const exists = (d: string): boolean => d === "/proj/.agent-webmcp"
     expect(resolveProjectRoot("/proj/sub", "/env-root", exists)).toBe("/env-root")
     expect(resolveProjectRoot("/proj/sub", undefined, exists)).toBe("/proj/.agent-webmcp/registry")
     expect(resolveProjectRoot("/nowhere/deep", undefined, () => false)).toBeUndefined()
     expect(resolveProjectRoot("/proj/sub", "", exists)).toBe("/proj/.agent-webmcp/registry")
+  })
+
+  test("startup override wins over everything (per-call proxy harnesses)", async () => {
+    const { setRegistryRoot, clearRegistryRoot, registryOverrideRoot } = await import("./registry.ts")
+    expect(registryOverrideRoot()).toBeUndefined()
+    setRegistryRoot("/fixed/root")
+    try {
+      const exists = (): boolean => false
+      expect(resolveProjectRoot("/nowhere", "/env-root", exists)).toBe("/fixed/root")
+      expect(resolveRoot("/nowhere", undefined, exists, "linux")).toBe("/fixed/root")
+    } finally {
+      clearRegistryRoot()
+    }
+    expect(registryOverrideRoot()).toBeUndefined()
+  })
+
+  test("always resolves: global home is the default", () => {
+    const exists = (): boolean => false
+    expect(resolveRoot("/nowhere/deep", undefined, exists, "linux")).toBe(userGlobalRoot("linux"))
+    expect(resolveRoot("/proj", "", exists, "linux")).toBe(userGlobalRoot("linux"))
   })
 
   test("user-global fallback differs per OS (pure)", () => {

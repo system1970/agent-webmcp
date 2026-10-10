@@ -6,7 +6,7 @@ import { Effect, Schema } from "effect"
 import { listPageTools } from "../transport/client.ts"
 import { SessionStore } from "../sessions/store.ts"
 import { reattach } from "../sessions/sessions.ts"
-import { loadTool, REGISTRY_ENV, resolveReadRoot } from "../registry/registry.ts"
+import { loadTool, REGISTRY_ENV, resolveRoot } from "../registry/registry.ts"
 import { existsSync } from "node:fs"
 import { decodeArgs, toInputSchema, type ToolCtx, type WebmcpTool } from "./definition.ts"
 
@@ -27,7 +27,7 @@ export const list: WebmcpTool = {
       const { conn, sessionId } = yield* reattach(record)
       try {
         const tools = yield* listPageTools(conn, 10000, sessionId)
-        const root = resolveReadRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
+        const root = resolveRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
         const mark = (name: string): { authored?: true; lastVerified?: number; staleSuspect?: true } => {
           if (!record.authored.includes(name)) return {}
           const out: { authored: true; lastVerified?: number; staleSuspect?: true } = { authored: true }

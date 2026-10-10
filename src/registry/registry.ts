@@ -10,7 +10,6 @@ import { tmpdir } from "node:os"
 import { isAbsolute, normalize, relative, sep } from "node:path"
 
 export type RegistryReason =
-  | "no-root"
   | "outside-root"
   | "symlink"
   | "origin-mismatch"
@@ -27,6 +26,24 @@ export class RegistryFailed extends Data.TaggedError("RegistryFailed")<{
 export const REGISTRY_ENV = "AGENT_WEBMCP_REGISTRY" as const
 export const REGISTRY_DIR = ".agent-webmcp/registry" as const
 
+// Startup registry-root override: install-time configuration, read
+// before walk-up by every resolver. Set ONCE at startup (serve/CLI
+// entry) — never mutated after. Exists because server cwd is NOT a
+// stable signal: harnesses spawn per-call proxies with varying cwds,
+// so cwd-based resolution alone is nondeterministic (observed live:
+// three proxies, three cwds, four seconds). Flag > env > walk-up.
+let registryOverride: string | undefined = undefined
+
+export const setRegistryRoot = (root: string): void => {
+  registryOverride = root
+}
+
+export const clearRegistryRoot = (): void => {
+  registryOverride = undefined
+}
+
+export const registryOverrideRoot = (): string | undefined => registryOverride
+
 export const userGlobalRoot = (platform: string = process.platform): string => {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? tmpdir()
   if (platform === "darwin") return `${home}/Library/Application Support/agent-webmcp/registry`
@@ -34,14 +51,19 @@ export const userGlobalRoot = (platform: string = process.platform): string => {
   return `${home}/.local/share/agent-webmcp/registry`
 }
 
-// Pure resolution: env wins, else nearest ancestor holding
-// `.agent-webmcp/`, else undefined (caller decides read-fallback vs
-// write-failure). `exists` is injected so unit tests never touch fs.
+// Root resolution, simplest thing that works: flag > env > project
+// walk-up (opt-in per-project tools) > user-global home (the default).
+// Tools are GLOBAL, keyed per-origin — a tool authored for a site is
+// useful in every project. Always resolves; the only failure left is
+// a misconfigured explicit path. No cwd dependence by default, so
+// per-call proxy harnesses all resolve identically.
 export const resolveProjectRoot = (
   startDir: string,
   env: string | undefined,
   exists: (dir: string) => boolean
 ): string | undefined => {
+  const override = registryOverrideRoot()
+  if (override !== undefined && override !== "") return override
   if (env !== undefined && env !== "") return env
   let dir = startDir
   for (;;) {
@@ -199,31 +221,16 @@ export const listOriginTools = (root: string, origin: string): Effect.Effect<Rea
     })
   })
 
-// Root resolution, read vs write (spec §1): READS roam (project then
-// global); WRITES require project-or-env (fail loud — never silently
-// leak one project's tools into another's).
-export const resolveReadRoot = (
+// Root resolution (single entry): flag/env override > project walk-up
+// (opt-in per-project tools) > user-global home (the default — tools
+// are global, keyed per-origin). Always resolves; nothing depends on
+// server cwd stability.
+export const resolveRoot = (
   startDir: string,
   env: string | undefined,
   exists: (dir: string) => boolean,
   platform: string = process.platform
-): string | undefined => resolveProjectRoot(startDir, env, exists) ?? userGlobalRoot(platform)
-
-export const resolveWriteRoot = (
-  startDir: string,
-  env: string | undefined,
-  exists: (dir: string) => boolean
-): Effect.Effect<string, RegistryFailed> => {
-  const found = resolveProjectRoot(startDir, env, exists)
-  if (found !== undefined) return Effect.succeed(found)
-  return Effect.fail(
-    new RegistryFailed({
-      reason: "no-root",
-      message: "no project registry found (no .agent-webmcp/ upward, no AGENT_WEBMCP_REGISTRY)",
-      fix: `set ${REGISTRY_ENV} to persist tools, or create .agent-webmcp/ in the project.`,
-    })
-  )
-}
+): string => resolveProjectRoot(startDir, env, exists) ?? userGlobalRoot(platform)
 
 export const markVerified = (root: string, origin: string, name: string): Effect.Effect<void, RegistryFailed> =>
   Effect.gen(function* () {

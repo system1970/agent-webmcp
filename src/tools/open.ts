@@ -7,7 +7,7 @@ import { connect, discoverWs, listPageTools, sendBounded } from "../transport/cl
 import { Browser, openSession, type Opened } from "../sessions/sessions.ts"
 import { SessionStore } from "../sessions/store.ts"
 import { reapplyOrigin } from "../registry/reapply.ts"
-import { REGISTRY_ENV, resolveReadRoot } from "../registry/registry.ts"
+import { REGISTRY_ENV, resolveRoot } from "../registry/registry.ts"
 import { decodeArgs, toInputSchema, ToolFailed, type ToolCtx, type WebmcpTool } from "./definition.ts"
 
 const Input = Schema.Struct({
@@ -53,7 +53,7 @@ const borrow = Effect.fn("open.borrow")(function* (url: string, cdp: string, tar
     } catch {
       origin = "null"
     }
-    const root = resolveReadRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
+    const root = resolveRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
     const reapplied = yield* reapplyOrigin({ conn, sessionId: attached.sessionId, origin, root, timeoutMs: 10000 })
     yield* store.save({
       handle,

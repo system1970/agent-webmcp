@@ -12,7 +12,7 @@ import { SessionStore } from "../sessions/store.ts"
 import { reattach } from "../sessions/sessions.ts"
 import {
   REGISTRY_ENV,
-  resolveWriteRoot,
+  resolveRoot,
   saveTool,
   type SavedSpec,
 } from "../registry/registry.ts"
@@ -117,15 +117,10 @@ export const register: WebmcpTool = {
             )
           }
         }
-        // Persist ALWAYS (no flag): files are the library.
-        const writeRoot = yield* resolveWriteRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`)).pipe(
-          Effect.mapError((err) =>
-            new ToolFailed({
-              tool: "register",
-              detail: `live tool registered, but ${err.message} — set ${REGISTRY_ENV} to persist it (nothing saved).`,
-            })
-          )
-        )
+        // Persist ALWAYS (no flag): files are the library. Root always
+        // resolves (global home by default) — persistence cannot fail
+        // on resolution, only on disk.
+        const writeRoot = resolveRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
         const savedSpec: SavedSpec = {
           name: input.tool.name,
           description: input.tool.description,

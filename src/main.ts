@@ -4,6 +4,7 @@ import { Effect, Layer } from "effect"
 import { parse, UsageError, USAGE, type CliArgs } from "./cli.ts"
 import { cmdClose, cmdDoctor, cmdList, cmdOpen, cmdRegister, cmdUnregister } from "./commands/verbs.ts"
 import { SKILL_MD } from "./generated/skill.ts"
+import { setRegistryRoot } from "./registry/registry.ts"
 import { cmdMcpList, cmdMcpServe } from "./commands/serve.ts"
 import { Browser } from "./sessions/sessions.ts"
 import { SessionStore } from "./sessions/store.ts"
@@ -50,6 +51,10 @@ const dispatch = (args: CliArgs): Effect.Effect<number, never> =>
         return 2
       case "mcp":
         if (args.positionals[0] === "serve") {
+          // Install-time root: flag wins (stable across per-call proxy
+          // harnesses whose cwd varies); env and walk-up remain fallbacks.
+          const flag = args.flags["registry"]
+          if (typeof flag === "string" && flag !== "") setRegistryRoot(flag)
           yield* cmdMcpServe(layers)
           return 0
         }

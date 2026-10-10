@@ -10,7 +10,7 @@ import { launchChromium, type Launched } from "../transport/launch.ts"
 import { SessionStore, type SessionRecord } from "./store.ts"
 import { StoreFailed } from "./errors.ts"
 import { reapplyOrigin } from "../registry/reapply.ts"
-import { REGISTRY_ENV, resolveReadRoot } from "../registry/registry.ts"
+import { REGISTRY_ENV, resolveRoot } from "../registry/registry.ts"
 import { existsSync } from "node:fs"
 import { unregisterSnippet } from "../registry/snippet.ts"
 
@@ -67,7 +67,7 @@ export interface Opened {
 // Registry root for READS (re-apply): project-walk then global. Writes
 // resolve separately (register demands project-or-env).
 const readRoot = (): string | undefined =>
-  resolveReadRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
+  resolveRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
 
 export const openSession = Effect.fn("sessions.openSession")(function* (url: string) {
   const store = yield* SessionStore

@@ -8,7 +8,7 @@ import { invokePageTool, listPageTools } from "../transport/client.ts"
 import { SessionStore } from "../sessions/store.ts"
 import { reattach } from "../sessions/sessions.ts"
 import { CallFailed, runCode, type CallFn } from "../codemode/runner.ts"
-import { loadTool, REGISTRY_ENV, resolveReadRoot } from "../registry/registry.ts"
+import { loadTool, REGISTRY_ENV, resolveRoot } from "../registry/registry.ts"
 import { checkStrict, classifyCallFailure } from "./classify.ts"
 import {
   decodeArgs,
@@ -94,7 +94,7 @@ export const execute: WebmcpTool = {
           m.set(handle, set)
           return m
         })
-      const root = resolveReadRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
+      const root = resolveRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
       const attached: Array<{ alias: string; handle: string; close: Effect.Effect<void> }> = []
       try {
         for (const ref of refs) {
