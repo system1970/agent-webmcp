@@ -138,4 +138,18 @@ describe("transport", () => {
     const err = await fails(launchChromium(80))
     expect(err.reason).toBe("no-browser")
   })
+
+  test("buildArgs: headless default, headed branch, viewport always", async () => {
+    const { buildArgs } = await import("./launch.ts")
+    const headless = buildArgs({ port: 9333, userDataDir: "/tmp/x", headed: false })
+    expect(headless).toContain("--headless")
+    expect(headless).toContain("--window-size=1400,950")
+    expect(headless).toContain("--force-device-scale-factor=1")
+    expect(headless).not.toContain("--ozone-platform-hint=auto")
+    const headed = buildArgs({ port: 9333, userDataDir: "/tmp/x", headed: true })
+    expect(headed).not.toContain("--headless")
+    expect(headed).toContain("--ozone-platform-hint=auto")
+    expect(headed).toContain("--window-size=1400,950")
+    expect(headed).toContain("--enable-features=WebMCPTesting,DevToolsWebMCPSupport")
+  })
 })

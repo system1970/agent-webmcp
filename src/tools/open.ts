@@ -1,10 +1,11 @@
 // open: attach a page, record a session. Own browser by default
-// (launched, killed by close); cdp borrows a tab of a foreign browser
-// (navigates it — stated cost) and never kills it.
+// (launched headless, killed by close; headed:true for a visible
+// window); cdp borrows a tab of a foreign browser (navigates it —
+// stated cost) and never kills it.
 import { Effect, Schema } from "effect"
 import { existsSync } from "node:fs"
 import { connect, discoverWs, listPageTools, sendBounded } from "../transport/client.ts"
-import { Browser, openSession, type Opened } from "../sessions/sessions.ts"
+import { openSession, type Opened } from "../sessions/sessions.ts"
 import { SessionStore } from "../sessions/store.ts"
 import { reapplyOrigin } from "../registry/reapply.ts"
 import { REGISTRY_ENV, resolveRoot } from "../registry/registry.ts"
@@ -15,6 +16,7 @@ const Input = Schema.Struct({
   cdp: Schema.optional(Schema.String),
   target: Schema.optional(Schema.String),
   port: Schema.optional(Schema.Number),
+  headed: Schema.optional(Schema.Boolean),
 })
 
 const borrow = Effect.fn("open.borrow")(function* (url: string, cdp: string, target: string | undefined) {
@@ -67,7 +69,7 @@ const borrow = Effect.fn("open.borrow")(function* (url: string, cdp: string, tar
       authored: [...reapplied.reapplied],
       suspect: [],
     })
-    return { handle, url, toolCount: tools.length + reapplied.reapplied.length, reapplied: reapplied.reapplied, skipped: reapplied.skipped } satisfies Opened
+    return { handle, url, toolCount: tools.length + reapplied.reapplied.length, headed: false, reapplied: reapplied.reapplied, skipped: reapplied.skipped } satisfies Opened
   } finally {
     yield* conn.close
   }
@@ -76,7 +78,7 @@ const borrow = Effect.fn("open.borrow")(function* (url: string, cdp: string, tar
 export const open: WebmcpTool = {
   name: "open",
   description:
-    "Attach a web page and get a session handle. Own headless browser by default; pass cdp (DevTools http://host:port) to borrow a foreign tab instead (navigates it). toolCount is point-in-time — pages register as they load, so 0 means list again.",
+    "Attach a web page and get a session handle. Own headless browser by default (headed:true for a visible window); pass cdp (DevTools http://host:port) to borrow a foreign tab instead (navigates it). toolCount is point-in-time — pages register as they load, so 0 means list again.",
   inputSchema: toInputSchema(Input),
   execute: (args: unknown, _ctx: ToolCtx) =>
     Effect.gen(function* () {
@@ -85,7 +87,7 @@ export const open: WebmcpTool = {
         const opened = yield* borrow(input.url, input.cdp, input.target)
         return { content: JSON.stringify({ ...opened }) }
       }
-      const opened = yield* openSession(input.url)
+      const opened = yield* openSession(input.url, input.headed === true ? { headed: true } : {})
       return { content: JSON.stringify({ ...opened }) }
     }),
 }

@@ -19,12 +19,12 @@ export const SESSION_ROOT = `${tmpdir()}/agent-webmcp-sessions`
 // Browser seam: launch over owned Chromium. Exists so tests can
 // substitute a fake (second implementation); production is launch.ts.
 export interface BrowserApi {
-  readonly launch: (port: number) => Effect.Effect<Launched, TransportFailed>
+  readonly launch: (port: number, options?: { headed?: boolean }) => Effect.Effect<Launched, TransportFailed>
 }
 
 export class Browser extends Context.Service<Browser, BrowserApi>()("Browser", {}) {
   static readonly Live: Layer.Layer<Browser> = Layer.succeed(Browser, {
-    launch: (port: number) => launchChromium(port),
+    launch: (port: number, options?: { headed?: boolean }) => launchChromium(port, options ?? {}),
   })
 }
 
@@ -60,6 +60,7 @@ export interface Opened {
   readonly handle: string
   readonly url: string
   readonly toolCount: number
+  readonly headed: boolean
   readonly reapplied: ReadonlyArray<string>
   readonly skipped: ReadonlyArray<{ readonly name: string; readonly reason: string }>
 }
@@ -69,7 +70,7 @@ export interface Opened {
 const readRoot = (): string | undefined =>
   resolveRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
 
-export const openSession = Effect.fn("sessions.openSession")(function* (url: string) {
+export const openSession = Effect.fn("sessions.openSession")(function* (url: string, options: { headed?: boolean } = {}) {
   const store = yield* SessionStore
   const browser = yield* Browser
   const parsed = yield* Effect.try({
@@ -77,7 +78,7 @@ export const openSession = Effect.fn("sessions.openSession")(function* (url: str
     catch: () => new StoreFailed({ reason: "bad-url", message: `not a URL: ${url.slice(0, 120)}`, fix: "pass an absolute http(s) URL." }),
   })
   const port = yield* findFreePort()
-  const launched = yield* browser.launch(port)
+  const launched = yield* browser.launch(port, options.headed === true ? { headed: true } : {})
   const run = Effect.gen(function* () {
     const wsUrl = yield* discoverWs(launched.httpEndpoint, 5000)
     const conn = yield* connect(wsUrl)
@@ -103,7 +104,7 @@ export const openSession = Effect.fn("sessions.openSession")(function* (url: str
       })
       // toolCount includes re-applied names (each presence-verified, no
       // extra dial — the burst ran before they registered).
-      return { handle, url, toolCount: tools.length + reapplied.reapplied.length, reapplied: reapplied.reapplied, skipped: reapplied.skipped } satisfies Opened
+      return { handle, url, toolCount: tools.length + reapplied.reapplied.length, headed: options.headed === true, reapplied: reapplied.reapplied, skipped: reapplied.skipped } satisfies Opened
     } finally {
       yield* conn.close
     }

@@ -8,6 +8,9 @@ import { TransportFailed } from "./errors.ts"
 
 export const CHROMIUM_FLOOR = 152
 const WEBMCP_FLAGS = "--enable-features=WebMCPTesting,DevToolsWebMCPSupport"
+// Deterministic viewport in both modes (a WM-decided viewport once hid
+// an entire chat UI at 621px — responsive layout must never be ambient).
+const VIEWPORT_FLAGS = ["--window-size=1400,950", "--force-device-scale-factor=1"]
 const PORT_MIN = 1024
 const PORT_MAX = 65535
 
@@ -37,7 +40,33 @@ const findExecutable = Effect.fn("transport.findExecutable")(function* () {
   )
 })
 
-export const launchChromium = Effect.fn("transport.launchChromium")(function* (port = 9333) {
+export interface LaunchOptions {
+  readonly headed?: boolean
+}
+
+// Pure flag construction (unit-tested, no spawn): headed omits
+// --headless and hints ozone (Wayland/X11 both work); headless is the
+// default (CI-safe, no display needed).
+export const buildArgs = (options: {
+  port: number
+  userDataDir: string
+  headed: boolean
+}): ReadonlyArray<string> => [
+  ...(options.headed ? [] : ["--headless"]),
+  `--remote-debugging-port=${options.port}`,
+  `--user-data-dir=${options.userDataDir}`,
+  "--no-first-run",
+  "--no-default-browser-check",
+  ...(options.headed ? ["--ozone-platform-hint=auto"] : []),
+  WEBMCP_FLAGS,
+  ...VIEWPORT_FLAGS,
+  "about:blank",
+]
+
+export const launchChromium = Effect.fn("transport.launchChromium")(function* (
+  port = 9333,
+  options: LaunchOptions = {}
+) {
   if (!Number.isInteger(port) || port < PORT_MIN || port > PORT_MAX) {
     return yield* Effect.fail(
       new TransportFailed({
@@ -49,8 +78,9 @@ export const launchChromium = Effect.fn("transport.launchChromium")(function* (p
     )
   }
   const exe = yield* findExecutable()
+  const headed = options.headed === true
   const userDataDir = `${tmpdir()}/agent-webmcp-chrome-${port}`
-  const proc = Bun.spawn([exe, "--headless", `--remote-debugging-port=${port}`, `--user-data-dir=${userDataDir}`, "--no-first-run", "--no-default-browser-check", WEBMCP_FLAGS, "about:blank"], {
+  const proc = Bun.spawn([exe, ...buildArgs({ port, userDataDir, headed })], {
     stdout: "ignore",
     stderr: "ignore",
   })
@@ -60,7 +90,9 @@ export const launchChromium = Effect.fn("transport.launchChromium")(function* (p
       reason: "timeout",
       operation: "launch",
       message: `browser on ${port} never answered /json/version`,
-      fix: "is the port free? is this chromium new enough for --headless=new?",
+      fix: headed
+        ? "headed needs a display (no $DISPLAY/Wayland socket?) — use Xvfb or drop --headed."
+        : "is the port free? is this chromium new enough?",
     })
   )
   yield* Effect.tryPromise({

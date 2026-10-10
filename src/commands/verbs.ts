@@ -38,11 +38,13 @@ export const cmdOpen = (args: CliArgs): Door =>
     if (url === undefined) return yield* Effect.fail(new UsageError("open needs <url>"))
     const cdp = args.flags["cdp"]
     const port = args.flags["port"]
+    const headed = args.flags["headed"]
     const result = yield* open.execute(
       {
         url,
         ...(typeof cdp === "string" ? { cdp } : {}),
         ...(typeof port === "string" ? { port: Number(port) } : {}),
+        ...(headed === true ? { headed: true } : {}),
       },
       {}
     )

@@ -69,12 +69,28 @@ page-supplied names/hints (untrusted), driver flags, screenshots as
 truth, analytics endpoints. Deploy engine + driver side by side over
 MCP (namespaced, no shared state) — the agent carries context.
 
+### Discovery first (binding order — authoring blind is forbidden)
+
+Before any `register`, capture, in order:
+1. Viewport width (`window.innerWidth`) — responsive layouts hide
+   entire UIs below breakpoints (witnessed: 621px hid a whole chat).
+2. Responsive variants — query every candidate root; note which layout
+   is live (desktop aside vs mobile panel vs none).
+3. Visibility primitives per element — rect-based (`getBoundingClientRect`
+   + computed style). NEVER `offsetParent` (fixed elements always read
+   null — witnessed). Confirm message conventions with one live read
+   where possible (user vs assistant selectors).
+4. Only then draft spec + body: prefer page APIs over DOM,
+   feature-detect, fail naming what moved.
+
 ### Five rules for strong tools
 
 1. Describe effects, not hopes — what it changes plus what it returns.
 2. Closed schemas (`additionalProperties: false`, real `required[]`).
 3. Always include `fixtureInput` — a tool without one is a rumor
    (consequential tools excepted: hand-prove those, never auto-run).
+   Stateful tools prove BOTH transitions (closed→open AND open→open):
+   fixtures that only pass on one branch are luck, not coverage.
 4. Verify effects, not echoes — read back the changed state; never
    trust `{saved: true}`.
 5. Mark consequential tools (`consequential: true` — they need host

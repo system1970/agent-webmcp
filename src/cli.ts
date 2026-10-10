@@ -15,7 +15,7 @@ export class UsageError {
 const has = (flags: Record<string, string | boolean>, name: string): boolean =>
   flags[name] === true || flags[name] === "true"
 
-const BOOLEAN_FLAGS = new Set(["json", "plain", "yes", "help", "version"])
+const BOOLEAN_FLAGS = new Set(["json", "plain", "yes", "help", "version", "headed"])
 
 export const parse = (argv: ReadonlyArray<string>): CliArgs | UsageError => {
   const positionals: Array<string> = []
@@ -62,7 +62,7 @@ export const USAGE = `agent-webmcp [--version | --help] <command> [args]
 
   doctor [--json]              environment report
   mcp (list [--json] | serve [--registry DIR])  inspect / serve over stdio
-  open [--cdp URL] [--port N] [--json|--plain] <url>
+  open [--cdp URL] [--port N] [--headed] [--json|--plain] <url>
   list <handle> [tool] [--json|--plain]
   close <handle|--all> --yes [--json|--plain]
   register <handle> '<json-tool>' '<js-body>' [--timeout ms] --yes
