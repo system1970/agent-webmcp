@@ -3,6 +3,7 @@
 import { Effect, Layer } from "effect"
 import { parse, UsageError, USAGE, type CliArgs } from "./cli.ts"
 import { cmdClose, cmdDoctor, cmdList, cmdOpen, cmdRegister, cmdUnregister } from "./commands/verbs.ts"
+import { SKILL_MD } from "./generated/skill.ts"
 import { cmdMcpList, cmdMcpServe } from "./commands/serve.ts"
 import { Browser } from "./sessions/sessions.ts"
 import { SessionStore } from "./sessions/store.ts"
@@ -40,6 +41,13 @@ const dispatch = (args: CliArgs): Effect.Effect<number, never> =>
       case "unregister":
         yield* Effect.provide(cmdUnregister(args), layers)
         return 0
+      case "skill":
+        if (args.positionals[0] === "show") {
+          console.log(SKILL_MD.trimEnd())
+          return 0
+        }
+        console.error(`unknown skill command (try: skill show)\n\n${USAGE}`)
+        return 2
       case "mcp":
         if (args.positionals[0] === "serve") {
           yield* cmdMcpServe(layers)

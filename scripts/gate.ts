@@ -24,11 +24,28 @@ const pass = (msg: string): void => console.log(`PASS ${msg}`)
   else pass("bun test src")
 }
 
-// gen: generated versions must match package.json.
+// gen: generated versions must match package.json; generated skill
+// must match SKILL.md (skill show serves the embedded copy).
 {
-  const proc = Bun.spawnSync(["bun", "./scripts/gen-versions.ts", "--check"], { stdout: "pipe", stderr: "pipe" })
-  if ((proc.exitCode ?? 1) !== 0) fail("gen: src/generated/versions.ts is stale (run `bun run gen`)")
+  const procs = [
+    ["bun", "./scripts/gen-versions.ts", "--check"],
+    ["bun", "./scripts/gen-skill.ts", "--check"],
+  ] as const
+  let stale = false
+  for (const args of procs) {
+    const proc = Bun.spawnSync([...args], { stdout: "pipe", stderr: "pipe" })
+    if ((proc.exitCode ?? 1) !== 0) stale = true
+  }
+  if (stale) fail("gen: generated files stale (run `bun run gen`)")
   else pass("gen")
+}
+
+// skill-embed: served copy byte-equals the in-repo source.
+{
+  const { SKILL_MD } = await import("../src/generated/skill.ts")
+  const source = await Bun.file("skills/agent-webmcp/SKILL.md").text()
+  if (SKILL_MD !== source) fail("skill-embed: served copy differs from skills/agent-webmcp/SKILL.md (run `bun run gen`)")
+  else pass("skill-embed")
 }
 
 // schema-object: every inputSchema is top-level {type:"object"} — one

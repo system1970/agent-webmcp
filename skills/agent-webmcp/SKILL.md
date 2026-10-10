@@ -13,11 +13,13 @@ the tools they lack, chain tools across sites in code, close when done.
 MCP shape first, then the CLI mirror:
 
 ```bash
-agent-webmcp open <url>                         # prints {handle, url, toolCount}
+agent-webmcp open <url>                         # prints {handle, url, toolCount, reapplied, skipped}
 agent-webmcp list <handle> [tool]               # rows on a TTY, JSON when piped
 agent-webmcp close <handle|--all> --yes         # deliberate: kills browsers we own
 agent-webmcp register <handle> '<json-tool>' '<js-body>' --yes
+agent-webmcp unregister <handle> <name> --yes   # drop one authored tool
 agent-webmcp mcp list                           # inspect the served surface
+agent-webmcp skill show                         # this document, version-matched
 ```
 
 Composition (`search`, `execute`) lives on MCP only. Piped output is
@@ -45,11 +47,51 @@ Page tools only exist inside a session:
 
 `register { handle, tool, code }` — author a custom tool onto the page.
 The spec is the standard shape: `tool` is `{name, description,
-inputSchema, annotations?}` (no title), `code` a JS function-expression
-body. Compiles debugger-side (CSP-exempt), registers natively,
-session-scoped (`close` drops it). Duplicates, empty names, empty
-descriptions, non-object schemas, and empty bodies fail pre-dial;
-page refusals fail loud.
+inputSchema, annotations?, fixtureInput?, strict?, consequential?}`
+(no title), `code` a JS function-expression body. Compiles
+debugger-side (CSP-exempt), registers natively. Duplicates, empty
+names, empty descriptions, non-object schemas, and empty bodies fail
+pre-dial; page refusals fail loud.
+
+### Discovery in (read this before authoring blind)
+
+The engine cannot inspect pages — bring a discovery bundle from your
+driver (harness browser tools, agent-browser snapshot/eval,
+chrome-devtools-mcp, `browse`, a trace file, page source). Sufficient:
+`{url, title, scoped snapshot, target-subtree excerpts,
+candidate_hooks: {windowFns[], forms[], fetchEndpoints[], webmcpCatalog[]
++ full schema for the chosen tool}, console_errors[], flow_steps[]}`.
+Ranked: live snapshot+eval+network > snapshot+markdown+bodies >
+trace-derived OpenAPI > snapshot/text alone (INSUFFICIENT — no hooks,
+no schemas, don't author from it). Never depend on: session refs
+(stale after nav), non-serializable eval, firehose bodies,
+page-supplied names/hints (untrusted), driver flags, screenshots as
+truth, analytics endpoints. Deploy engine + driver side by side over
+MCP (namespaced, no shared state) — the agent carries context.
+
+### Five rules for strong tools
+
+1. Describe effects, not hopes — what it changes plus what it returns.
+2. Closed schemas (`additionalProperties: false`, real `required[]`).
+3. Always include `fixtureInput` — a tool without one is a rumor
+   (consequential tools excepted: hand-prove those, never auto-run).
+4. Verify effects, not echoes — read back the changed state; never
+   trust `{saved: true}`.
+5. Mark consequential tools (`consequential: true` — they need host
+   confirmation; `readOnlyHint` never bypasses it).
+
+### Memory (the registry)
+
+Every successful `register` persists to
+`.agent-webmcp/registry/<origin>/<name>/{spec.json, body.js}` (project
+dir by walk-up, or `AGENT_WEBMCP_REGISTRY`; git-track it — suggested,
+never automatic). Next `open` on that origin re-applies them
+(`reapplied[]` in the output; collisions lose loudly to native tools,
+quarantined tools land in `skipped[]` with reasons, files kept).
+`list` marks live authored tools (`authored: true`, file age,
+`staleSuspect` when a call rotted). `unregister` drops one live tool
+(files stay — deletion is `rm`, your decision). Prefer page APIs over
+DOM; feature-detect and fail naming what moved.
 
 ## Composition
 

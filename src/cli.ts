@@ -66,4 +66,5 @@ export const USAGE = `agent-webmcp [--version | --help] <command> [args]
   list <handle> [tool] [--json|--plain]
   close <handle|--all> --yes [--json|--plain]
   register <handle> '<json-tool>' '<js-body>' [--timeout ms] --yes
-  unregister <handle> <name> --yes`
+  unregister <handle> <name> --yes
+  skill show                   print the bundled agent skill`
