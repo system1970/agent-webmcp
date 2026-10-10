@@ -49,11 +49,18 @@ const borrow = Effect.fn("open.borrow")(function* (url: string, cdp: string, tar
     )
     const tools = yield* listPageTools(conn, 10000, attached.sessionId)
     const handle = `s_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`
+    // Origin follows the REQUESTED url (post-navigation target), never the
+    // pre-navigation tab url — borrowing a fresh about:blank tab slugger
+    // otherwise files tools under a "null" origin that never re-applies.
     let origin: string
     try {
-      origin = new URL(picked.url).origin
+      origin = new URL(url).origin
     } catch {
-      origin = "null"
+      try {
+        origin = new URL(picked.url).origin
+      } catch {
+        origin = "null"
+      }
     }
     const root = resolveRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
     const reapplied = yield* reapplyOrigin({ conn, sessionId: attached.sessionId, origin, root, timeoutMs: 10000 })
