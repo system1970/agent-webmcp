@@ -65,4 +65,5 @@ export const USAGE = `agent-webmcp [--version | --help] <command> [args]
   open [--cdp URL] [--port N] [--json|--plain] <url>
   list <handle> [tool] [--json|--plain]
   close <handle|--all> --yes [--json|--plain]
-  register <handle> '<json-tool>' '<js-body>' [--timeout ms] --yes`
+  register <handle> '<json-tool>' '<js-body>' [--timeout ms] --yes
+  unregister <handle> <name> --yes`

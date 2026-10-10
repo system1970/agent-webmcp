@@ -15,6 +15,7 @@ export const SessionRecord = Schema.Struct({
   ownBrowser: Schema.Boolean,
   pid: Schema.Number,
   createdAt: Schema.Number,
+  authored: Schema.Array(Schema.String),
 })
 export type SessionRecord = typeof SessionRecord.Type
 

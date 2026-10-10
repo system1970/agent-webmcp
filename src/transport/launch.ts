@@ -3,6 +3,7 @@
 // where the surface stays undefined without them). Floor: Chromium 152.
 import { Duration, Effect } from "effect"
 import { rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { TransportFailed } from "./errors.ts"
 
 export const CHROMIUM_FLOOR = 152
@@ -48,7 +49,7 @@ export const launchChromium = Effect.fn("transport.launchChromium")(function* (p
     )
   }
   const exe = yield* findExecutable()
-  const userDataDir = `/tmp/opencode/agent-webmcp-chrome-${port}`
+  const userDataDir = `${tmpdir()}/agent-webmcp-chrome-${port}`
   const proc = Bun.spawn([exe, "--headless", `--remote-debugging-port=${port}`, `--user-data-dir=${userDataDir}`, "--no-first-run", "--no-default-browser-check", WEBMCP_FLAGS, "about:blank"], {
     stdout: "ignore",
     stderr: "ignore",

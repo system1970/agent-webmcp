@@ -7,6 +7,7 @@ import type { TransportFailed } from "../transport/errors.ts"
 import type { Browser } from "../sessions/sessions.ts"
 import type { SessionStore } from "../sessions/store.ts"
 import type { StoreFailed } from "../sessions/errors.ts"
+import type { RegistryFailed } from "../registry/registry.ts"
 
 export class ToolFailed extends Data.TaggedError("ToolFailed")<{
   readonly tool: string
@@ -38,7 +39,7 @@ export interface WebmcpTool {
 
 // Verb error + services, stated once. Doors (MCP/CLI) provide the layers;
 // verbs never construct them. Type-only imports: no runtime cycle.
-export type VerbError = ToolFailed | StoreFailed | TransportFailed
+export type VerbError = ToolFailed | StoreFailed | TransportFailed | RegistryFailed
 export type VerbServices = SessionStore | Browser
 
 // Shared verb budgets. One block so windows stay debated once.

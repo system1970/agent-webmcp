@@ -2,7 +2,7 @@
 // Exactly one runPromiseExit. Exits: 0 ok, 2 usage, 1 failure.
 import { Effect, Layer } from "effect"
 import { parse, UsageError, USAGE, type CliArgs } from "./cli.ts"
-import { cmdClose, cmdDoctor, cmdList, cmdOpen, cmdRegister } from "./commands/verbs.ts"
+import { cmdClose, cmdDoctor, cmdList, cmdOpen, cmdRegister, cmdUnregister } from "./commands/verbs.ts"
 import { cmdMcpList, cmdMcpServe } from "./commands/serve.ts"
 import { Browser } from "./sessions/sessions.ts"
 import { SessionStore } from "./sessions/store.ts"
@@ -36,6 +36,9 @@ const dispatch = (args: CliArgs): Effect.Effect<number, never> =>
         return 0
       case "register":
         yield* Effect.provide(cmdRegister(args), layers)
+        return 0
+      case "unregister":
+        yield* Effect.provide(cmdUnregister(args), layers)
         return 0
       case "mcp":
         if (args.positionals[0] === "serve") {

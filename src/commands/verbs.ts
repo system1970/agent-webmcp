@@ -6,6 +6,7 @@ import { close } from "../tools/close.ts"
 import { list } from "../tools/list.ts"
 import { open } from "../tools/open.ts"
 import { register } from "../tools/register.ts"
+import { unregister } from "../tools/unregister.ts"
 import { isJson, needYes, UsageError, type CliArgs } from "../cli.ts"
 import type { VerbError, VerbServices } from "../tools/definition.ts"
 import { effectVersion } from "../version.ts"
@@ -94,6 +95,18 @@ export const cmdRegister = (args: CliArgs): Door =>
       { handle, tool, code, ...(typeof timeout === "string" ? { timeoutMs: Number(timeout) } : {}) },
       {}
     )
+    yield* print(args, result.content)
+  })
+
+export const cmdUnregister = (args: CliArgs): Door =>
+  Effect.gen(function* () {
+    const gated = needYes(args, "unregister")
+    if (gated !== null) return yield* Effect.fail(gated)
+    const [handle, name] = args.positionals
+    if (handle === undefined || name === undefined) {
+      return yield* Effect.fail(new UsageError("unregister needs <handle> <name>"))
+    }
+    const result = yield* unregister.execute({ handle, name }, {})
     yield* print(args, result.content)
   })
 

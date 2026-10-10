@@ -82,6 +82,7 @@ describe("sessions", () => {
         ownBrowser: true,
         pid: 1,
         createdAt: 0,
+        authored: [],
       })
       const loaded = yield* store.load("s_abc")
       const listed = yield* store.list()
@@ -108,6 +109,7 @@ describe("sessions", () => {
         ownBrowser: false,
         pid: 0,
         createdAt: 0,
+        authored: [],
       })
       return yield* store.load("s_m")
     })

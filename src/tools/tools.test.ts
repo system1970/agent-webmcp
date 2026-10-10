@@ -61,7 +61,7 @@ describe("tools", () => {
   })
 
   test("registry: five verbs, unique names, findable", () => {
-    expect(allTools.map((t) => t.name).sort()).toEqual(["close", "execute", "list", "open", "register", "search"])
+    expect(allTools.map((t) => t.name).sort()).toEqual(["close", "execute", "list", "open", "register", "search", "unregister"])
     expect(findTool("open")?.description.length).toBeGreaterThan(0)
     expect(findTool("nope")).toBeUndefined()
   })
@@ -84,6 +84,7 @@ describe("tools", () => {
           ownBrowser: false,
           pid: 0,
           createdAt: 0,
+        authored: [],
         })
       }
       return yield* close.execute({ all: true }, {})

@@ -3,13 +3,14 @@
 // unit ever needs it. Crash-safe: only the record persists; a dead
 // browser is a transport failure on next verb, never a corrupt store.
 import { Context, Effect, Layer } from "effect"
+import { tmpdir } from "node:os"
 import { connect, discoverWs, listPageTools, sendBounded } from "../transport/client.ts"
 import type { TransportFailed } from "../transport/errors.ts"
 import { launchChromium, type Launched } from "../transport/launch.ts"
 import { SessionStore, type SessionRecord } from "./store.ts"
 import { StoreFailed } from "./errors.ts"
 
-export const SESSION_ROOT = "/tmp/opencode/agent-webmcp-sessions"
+export const SESSION_ROOT = `${tmpdir()}/agent-webmcp-sessions`
 
 // Browser seam: launch over owned Chromium. Exists so tests can
 // substitute a fake (second implementation); production is launch.ts.
@@ -85,6 +86,7 @@ export const openSession = Effect.fn("sessions.openSession")(function* (url: str
         ownBrowser: true,
         pid: launched.pid,
         createdAt: Date.now(),
+        authored: [],
       })
       return { handle, url, toolCount: tools.length } satisfies Opened
     } finally {

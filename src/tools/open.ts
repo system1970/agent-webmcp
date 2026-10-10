@@ -59,6 +59,7 @@ const borrow = Effect.fn("open.borrow")(function* (url: string, cdp: string, tar
       ownBrowser: false,
       pid: 0,
       createdAt: Date.now(),
+      authored: [],
     })
     return { handle, url, toolCount: tools.length } satisfies Opened
   } finally {

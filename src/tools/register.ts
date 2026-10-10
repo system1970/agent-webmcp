@@ -5,10 +5,17 @@
 // registered tool is indistinguishable from site-native. Session-scoped:
 // close drops everything. Spec rejections fail pre-dial, page rejections
 // fail loud.
-import { Effect, Schema } from "effect"
-import { evaluateJson } from "../transport/client.ts"
+import { Effect, Result, Schema } from "effect"
+import { existsSync } from "node:fs"
+import { evaluateJson, invokePageTool, listPageTools } from "../transport/client.ts"
 import { SessionStore } from "../sessions/store.ts"
 import { reattach } from "../sessions/sessions.ts"
+import {
+  REGISTRY_ENV,
+  resolveProjectRoot,
+  saveTool,
+  type SavedSpec,
+} from "../registry/registry.ts"
 import {
   decodeArgs,
   INVOKE_TIMEOUT_MAX_MS,
@@ -26,6 +33,9 @@ const Spec = Schema.Struct({
   description: Schema.String,
   inputSchema: Schema.Record(Schema.String, Schema.Unknown),
   annotations: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  fixtureInput: Schema.optional(Schema.Unknown),
+  strict: Schema.optional(Schema.Boolean),
+  consequential: Schema.optional(Schema.Boolean),
 })
 
 const Input = Schema.Struct({
@@ -75,7 +85,19 @@ export const register: WebmcpTool = {
           " const def = " +
           def +
           "; def.execute = execute;" +
-          " try { await document.modelContext.registerTool(def); }" +
+          // AbortSignal lifecycle (unregisterTool does not exist in
+          // Chromium ≥150 — removal is controller.abort()). One
+          // controller per name; re-register aborts the old first so
+          // overwrites are idempotent instead of duplicate refusals.
+          " window.__agentWebmcp = window.__agentWebmcp ?? {};" +
+          " try { window.__agentWebmcp[" +
+          JSON.stringify(input.tool.name) +
+          "]?.abort(); } catch {}" +
+          " const controller = new AbortController();" +
+          " window.__agentWebmcp[" +
+          JSON.stringify(input.tool.name) +
+          "] = controller;" +
+          " try { await document.modelContext.registerTool(def, { signal: controller.signal }); }" +
           " catch (e) { return JSON.stringify({ error: String((e && e.message) || e).slice(0, 300) }); }" +
           " return JSON.stringify({ registered: def.name });" +
           "})()"
@@ -99,7 +121,66 @@ export const register: WebmcpTool = {
               : "unexpected shape"
           return yield* Effect.fail(new ToolFailed({ tool: "register", detail: `page refused: ${refusal}` }))
         }
-        return { content: JSON.stringify({ registered: input.tool.name, handle: input.handle }) }
+        // Fixture proof (non-consequential only): registration succeeding
+        // proves nothing — one invoke proves. Frame comes from a fresh
+        // catalog read (native source of truth). Failure rolls back BOTH
+        // the live tool (unregister, best-effort) and the files (never
+        // written — persist happens only after proof passes).
+        const consequential = input.tool.consequential === true
+        if (input.tool.fixtureInput !== undefined && !consequential) {
+          const catalog = yield* listPageTools(conn, timeoutMs, sessionId)
+          const live = catalog.find((t) => t.name === input.tool.name)
+          if (live === undefined) {
+            return yield* Effect.fail(
+              new ToolFailed({ tool: "register", detail: "registered but absent from catalog — page dropped it, nothing persisted." })
+            )
+          }
+          const proof = yield* invokePageTool(
+            conn,
+            sessionId,
+            { frameId: live.frameId, toolName: input.tool.name, args: (input.tool.fixtureInput ?? {}) as Record<string, unknown> },
+            timeoutMs
+          ).pipe(Effect.result)
+          if (!Result.isSuccess(proof) || proof.success.status === "Error") {
+            const why = !Result.isSuccess(proof)
+              ? String(proof.failure).slice(0, 200)
+              : String(proof.success.errorText ?? "page error").slice(0, 200)
+            yield* evaluateJson(
+              conn,
+              `(async () => { try { await document.modelContext.unregisterTool(${JSON.stringify(input.tool.name)}); } catch {} return "ok"; })()`,
+              5000,
+              sessionId
+            ).pipe(Effect.ignore)
+            return yield* Effect.fail(
+              new ToolFailed({ tool: "register", detail: `fixture failed (${why}) — tool rolled back, nothing persisted.` })
+            )
+          }
+        }
+        // Persist ALWAYS (no flag): files are the library.
+        const writeRoot = resolveProjectRoot(process.cwd(), process.env[REGISTRY_ENV], (d) => existsSync(`${d}/.agent-webmcp`))
+        if (writeRoot === undefined) {
+          return yield* Effect.fail(
+            new ToolFailed({
+              tool: "register",
+              detail: `live tool registered, but no project root found — set ${REGISTRY_ENV} to persist it (nothing saved).`,
+            })
+          )
+        }
+        const savedSpec: SavedSpec = {
+          name: input.tool.name,
+          description: input.tool.description,
+          inputSchema: input.tool.inputSchema as Record<string, unknown>,
+          ...(input.tool.annotations !== undefined ? { annotations: input.tool.annotations as Record<string, unknown> } : {}),
+          ...(input.tool.fixtureInput !== undefined ? { fixtureInput: input.tool.fixtureInput } : {}),
+          ...(input.tool.strict !== undefined ? { strict: input.tool.strict } : {}),
+          ...(consequential ? { consequential: true as const } : {}),
+          version: 1 as const,
+          createdAt: Date.now(),
+          lastVerified: input.tool.fixtureInput !== undefined && !consequential ? Date.now() : undefined,
+        }
+        yield* saveTool(writeRoot, record.origin, input.tool.name, savedSpec, input.code)
+        yield* store.save({ ...record, authored: [...record.authored, input.tool.name] })
+        return { content: JSON.stringify({ registered: input.tool.name, handle: input.handle, persisted: true }) }
       } finally {
         yield* conn.close
       }

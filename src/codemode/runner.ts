@@ -3,6 +3,7 @@
 // No hand timers, no hand semaphores. Interruption terminates the worker
 // through release; in-flight calls die with the scope that forked them.
 import { Data, Deferred, Duration, Effect, Ref, Result, Semaphore } from "effect"
+import { tmpdir } from "node:os"
 import { unlinkSync } from "node:fs"
 
 export interface RunBudgets {
@@ -118,7 +119,7 @@ export const runCode = Effect.fn("runner.runCode")(function* (options: {
       const sem = yield* Semaphore.make(8)
       const counts = yield* Ref.make({ calls: 0, spilled: false, paths: [] as Array<string> })
       const gate = yield* Deferred.make<RunResult>()
-    const path = `${process.env.TMPDIR ?? "/tmp"}/agent-webmcp-run-${crypto.randomUUID()}.mjs`
+    const path = `${tmpdir()}/agent-webmcp-run-${crypto.randomUUID()}.mjs`
     const spawned = yield* Effect.tryPromise({
       try: async () => {
         await Bun.write(path, workerSource(code))
